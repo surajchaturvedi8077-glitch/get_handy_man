@@ -1,0 +1,46 @@
+/**
+ * theme.css
+ * ------------------------------------------------------------------
+ * Design tokens carried over from the Get Handyman prototype (same
+ * palette/spacing language), as plain CSS custom properties so any
+ * component can use var(--orange) etc. without a CSS-in-JS library.
+ * ------------------------------------------------------------------
+ */
+:root {
+  --charcoal: #1F2937;
+  --charcoal-deep: #111827;
+  --charcoal2: #2B3648;
+  --orange: #F5821F;
+  --orange-deep: #D9690C;
+  --orange-tint: #FDEEDD;
+  --offwhite: #F7F5F2;
+  --white: #FFFFFF;
+  --gray: #6B7280;
+  --gray-light: #E5E7EB;
+  --green: #16A34A;
+  --green-tint: #E9F7EF;
+  --blue: #1D4ED8;
+  --blue-tint: #EAF3FF;
+  --red: #DC2626;
+  --red-tint: #FDECEC;
+
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--offwhite);
+  color: var(--charcoal);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+a { color: var(--orange); text-decoration: none; font-weight: 700; }

@@ -1,0 +1,15 @@
+/**
+ * JobStatusBadge.jsx
+ * ------------------------------------------------------------------
+ * Status chip for a job: "Needs details" (orange, overrides status),
+ * "Complete"/"Confirmed" (green), or "Pending" (orange).
+ * ------------------------------------------------------------------
+ */
+import Chip from '../ui/Chip.jsx';
+
+export default function JobStatusBadge({ job }) {
+  if (job.needsDetails) return <Chip tone="orange">Needs details</Chip>;
+  if (job.status === 'complete') return <Chip tone="green">Complete</Chip>;
+  if (job.status === 'confirmed') return <Chip tone="green">Confirmed</Chip>;
+  return <Chip tone="orange">Pending</Chip>;
+}
