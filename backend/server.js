@@ -1,17 +1,20 @@
 /**
  * server.js
  * ------------------------------------------------------------------
- * Entry point: connect to MongoDB, then start the HTTP server.
- * Run with: npm run dev  (nodemon)  or  npm start  (node)
+ * Entry point: start HTTP server immediately, then connect to MongoDB.
  * ------------------------------------------------------------------
  */
 const app = require('./src/app');
 const connectDB = require('./src/config/db');
 const { port } = require('./src/config/env');
 
-connectDB().then(() => {
-  app.listen(port, () => {
-    // eslint-disable-next-line no-console
-    console.log(`[server] Get Handyman API listening on port ${port}`);
-  });
+// 1. Connect to DB in the background
+connectDB().catch(err => {
+  console.error('[server] MongoDB connection error:', err);
+});
+
+// 2. Start listening IMMEDIATELY so Hostinger is happy
+app.listen(port, () => {
+  // eslint-disable-next-line no-console
+  console.log(`[server] Get Handyman API listening on port ${port}`);
 });
