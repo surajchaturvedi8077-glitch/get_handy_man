@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Get Handyman",
+    "slug": "get-handyman-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/adaptive-icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/dummy-transparent-image.png",
+      "backgroundColor": "#ffffff"
+    },
+    "android": {
+      "package": "au.com.gethandyman.worker",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1F2937"
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9bc67899-cae6-4259-ba01-5d512cb0fb8e"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "y"
+    }
+  }
+}
