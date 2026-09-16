@@ -1,11 +1,3 @@
-/**
- * jobController.js
- * ------------------------------------------------------------------
- * CRUD for jobs plus job-specific actions: saving on-site details,
- * managing the materials list, and marking a job complete (which
- * generates its Invoice — see markComplete()).
- * ------------------------------------------------------------------
- */
 const asyncHandler = require('../middleware/asyncHandler');
 const Job = require('../models/Job');
 const Invoice = require('../models/Invoice');
@@ -13,7 +5,6 @@ const Settings = require('../models/Settings');
 const { ok, created } = require('../utils/apiResponse');
 const { nextInvoiceNumber } = require('../services/numberingService');
 
-// GET /api/jobs?status=confirmed
 const listJobs = asyncHandler(async (req, res) => {
   const { status } = req.query;
   const filter = status && status !== 'all' ? { status } : {};
@@ -21,7 +12,6 @@ const listJobs = asyncHandler(async (req, res) => {
   ok(res, jobs);
 });
 
-// GET /api/jobs/:id
 const getJob = asyncHandler(async (req, res) => {
   const job = await Job.findById(req.params.id);
   if (!job) {
@@ -31,18 +21,13 @@ const getJob = asyncHandler(async (req, res) => {
   ok(res, job);
 });
 
-// POST /api/jobs  (manual job creation, without an enquiry)
 const createJob = asyncHandler(async (req, res) => {
   const job = await Job.create(req.body);
   created(res, job);
 });
 
-// PUT /api/jobs/:id  (edit fields, e.g. via "Save job details")
 const updateJob = asyncHandler(async (req, res) => {
-  const job = await Job.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true,
-  });
+  const job = await Job.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
   if (!job) {
     res.status(404);
     throw new Error('Job not found');
@@ -50,7 +35,6 @@ const updateJob = asyncHandler(async (req, res) => {
   ok(res, job);
 });
 
-// DELETE /api/jobs/:id
 const deleteJob = asyncHandler(async (req, res) => {
   const job = await Job.findByIdAndDelete(req.params.id);
   if (!job) {
@@ -60,8 +44,6 @@ const deleteJob = asyncHandler(async (req, res) => {
   ok(res, { deleted: true });
 });
 
-// PUT /api/jobs/:id/details  { needsDetails:false, ...otherFields }
-// Marks the job as having its specifics filled in and moves accepted -> confirmed.
 const saveJobDetails = asyncHandler(async (req, res) => {
   const job = await Job.findById(req.params.id);
   if (!job) {
@@ -74,7 +56,6 @@ const saveJobDetails = asyncHandler(async (req, res) => {
   ok(res, job);
 });
 
-// PUT /api/jobs/:id/materials  { materials: [{name, cost}] }
 const updateMaterials = asyncHandler(async (req, res) => {
   const job = await Job.findByIdAndUpdate(
     req.params.id,
@@ -88,13 +69,17 @@ const updateMaterials = asyncHandler(async (req, res) => {
   ok(res, job);
 });
 
-// POST /api/jobs/:id/complete
-// Marks the job complete and generates its Invoice from materials + labour.
 const markComplete = asyncHandler(async (req, res) => {
   const job = await Job.findById(req.params.id);
   if (!job) {
     res.status(404);
     throw new Error('Job not found');
+  }
+
+  // FIXED: Prevent duplicate invoices
+  if (job.status === 'complete') {
+    res.status(400);
+    throw new Error('Job is already marked complete');
   }
 
   const settings = await Settings.getSingleton();
@@ -126,13 +111,4 @@ const markComplete = asyncHandler(async (req, res) => {
   ok(res, { job, invoice });
 });
 
-module.exports = {
-  listJobs,
-  getJob,
-  createJob,
-  updateJob,
-  deleteJob,
-  saveJobDetails,
-  updateMaterials,
-  markComplete,
-};
+module.exports = { listJobs, getJob, createJob, updateJob, deleteJob, saveJobDetails, updateMaterials, markComplete };

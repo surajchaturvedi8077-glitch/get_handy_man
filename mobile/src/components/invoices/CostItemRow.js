@@ -1,11 +1,3 @@
-/**
- * CostItemRow.js
- * ------------------------------------------------------------------
- * One expense line: name, cost (money), and a receipt photo — the
- * only three fields an expense has. Used for both material and
- * other expenses.
- * ------------------------------------------------------------------
- */
 import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
 import PhotoUploadButton from './PhotoUploadButton';
 import { colors } from '../../theme/colors';
@@ -20,7 +12,7 @@ export default function CostItemRow({ item, onChange, onRemove, onUploadPhoto })
       />
       <TextInput
         value={String(item.cost)}
-        onChangeText={(v) => onChange({ ...item, cost: Number(v) || 0 })}
+        onChangeText={(v) => onChange({ ...item, cost: v })}
         keyboardType="numeric"
         style={[styles.input, { width: 56 }]}
       />

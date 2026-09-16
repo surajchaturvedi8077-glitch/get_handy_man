@@ -1,10 +1,3 @@
-/**
- * InvoiceLineItemRow.js
- * ------------------------------------------------------------------
- * One editable customer-facing line item (name + amount) on the
- * invoice. Controlled: reports changes via onChange/onRemove.
- * ------------------------------------------------------------------
- */
 import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
 import { colors } from '../../theme/colors';
 
@@ -18,7 +11,7 @@ export default function InvoiceLineItemRow({ item, onChange, onRemove }) {
       />
       <TextInput
         value={String(item.amt)}
-        onChangeText={(v) => onChange({ ...item, amt: Number(v) || 0 })}
+        onChangeText={(v) => onChange({ ...item, amt: v })}
         keyboardType="numeric"
         style={[styles.input, { width: 60 }]}
       />

@@ -45,13 +45,24 @@ export default function DashboardScreen() {
             <Text style={styles.dateSub}>{todayStr}</Text>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.iconBtnDark} onPress={() => console.log('Notifications')}>
+            <TouchableOpacity 
+              style={styles.iconBtnDark} 
+              onPress={() => navigation.navigate('Notifications')}
+            >
               <Text style={{ fontSize: 14 }}>🔔</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtnDark} onPress={() => navigation.navigate('Settings')}>
+            
+            <TouchableOpacity 
+              style={styles.iconBtnDark} 
+              onPress={() => navigation.navigate('Settings')}
+            >
               <Text style={{ fontSize: 14 }}>⚙️</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtnOrange}>
+            
+            <TouchableOpacity 
+              style={styles.iconBtnOrange} 
+              onPress={() => navigation.navigate('NewJob')}
+            >
               <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>+</Text>
             </TouchableOpacity>
           </View>

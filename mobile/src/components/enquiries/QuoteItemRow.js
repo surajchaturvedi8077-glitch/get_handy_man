@@ -18,8 +18,7 @@ export default function QuoteItemRow({ item, onChange, onRemove }) {
       />
       <TextInput
         value={String(item.amt)}
-        onChangeText={(v) => onChange({ ...item, amt: Number(v) || 0 })}
-        keyboardType="numeric"
+onChangeText={(v) => onChange({ ...item, cost: v })} // or amt: v        keyboardType="numeric"
         style={[styles.input, { width: 70 }]}
       />
       <Pressable onPress={onRemove} hitSlop={8}>

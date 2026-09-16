@@ -1,18 +1,12 @@
-/**
- * JobActions.js
- * ------------------------------------------------------------------
- * Bottom actions on a confirmed/complete job: "Mark complete"
- * (generates the invoice) and a "Delete job" flow gated behind a
- * confirmation step so a stray tap can't remove a job.
- * ------------------------------------------------------------------
- */
 import { useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import Button from '../ui/Button';
 import { colors } from '../../theme/colors';
 
 export default function JobActions({ job, onComplete, onDelete }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const navigation = useNavigation();
 
   if (confirmingDelete) {
     return (
@@ -32,7 +26,15 @@ export default function JobActions({ job, onComplete, onDelete }) {
 
   return (
     <View style={styles.row}>
-      {job.status !== 'complete' && (
+      {job.status === 'complete' ? (
+        <Button 
+          variant="dark" 
+          onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: job.invoiceId } })} 
+          style={styles.flex}
+        >
+          View Invoice
+        </Button>
+      ) : (
         <Button variant="green" onPress={onComplete} style={styles.flex}>
           Mark complete
         </Button>

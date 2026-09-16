@@ -1,9 +1,3 @@
-/**
- * MaterialItemRow.js
- * ------------------------------------------------------------------
- * One editable material line (name + cost) inside MaterialsEditor.
- * ------------------------------------------------------------------
- */
 import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
 import { colors } from '../../theme/colors';
 
@@ -17,7 +11,7 @@ export default function MaterialItemRow({ material, onChange, onRemove }) {
       />
       <TextInput
         value={String(material.cost)}
-        onChangeText={(v) => onChange({ ...material, cost: Number(v) || 0 })}
+        onChangeText={(v) => onChange({ ...material, cost: v })}
         keyboardType="numeric"
         style={[styles.input, { width: 70 }]}
       />

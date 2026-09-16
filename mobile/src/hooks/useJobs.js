@@ -1,9 +1,6 @@
-/**
- * useJobs.js
- * ------------------------------------------------------------------
- */
-import { useCallback, useEffect, useState } from 'react';
-import * as jobService from '../services/jobService';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import * as jobApi from '../services/jobService';
 
 export default function useJobs(status) {
   const [jobs, setJobs] = useState([]);
@@ -14,7 +11,8 @@ export default function useJobs(status) {
     setLoading(true);
     setError(null);
     try {
-      setJobs(await jobService.listJobs(status));
+      const data = await jobApi.listJobs(status);
+      setJobs(data);
     } catch (err) {
       setError(err.response?.data?.message || err.message);
     } finally {
@@ -22,9 +20,7 @@ export default function useJobs(status) {
     }
   }, [status]);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
 
   return { jobs, loading, error, refresh };
 }

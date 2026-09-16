@@ -27,8 +27,7 @@ export default function DiscountEditor({ discount, onChange }) {
         </View>
         <TextInput
           value={String(discount.value)}
-          onChangeText={(v) => onChange({ ...discount, value: Number(v) || 0 })}
-          keyboardType="numeric"
+            onChangeText={(v) => onChange({ ...item, cost: v })} // or amt: v          keyboardType="numeric"
           style={styles.input}
         />
       </View>
