@@ -8,13 +8,15 @@ const jobSchema = new mongoose.Schema(
     name: { type: String, required: true },
     phone: String,
     email: String,
-    service: { type: String, required: true },
+    services: [String], 
+    service: String, 
     when: String,
+    exactTime: String,
     scheduledDate: Date,
     address: { type: String, required: true },
-    suburb: String, // NEW FIELD
-    postcode: String, // NEW FIELD
-    attachmentUrl: String, // NEW FIELD
+    suburb: String, 
+    postcode: String, 
+    attachmentUrl: String, 
     status: { type: String, enum: ['accepted', 'confirmed', 'complete'], default: 'accepted' },
     needsDetails: { type: Boolean, default: true },
     materials: [materialSchema],
@@ -25,4 +27,5 @@ const jobSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model('Job', jobSchema);
+// FIXED: Check if the model already exists in memory before compiling it
+module.exports = mongoose.models.Job || mongoose.model('Job', jobSchema);
