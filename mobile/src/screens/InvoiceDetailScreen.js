@@ -211,13 +211,9 @@ export default function InvoiceDetailScreen() {
   };
 
   const handlePreviewPdf = async () => {
-    try {
-      showToast('Opening Preview...');
-      const uri = await generatePDFUri();
-      await Print.printAsync({ uri }); // Opens native preview screen
-    } catch (err) {
-      Alert.alert("PDF Error", "Could not preview the PDF.");
-    }
+    showToast('Generating Preview...');
+    const uri = await generatePDFUri();
+    navigation.navigate('PdfPreview', { uri, title: `Invoice_${invoice.number}.pdf` });
   };
 
   const handleSharePdf = async () => {

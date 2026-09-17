@@ -1,26 +1,30 @@
 const mongoose = require('mongoose');
 
-const quoteItemSchema = new mongoose.Schema({ name: String, qty: { type: Number, default: 1 }, amt: { type: Number, default: 0 } }, { _id: false });
+const materialSchema = new mongoose.Schema({ name: String, cost: { type: Number, default: 0 } }, { _id: false });
 
-const enquirySchema = new mongoose.Schema(
+const jobSchema = new mongoose.Schema(
   {
+    enquiryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enquiry', default: null },
     name: { type: String, required: true },
     phone: String,
     email: String,
-    service: { type: String, required: true },
+    services: [String], // UPDATED
+    service: String, // fallback for legacy
     when: String,
-    address: String,
+    exactTime: String,
+    scheduledDate: Date,
+    address: { type: String, required: true },
     suburb: String,
-    postcode: String, // NEW FIELD
-    message: String,
-    attachmentUrl: String, // NEW FIELD for the file upload
-    status: { type: String, enum: ['new', 'quoted', 'accepted', 'rejected'], default: 'new' },
-    price: { type: Number, default: 0 },
-    quoteItems: [quoteItemSchema],
-    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null },
-    received: { type: Date, default: Date.now },
+    postcode: String,
+    attachmentUrl: String,
+    status: { type: String, enum: ['accepted', 'confirmed', 'complete'], default: 'accepted' },
+    needsDetails: { type: Boolean, default: true },
+    materials: [materialSchema],
+    labour: { type: Number, default: 0 },
+    notes: String,
+    invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model('Enquiry', enquirySchema);
+module.exports = mongoose.model('Job', jobSchema);

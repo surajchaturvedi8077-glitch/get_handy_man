@@ -3,6 +3,7 @@ import { View, ScrollView, Text, StyleSheet, TouchableOpacity, TextInput } from 
 import { useRoute, useNavigation } from '@react-navigation/native';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import JobStatusBadge from '../components/jobs/JobStatusBadge';
+import JobDetailForm from '../components/jobs/JobDetailForm';
 import Button from '../components/ui/Button';
 import LoadingState from '../components/ui/LoadingState';
 import useJob from '../hooks/useJob';
@@ -18,11 +19,18 @@ export default function JobDetailScreen() {
   const { job, loading, saveDetails, complete, remove } = useJob(params.id);
   
   const [editingPrice, setEditingPrice] = useState(false);
+  const [isEditingJob, setIsEditingJob] = useState(false); // NEW: Controls the Edit Mode
   const [priceInput, setPriceInput] = useState('0');
   const [optionsOpen, setOptionsOpen] = useState(false); 
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (loading || !job) return <View style={styles.screen}><LoadingState /></View>;
+
+  const handleSaveDetails = async (payload) => {
+    await saveDetails(payload);
+    setIsEditingJob(false);
+    showToast('Job details saved');
+  };
 
   const handleSavePrice = async () => {
     await saveDetails({ labour: Number(priceInput) });
@@ -34,7 +42,6 @@ export default function JobDetailScreen() {
     try {
       const { invoice } = await complete();
       showToast('Job marked complete');
-      // Navigate directly to the newly created invoice to avoid routing crashes
       navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: invoice._id } });
     } catch (err) {
       showToast(err.response?.data?.message || 'Failed to complete job');
@@ -73,62 +80,73 @@ export default function JobDetailScreen() {
 
         <View style={styles.divider} />
 
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📅</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Date & time</Text>
-            <Text style={styles.value}>{job.when}</Text>
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📍</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Location</Text>
-            <Text style={styles.value}>{job.address}</Text>
-          </View>
-          <Button variant="outline" style={{ paddingVertical: 6, paddingHorizontal: 12 }} onPress={() => openMaps(job.address)}>
-            Locate
-          </Button>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📝</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Notes</Text>
-            <Text style={styles.value}>{job.notes || 'No notes provided.'}</Text>
-          </View>
-        </View>
-
-        <View style={styles.priceCard}>
-          {editingPrice ? (
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TextInput style={styles.priceInput} value={priceInput} onChangeText={setPriceInput} keyboardType="numeric" autoFocus />
-              <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={handleSavePrice}>Save</Button>
+        {/* If the job needs details OR the user tapped Edit, show the form */}
+        {job.needsDetails || isEditingJob ? (
+          <JobDetailForm job={job} onSave={handleSaveDetails} />
+        ) : (
+          <>
+            <View style={styles.fieldRow}>
+              <Text style={styles.icon}>📅</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Date & time</Text>
+                <Text style={styles.value}>{job.when}</Text>
+              </View>
             </View>
-          ) : (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View><Text style={styles.labelOrange}>Price</Text><Text style={styles.priceText}>{money(job.labour)}</Text></View>
-              <TouchableOpacity style={styles.editBtn} onPress={() => { setPriceInput(String(job.labour)); setEditingPrice(true); }}><Text>✏️</Text></TouchableOpacity>
+
+            <View style={styles.fieldRow}>
+              <Text style={styles.icon}>📍</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Location</Text>
+                <Text style={styles.value}>{job.address}</Text>
+              </View>
+              <Button variant="outline" style={{ paddingVertical: 6, paddingHorizontal: 12 }} onPress={() => openMaps(job.address)}>
+                Locate
+              </Button>
             </View>
-          )}
-        </View>
 
-        <View style={styles.buttonRow}>
-          <Button variant="outline" style={{ flex: 1 }} onPress={() => openPhone(job.phone)}>Call</Button>
-          {job.status === 'complete' ? (
-            <Button variant="dark" style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: job.invoiceId } })}>View Invoice</Button>
-          ) : (
-            <Button variant="green" style={{ flex: 1 }} onPress={handleComplete}>Mark complete</Button>
-          )}
-        </View>
+            <View style={styles.fieldRow}>
+              <Text style={styles.icon}>📝</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Services & Notes</Text>
+                <Text style={styles.value}>{job.service}</Text>
+                <Text style={[styles.value, { color: colors.gray, marginTop: 4 }]}>{job.notes || 'No notes provided.'}</Text>
+              </View>
+            </View>
 
+            <View style={styles.priceCard}>
+              {editingPrice ? (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TextInput style={styles.priceInput} value={priceInput} onChangeText={setPriceInput} keyboardType="numeric" autoFocus />
+                  <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={handleSavePrice}>Save</Button>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View><Text style={styles.labelOrange}>Labour Price</Text><Text style={styles.priceText}>{money(job.labour)}</Text></View>
+                  <TouchableOpacity style={styles.editBtn} onPress={() => { setPriceInput(String(job.labour)); setEditingPrice(true); }}><Text>✏️</Text></TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.buttonRow}>
+              <Button variant="outline" style={{ flex: 1 }} onPress={() => setIsEditingJob(true)}>Edit Details</Button>
+              {job.status === 'complete' ? (
+                <Button variant="dark" style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: job.invoiceId } })}>View Invoice</Button>
+              ) : (
+                <Button variant="green" style={{ flex: 1 }} onPress={handleComplete}>Mark complete</Button>
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
 
       {optionsOpen && (
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOptionsOpen(false)}>
           <View style={styles.sheet}>
             <View style={styles.handle} />
+            <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setIsEditingJob(true); }}>
+              <View style={[styles.sheetIconBox, { backgroundColor: colors.blueTint }]}><Text>✏️</Text></View>
+              <Text style={[styles.sheetText, { color: colors.blue }]}>Edit job details</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setConfirmDelete(true); }}>
               <View style={[styles.sheetIconBox, { backgroundColor: colors.redTint }]}><Text>🗑️</Text></View>
               <Text style={[styles.sheetText, { color: colors.red }]}>Delete job</Text>
@@ -149,7 +167,6 @@ export default function JobDetailScreen() {
           </View>
         </View>
       )}
-
     </View>
   );
 }
@@ -172,7 +189,7 @@ const styles = StyleSheet.create({
   editBtn: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   priceInput: { flex: 1, borderWidth: 1.5, borderColor: colors.orange, borderRadius: 8, padding: 8, backgroundColor: '#fff', fontSize: 14, fontWeight: '700' },
   buttonRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
-  overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(17,24,39,0.4)', justifyContent: 'flex-end' },
+  overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(17,24,39,0.4)', justifyContent: 'flex-end', zIndex: 50 },
   sheet: { backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 30, paddingTop: 10 },
   handle: { width: 36, height: 4, backgroundColor: colors.grayLight, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   sheetRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
