@@ -90,6 +90,7 @@ const sendQuote = asyncHandler(async (req, res) => {
 });
 
 // POST /api/enquiries/:id/accept  -> creates a Job from this enquiry
+// ... existing code above ...
 const acceptEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.findById(req.params.id);
   if (!enquiry) {
@@ -104,7 +105,11 @@ const acceptEnquiry = asyncHandler(async (req, res) => {
     email: enquiry.email,
     service: enquiry.service,
     when: enquiry.when,
-    address: [enquiry.address, enquiry.suburb].filter(Boolean).join(', '),
+    // Safely combine address parts
+    address: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', '),
+    suburb: enquiry.suburb,
+    postcode: enquiry.postcode,
+    attachmentUrl: enquiry.attachmentUrl, // Transfer the attachment
     status: 'accepted',
     needsDetails: true,
     labour: enquiry.price || 0,

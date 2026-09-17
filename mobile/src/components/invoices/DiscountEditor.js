@@ -1,15 +1,21 @@
-/**
- * DiscountEditor.js
- * ------------------------------------------------------------------
- * Lets the worker set a discount as either a flat amount ($) or a
- * percentage, and the discount value. Controlled: {discount, onChange}.
- * ------------------------------------------------------------------
- */
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import FieldLabel from '../ui/FieldLabel';
 import { colors } from '../../theme/colors';
 
 export default function DiscountEditor({ discount, onChange }) {
+  const [val, setVal] = useState(discount.value?.toString() || '0');
+
+  useEffect(() => {
+    setVal(discount.value?.toString() || '0');
+  }, [discount.value]);
+
+  const commitChanges = () => {
+    if (val !== discount.value?.toString()) {
+      onChange({ ...discount, value: val });
+    }
+  };
+
   return (
     <View style={{ marginBottom: 12 }}>
       <FieldLabel style={{ marginBottom: 6 }}>Discount</FieldLabel>
@@ -26,8 +32,10 @@ export default function DiscountEditor({ discount, onChange }) {
           ))}
         </View>
         <TextInput
-          value={String(discount.value)}
-            onChangeText={(v) => onChange({ ...item, cost: v })} // or amt: v          keyboardType="numeric"
+          value={val}
+          onChangeText={setVal}
+          onBlur={commitChanges}
+          keyboardType="numeric"
           style={styles.input}
         />
       </View>
@@ -41,13 +49,5 @@ const styles = StyleSheet.create({
   typeBtn: { flex: 1, paddingVertical: 7, borderRadius: 6, alignItems: 'center' },
   typeBtnActive: { backgroundColor: '#fff' },
   typeLabel: { fontSize: 11, fontWeight: '700', color: colors.charcoal },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.grayLight,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    fontSize: 12.5,
-  },
+  input: { flex: 1, borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, fontSize: 12.5 },
 });
