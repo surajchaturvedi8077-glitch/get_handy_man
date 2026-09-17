@@ -21,7 +21,7 @@ export default function PdfPreviewScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="PREVIEW DOCUMENT" />
+      <ScreenHeader title="PREVIEW PDF" />
       <WebView 
         source={{ uri }} 
         style={styles.webview} 

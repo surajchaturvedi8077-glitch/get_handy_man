@@ -1,30 +1,28 @@
 const mongoose = require('mongoose');
 
-const materialSchema = new mongoose.Schema({ name: String, cost: { type: Number, default: 0 } }, { _id: false });
+const quoteItemSchema = new mongoose.Schema({ name: String, qty: { type: Number, default: 1 }, amt: { type: Number, default: 0 } }, { _id: false });
 
-const jobSchema = new mongoose.Schema(
+const enquirySchema = new mongoose.Schema(
   {
-    enquiryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enquiry', default: null },
     name: { type: String, required: true },
     phone: String,
     email: String,
-    services: [String], // UPDATED
-    service: String, // fallback for legacy
+    services: [String], 
     when: String,
     exactTime: String,
-    scheduledDate: Date,
-    address: { type: String, required: true },
+    address: String,
     suburb: String,
-    postcode: String,
-    attachmentUrl: String,
-    status: { type: String, enum: ['accepted', 'confirmed', 'complete'], default: 'accepted' },
-    needsDetails: { type: Boolean, default: true },
-    materials: [materialSchema],
-    labour: { type: Number, default: 0 },
-    notes: String,
-    invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
+    postcode: String, 
+    message: String,
+    attachmentUrl: String, 
+    status: { type: String, enum: ['new', 'quoted', 'accepted', 'rejected'], default: 'new' },
+    price: { type: Number, default: 0 },
+    quoteItems: [quoteItemSchema],
+    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null },
+    received: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model('Job', jobSchema);
+// FIXED: Check if the model already exists in memory before compiling it
+module.exports = mongoose.models.Enquiry || mongoose.model('Enquiry', enquirySchema);

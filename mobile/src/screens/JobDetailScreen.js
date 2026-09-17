@@ -19,7 +19,7 @@ export default function JobDetailScreen() {
   const { job, loading, saveDetails, complete, remove } = useJob(params.id);
   
   const [editingPrice, setEditingPrice] = useState(false);
-  const [isEditingJob, setIsEditingJob] = useState(false); // NEW: Controls the Edit Mode
+  const [isEditingJob, setIsEditingJob] = useState(false); 
   const [priceInput, setPriceInput] = useState('0');
   const [optionsOpen, setOptionsOpen] = useState(false); 
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -32,12 +32,6 @@ export default function JobDetailScreen() {
     showToast('Job details saved');
   };
 
-  const handleSavePrice = async () => {
-    await saveDetails({ labour: Number(priceInput) });
-    setEditingPrice(false);
-    showToast('Price updated');
-  };
-
   const handleComplete = async () => {
     try {
       const { invoice } = await complete();
@@ -48,22 +42,12 @@ export default function JobDetailScreen() {
     }
   };
 
-  const handleDelete = async () => {
-    setOptionsOpen(false);
-    setConfirmDelete(false);
-    await remove();
-    showToast('Job deleted');
-    navigation.getParent()?.navigate('Jobs');
-  };
-
   return (
     <View style={styles.screen}>
       <ScreenHeader 
         title="JOB DETAILS" 
         rightAction={
-          <TouchableOpacity onPress={() => setOptionsOpen(true)} style={{ padding: 4 }}>
-            <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>⋮</Text>
-          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setOptionsOpen(true)} style={{ padding: 4 }}><Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>⋮</Text></TouchableOpacity>
         } 
       />
       <ScrollView contentContainerStyle={styles.content}>
@@ -80,7 +64,6 @@ export default function JobDetailScreen() {
 
         <View style={styles.divider} />
 
-        {/* If the job needs details OR the user tapped Edit, show the form */}
         {job.needsDetails || isEditingJob ? (
           <JobDetailForm job={job} onSave={handleSaveDetails} />
         ) : (
@@ -89,7 +72,8 @@ export default function JobDetailScreen() {
               <Text style={styles.icon}>📅</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Date & time</Text>
-                <Text style={styles.value}>{job.when}</Text>
+                {/* Safe string render to avoid Invalid Date crash */}
+                <Text style={styles.value}>{job.when || 'Not set'}</Text>
               </View>
             </View>
 
@@ -99,25 +83,38 @@ export default function JobDetailScreen() {
                 <Text style={styles.label}>Location</Text>
                 <Text style={styles.value}>{job.address}</Text>
               </View>
-              <Button variant="outline" style={{ paddingVertical: 6, paddingHorizontal: 12 }} onPress={() => openMaps(job.address)}>
-                Locate
-              </Button>
+              <Button variant="outline" style={{ paddingVertical: 6, paddingHorizontal: 12 }} onPress={() => openMaps(job.address)}>Locate</Button>
             </View>
 
             <View style={styles.fieldRow}>
               <Text style={styles.icon}>📝</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Services & Notes</Text>
-                <Text style={styles.value}>{job.service}</Text>
-                <Text style={[styles.value, { color: colors.gray, marginTop: 4 }]}>{job.notes || 'No notes provided.'}</Text>
+                <Text style={styles.label}>Services</Text>
+                <Text style={styles.value}>
+                  {(job.services && job.services.length > 0) ? job.services.join(', ') : (job.service || 'None')}
+                </Text>
               </View>
             </View>
+
+            {(job.extraFields && job.extraFields.length > 0) && (
+              <View style={styles.fieldRow}>
+                <Text style={styles.icon}>📋</Text>
+                <View style={{ flex: 1 }}>
+                  {job.extraFields.map((f, idx) => (
+                    <View key={idx} style={{ marginBottom: 4 }}>
+                      <Text style={styles.label}>{f.label}</Text>
+                      <Text style={styles.value}>{f.value}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
 
             <View style={styles.priceCard}>
               {editingPrice ? (
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <TextInput style={styles.priceInput} value={priceInput} onChangeText={setPriceInput} keyboardType="numeric" autoFocus />
-                  <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={handleSavePrice}>Save</Button>
+                  <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={async () => { await saveDetails({ labour: Number(priceInput) }); setEditingPrice(false); showToast('Price saved'); }}>Save</Button>
                 </View>
               ) : (
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -138,35 +135,6 @@ export default function JobDetailScreen() {
           </>
         )}
       </ScrollView>
-
-      {optionsOpen && (
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOptionsOpen(false)}>
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-            <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setIsEditingJob(true); }}>
-              <View style={[styles.sheetIconBox, { backgroundColor: colors.blueTint }]}><Text>✏️</Text></View>
-              <Text style={[styles.sheetText, { color: colors.blue }]}>Edit job details</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setConfirmDelete(true); }}>
-              <View style={[styles.sheetIconBox, { backgroundColor: colors.redTint }]}><Text>🗑️</Text></View>
-              <Text style={[styles.sheetText, { color: colors.red }]}>Delete job</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      )}
-
-      {confirmDelete && (
-        <View style={styles.overlay}>
-          <View style={styles.confirmBox}>
-            <Text style={styles.confirmTitle}>Delete this job?</Text>
-            <Text style={styles.confirmSub}>Are you sure you want to delete it? This can't be undone.</Text>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Button variant="outline" style={{ flex: 1 }} onPress={() => setConfirmDelete(false)}>Cancel</Button>
-              <Button variant="primary" style={{ flex: 1, backgroundColor: colors.red }} onPress={handleDelete}>Delete</Button>
-            </View>
-          </View>
-        </View>
-      )}
     </View>
   );
 }
@@ -188,14 +156,5 @@ const styles = StyleSheet.create({
   priceText: { fontSize: 18, fontWeight: '800', color: colors.charcoal },
   editBtn: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   priceInput: { flex: 1, borderWidth: 1.5, borderColor: colors.orange, borderRadius: 8, padding: 8, backgroundColor: '#fff', fontSize: 14, fontWeight: '700' },
-  buttonRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
-  overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(17,24,39,0.4)', justifyContent: 'flex-end', zIndex: 50 },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 30, paddingTop: 10 },
-  handle: { width: 36, height: 4, backgroundColor: colors.grayLight, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  sheetRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
-  sheetIconBox: { width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  sheetText: { fontSize: 14, fontWeight: '600' },
-  confirmBox: { backgroundColor: '#fff', margin: 20, borderRadius: 14, padding: 20, alignSelf: 'center', top: '30%', position: 'absolute', width: '90%' },
-  confirmTitle: { fontWeight: '800', fontSize: 15, marginBottom: 6 },
-  confirmSub: { fontSize: 12.5, color: colors.gray, marginBottom: 18, lineHeight: 18 }
+  buttonRow: { flexDirection: 'row', gap: 10, marginTop: 18 }
 });

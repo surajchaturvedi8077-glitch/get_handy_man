@@ -21,8 +21,13 @@ export default function NewJobScreen() {
   const [suggestions, setSuggestions] = useState([]);
   const [form, setForm] = useState({
     name: '', phone: '', email: '', when: '', address: '', suburb: '', postcode: '',
-    service: 'General Handyman', labour: '180', notes: ''
+    labour: '180', notes: ''
   });
+  
+  // Arrays for dynamic fields
+  const [services, setServices] = useState(['General Handyman']);
+  const [materials, setMaterials] = useState([]);
+  const [extraFields, setExtraFields] = useState([]);
 
   const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -35,12 +40,14 @@ export default function NewJobScreen() {
         when: form.when || 'Not scheduled yet',
         address: [form.address, form.suburb, form.postcode].filter(Boolean).join(', '),
         labour: Number(form.labour) || 0,
+        services: services.filter(Boolean),
+        extraFields: extraFields.filter(f => f.label && f.value),
+        materials,
         status: 'confirmed',
-        needsDetails: false, 
-        materials: [] 
+        needsDetails: false
       };
       await jobService.createJob(payload);
-      showToast('Job created manually');
+      showToast('Job created successfully');
       navigation.navigate('Dashboard');
     } catch (err) {
       showToast(err.response?.data?.message || 'Failed to create job');
@@ -49,39 +56,29 @@ export default function NewJobScreen() {
     }
   };
 
-  const formatSafeDate = (d) => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    let hrs = d.getHours();
-    const mins = d.getMinutes().toString().padStart(2, '0');
-    const ampm = hrs >= 12 ? 'PM' : 'AM';
-    hrs = hrs % 12 || 12;
-    return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} · ${hrs}:${mins} ${ampm}`;
-  };
-
-  const onDateChange = (event, selectedDate) => {
-    if (Platform.OS === 'android') setShowDatePicker(false);
+const onDateChange = (event, selectedDate) => {
+  try {
+    console.log("Event type:", event.type);
+    console.log("Selected Date object:", selectedDate);
+    
+    setShowDatePicker(false);
     if (selectedDate) {
       setDate(selectedDate);
-      updateForm('when', formatSafeDate(selectedDate));
+      updateForm('when', selectedDate.toString());
     }
-  };
-
+  } catch (err) {
+    console.log("CRASH CAUGHT IN DATE PICKER:", err.message);
+  }
+};
   const searchPlaces = (text) => {
     updateForm('address', text);
     if (text.length < 4) { setSuggestions([]); return; }
-
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(async () => {
       try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&countrycodes=au&format=json&limit=4`, {
-          headers: { 'User-Agent': 'GetHandymanApp/1.0' }
-        });
-        const data = await response.json();
-        setSuggestions(data);
-      } catch (e) {
-        console.log('Location fetch failed', e);
-      }
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&countrycodes=au&format=json&limit=4`, { headers: { 'User-Agent': 'GetHandymanApp/1.0' } });
+        setSuggestions(await response.json());
+      } catch (e) { }
     }, 800);
   };
 
@@ -89,6 +86,7 @@ export default function NewJobScreen() {
     <View style={styles.screen}>
       <ScreenHeader title="NEW JOB" />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        
         <View style={styles.customerStrip}>
           <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
           <View style={{ flex: 1 }}>
@@ -118,7 +116,7 @@ export default function NewJobScreen() {
             {suggestions.length > 0 && (
               <View style={styles.dropdown}>
                 {suggestions.map((item, index) => (
-                  <TouchableOpacity key={item.place_id || index} style={styles.dropdownItem} onPress={() => { updateForm('address', item.display_name); setSuggestions([]); }}>
+                  <TouchableOpacity key={index} style={styles.dropdownItem} onPress={() => { updateForm('address', item.display_name); setSuggestions([]); }}>
                     <Text style={styles.dropdownText} numberOfLines={2}>{item.display_name}</Text>
                   </TouchableOpacity>
                 ))}
@@ -126,32 +124,39 @@ export default function NewJobScreen() {
             )}
           </View>
         </View>
-        
-        <View style={styles.rowSplit}>
-          <View style={{ flex: 1, marginLeft: 46 }}>
-            <FieldLabel>Suburb</FieldLabel>
-            <TextInput style={styles.input} value={form.suburb} onChangeText={v => updateForm('suburb', v)} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <FieldLabel>Postcode</FieldLabel>
-            <TextInput style={styles.input} value={form.postcode} onChangeText={v => updateForm('postcode', v)} keyboardType="numeric" />
-          </View>
-        </View>
 
         <View style={[styles.detailsCard, { zIndex: -1 }]}>
           <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
-          <FieldLabel>Service Type</FieldLabel>
-          <TextInput style={[styles.input, styles.cardInput]} value={form.service} onChangeText={v => updateForm('service', v)} />
+          
+          <FieldLabel>Services</FieldLabel>
+          {services.map((srv, idx) => (
+            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv} onChangeText={v => { const s = [...services]; s[idx] = v; setServices(s); }} placeholder="e.g. Plumbing Repair" />
+              <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+            </View>
+          ))}
+          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, ''])}>+ Add another service</Button>
+
           <FieldLabel>Labour Cost (A$)</FieldLabel>
-          <TextInput style={[styles.input, styles.cardInput]} value={form.labour} onChangeText={v => updateForm('labour', v)} keyboardType="numeric" />
-          <FieldLabel>Other Details / Notes</FieldLabel>
-          <TextInput style={[styles.input, styles.cardInput, { minHeight: 60, textAlignVertical: 'top' }]} value={form.notes} onChangeText={v => updateForm('notes', v)} multiline />
+          <TextInput style={[styles.input, { marginBottom: 14 }]} value={form.labour} onChangeText={v => updateForm('labour', v)} keyboardType="numeric" />
+          
+          <FieldLabel>Other Details / Fields</FieldLabel>
+          {extraFields.map((f, idx) => (
+            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.label} onChangeText={v => { const e = [...extraFields]; e[idx].label = v; setExtraFields(e); }} placeholder="Label" />
+              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.value} onChangeText={v => { const e = [...extraFields]; e[idx].value = v; setExtraFields(e); }} placeholder="Value" />
+              <TouchableOpacity onPress={() => setExtraFields(extraFields.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+            </View>
+          ))}
+          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setExtraFields([...extraFields, {label: '', value: ''}])}>+ Add other field</Button>
+
           <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
         </View>
       </ScrollView>
 
+      {/* SAFELY rendered date picker */}
       {showDatePicker && (
-        <DateTimePicker value={date} mode="datetime" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />
+        <DateTimePicker value={date || new Date()} mode="datetime" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />
       )}
     </View>
   );
@@ -164,7 +169,6 @@ const styles = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.charcoal, alignItems: 'center', justifyContent: 'center' },
   nameInput: { fontWeight: '800', fontSize: 16, color: colors.charcoal, padding: 0 },
   fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 6, alignItems: 'flex-start', zIndex: 10 },
-  rowSplit: { flexDirection: 'row', gap: 12, paddingVertical: 6 },
   icon: { width: 34, textAlign: 'center', fontSize: 17, marginTop: 18 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, backgroundColor: '#fff', marginTop: 4 },
   dropdown: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, marginTop: 4, maxHeight: 150 },
@@ -172,5 +176,4 @@ const styles = StyleSheet.create({
   dropdownText: { fontSize: 12, color: colors.charcoal },
   detailsCard: { backgroundColor: colors.orangeTint, borderRadius: 10, padding: 14, marginTop: 20 },
   cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.orangeDeep, marginBottom: 10 },
-  cardInput: { borderColor: colors.grayLight, marginBottom: 12 }
 });

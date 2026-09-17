@@ -1,36 +1,26 @@
-/**
- * settingsController.js
- * ------------------------------------------------------------------
- * Reads/updates the single business Settings document (branding, GST
- * toggle & default rate) and handles the business logo upload.
- * ------------------------------------------------------------------
- */
 const asyncHandler = require('../middleware/asyncHandler');
 const Settings = require('../models/Settings');
 const { ok } = require('../utils/apiResponse');
 
-// GET /api/settings
 const getSettings = asyncHandler(async (req, res) => {
   const settings = await Settings.getSingleton();
   ok(res, settings);
 });
 
-// PUT /api/settings
 const updateSettings = asyncHandler(async (req, res) => {
   const settings = await Settings.getSingleton();
-  const { businessName, abn, bizEmail, gstEnabled, gstRate } = req.body;
-
-  if (businessName !== undefined) settings.businessName = businessName;
-  if (abn !== undefined) settings.abn = abn;
-  if (bizEmail !== undefined) settings.bizEmail = bizEmail;
-  if (gstEnabled !== undefined) settings.gstEnabled = gstEnabled;
-  if (gstRate !== undefined) settings.gstRate = gstRate;
+  
+  // Update every field dynamically if it is provided
+  Object.keys(req.body).forEach(key => {
+    if (req.body[key] !== undefined) {
+      settings[key] = req.body[key];
+    }
+  });
 
   await settings.save();
   ok(res, settings);
 });
 
-// POST /api/settings/logo  (multipart/form-data, field name "logo")
 const uploadLogo = asyncHandler(async (req, res) => {
   if (!req.file) {
     res.status(400);
