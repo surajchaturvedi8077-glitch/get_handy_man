@@ -1,10 +1,3 @@
-/**
- * EnquirySummaryCard.js
- * ------------------------------------------------------------------
- * Read-only summary of an enquiry's contact + job details, shown at
- * the top of the enquiry detail screen.
- * ------------------------------------------------------------------
- */
 import { View, Text, StyleSheet } from 'react-native';
 import Chip from '../ui/Chip';
 import { colors } from '../../theme/colors';
@@ -12,6 +5,10 @@ import { colors } from '../../theme/colors';
 const CHIP_TONE = { new: 'orange', quoted: 'blue', accepted: 'green', rejected: 'red' };
 
 export default function EnquirySummaryCard({ enquiry }) {
+  const serviceText = (enquiry.services && enquiry.services.length > 0) 
+    ? enquiry.services.join(', ') 
+    : (enquiry.service || 'No service specified');
+
   return (
     <View style={styles.wrap}>
       <View style={styles.top}>
@@ -20,7 +17,7 @@ export default function EnquirySummaryCard({ enquiry }) {
           {enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}
         </Chip>
       </View>
-      <Text style={styles.service}>{enquiry.service}</Text>
+      <Text style={styles.service}>{serviceText}</Text>
       <View style={styles.details}>
         {enquiry.phone ? <Text style={styles.detail}>{enquiry.phone}</Text> : null}
         {enquiry.email ? <Text style={styles.detail}>{enquiry.email}</Text> : null}

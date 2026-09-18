@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, ScrollView, Text, StyleSheet, Alert } from 'react-native';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import ScreenHeader from '../components/layout/ScreenHeader';
@@ -24,6 +24,7 @@ const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
 
 export default function InvoiceDetailScreen() {
   const { params } = useRoute();
+  const navigation = useNavigation();
   const { showToast } = useToast();
   const { settings } = useSettings();
   const {
@@ -44,31 +45,17 @@ export default function InvoiceDetailScreen() {
 
   const isPaid = invoice.status === 'paid';
 
-  const generatePDFUri = async () => {
-    // 1. Format the items array into HTML table rows
+  const generateHTMLString = () => {
     const itemsHtml = invoice.items && invoice.items.length 
-      ? invoice.items.map(i => `
-          <tr>
-            <td class="text-left" style="border-bottom: 1px solid #E5E7EB;">${i.name || ''}</td>
-            <td class="text-center" style="border-bottom: 1px solid #E5E7EB;">${i.qty || 1}</td>
-            <td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${parseFloat(i.amt || 0).toFixed(2)}</td>
-            <td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${(parseFloat(i.amt || 0) * parseInt(i.qty || 1)).toFixed(2)}</td>
-          </tr>
-        `).join('')
+      ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB;">${i.qty || 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${(parseFloat(i.amt || 0) * parseInt(i.qty || 1)).toFixed(2)}</td></tr>`).join('')
       : '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
 
-    // 2. Safely grab the logo to display (fallback to empty if none uploaded)
-    const logoSrc = settings?.logoUrl 
-      ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`)
-      : '';
+    const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
     const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${settings?.businessName || 'Get Handyman'}</h2>`;
-
-    // 3. Format Date safely (DD/MM/YYYY)
     const invDate = new Date(invoice.date).toLocaleDateString('en-GB');
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-GB') : invDate;
 
-    // 4. Construct the HTML exactly matching the screenshot
-    const html = `
+    return `
       <html>
         <head>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
@@ -90,141 +77,58 @@ export default function InvoiceDetailScreen() {
             .meta-right td { padding: 0 0 0 15px; }
             .meta-right .label { color: #9CA3AF; }
             .meta-right .val { color: #374151; }
-            
             .items-table { width: 100%; border-collapse: collapse; margin-top: 40px; font-size: 11px; }
             .items-table th { background-color: #1D4ED8; color: #ffffff; padding: 12px 10px; font-weight: 700; }
             .items-table td { padding: 12px 10px; color: #374151; }
             .text-left { text-align: left; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
-            
             .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
             .totals { width: 260px; font-size: 11px; color: #374151; }
             .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; }
             .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
-            
-            /* SVG Background Bubbles mapped to bottom left */
             .bg-shapes { position: absolute; bottom: 0; left: 0; width: 350px; height: 350px; z-index: -1; opacity: 0.6; pointer-events: none; }
           </style>
         </head>
         <body>
-          <!-- Watermark graphics matched to prototype -->
-          <svg class="bg-shapes" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="30" cy="160" r="45" fill="#F4E8FF" />
-            <circle cx="110" cy="120" r="22" fill="#F1F5F9" />
-            <circle cx="160" cy="180" r="35" fill="#FFF1F2" />
-            <circle cx="80" cy="190" r="18" fill="#FDF4FF" />
-          </svg>
-          
-          <div class="header">
-            <div>
-              ${logoImg}
-            </div>
-            <div class="biz-details">
-              <div>${settings?.bizCityState || 'Melbourne, Victoria'}</div>
-              <div>${settings?.bizPhone || '0401923333'}</div>
-              <div>${settings?.website || 'www.gethandyman.com.au'}</div>
-            </div>
-          </div>
-          
-          <div class="title-row">
-            <h1 class="biz-name">${settings?.businessName || 'Get Handyman'}</h1>
-            <h2 class="doc-type">Invoice</h2>
-          </div>
-          
+          <svg class="bg-shapes" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><circle cx="30" cy="160" r="45" fill="#F4E8FF" /><circle cx="110" cy="120" r="22" fill="#F1F5F9" /><circle cx="160" cy="180" r="35" fill="#FFF1F2" /><circle cx="80" cy="190" r="18" fill="#FDF4FF" /></svg>
+          <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${settings?.bizCityState || 'Melbourne, Victoria'}</div><div>${settings?.bizPhone || '0401923333'}</div><div>${settings?.website || 'www.gethandyman.com.au'}</div></div></div>
+          <div class="title-row"><h1 class="biz-name">${settings?.businessName || 'Get Handyman'}</h1><h2 class="doc-type">Invoice</h2></div>
           <div class="divider"></div>
-          
           <div class="meta-row">
-            <div class="bill-to">
-              <div class="bill-to-label">Bill To:</div>
-              <div class="bill-to-details">
-                <div style="font-weight: 700;">${invoice.customer || 'Customer Name'}</div>
-                ${invoice.customerEmail ? `<div>${invoice.customerEmail}</div>` : ''}
-                ${invoice.customerPhone ? `<div>${invoice.customerPhone}</div>` : ''}
-              </div>
-            </div>
-            <div class="meta-right">
-              <table>
-                <tr><td class="label">Invoice No:</td><td class="val">${invoice.number?.replace('GH-', '') || '0'}</td></tr>
-                <tr><td class="label">Date:</td><td class="val">${invDate}</td></tr>
-                <tr><td class="label">Terms:</td><td class="val">${invoice.terms === 'Due on receipt' ? 'NET 0' : invoice.terms}</td></tr>
-                <tr><td class="label">Due Date:</td><td class="val">${dueDate}</td></tr>
-              </table>
-            </div>
+            <div class="bill-to"><div class="bill-to-label">Bill To:</div><div class="bill-to-details"><div style="font-weight: 700;">${invoice.customer || 'Customer Name'}</div>${invoice.customerEmail ? `<div>${invoice.customerEmail}</div>` : ''}${invoice.customerPhone ? `<div>${invoice.customerPhone}</div>` : ''}</div></div>
+            <div class="meta-right"><table><tr><td class="label">Invoice No:</td><td class="val">${invoice.number?.replace('GH-', '') || '0'}</td></tr><tr><td class="label">Date:</td><td class="val">${invDate}</td></tr><tr><td class="label">Terms:</td><td class="val">${invoice.terms === 'Due on receipt' ? 'NET 0' : invoice.terms}</td></tr><tr><td class="label">Due Date:</td><td class="val">${dueDate}</td></tr></table></div>
           </div>
-          
-          <table class="items-table">
-            <tr>
-              <th class="text-left">Description</th>
-              <th class="text-center">Quantity</th>
-              <th class="text-right">Rate</th>
-              <th class="text-right">Amount</th>
-            </tr>
-            ${itemsHtml}
-          </table>
-          
+          <table class="items-table"><tr><th class="text-left">Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>${itemsHtml}</table>
           <div class="totals-container">
             <div class="totals">
-              <div class="totals-row">
-                <span>Subtotal</span>
-                <span>$${parseFloat(invoice.totals?.subtotal || 0).toFixed(2)}</span>
-              </div>
-              ${invoice.totals?.discAmt > 0 ? `
-              <div class="totals-row">
-                <span>Discount</span>
-                <span>-$${parseFloat(invoice.totals.discAmt).toFixed(2)}</span>
-              </div>` : ''}
-              <div class="totals-row">
-                <span>${invoice.totals?.applyGst ? `GST ${settings?.gstRate || 10}%` : 'GST'}</span>
-                <span>${invoice.totals?.applyGst ? `$${parseFloat(invoice.totals.gst).toFixed(2)}` : '$0.00'}</span>
-              </div>
-              <div class="totals-row">
-                <span>Total</span>
-                <span>$${parseFloat(invoice.totals?.total || 0).toFixed(2)}</span>
-              </div>
-              <div class="totals-row">
-                <span>Paid</span>
-                <span>$${invoice.status === 'paid' ? parseFloat(invoice.totals?.total || 0).toFixed(2) : '0.00'}</span>
-              </div>
-              
-              <div class="balance-due">
-                <span>Balance Due</span>
-                <span>$${invoice.status === 'paid' ? '0.00' : parseFloat(invoice.totals?.total || 0).toFixed(2)}</span>
-              </div>
+              <div class="totals-row"><span>Subtotal</span><span>$${parseFloat(invoice.totals?.subtotal || 0).toFixed(2)}</span></div>
+              ${invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${parseFloat(invoice.totals.discAmt).toFixed(2)}</span></div>` : ''}
+              <div class="totals-row"><span>${invoice.totals?.applyGst ? `GST ${settings?.gstRate || 10}%` : 'GST'}</span><span>${invoice.totals?.applyGst ? `$${parseFloat(invoice.totals.gst).toFixed(2)}` : '$0.00'}</span></div>
+              <div class="totals-row"><span>Total</span><span>$${parseFloat(invoice.totals?.total || 0).toFixed(2)}</span></div>
+              <div class="totals-row"><span>Paid</span><span>$${invoice.status === 'paid' ? parseFloat(invoice.totals?.total || 0).toFixed(2) : '0.00'}</span></div>
+              <div class="balance-due"><span>Balance Due</span><span>$${invoice.status === 'paid' ? '0.00' : parseFloat(invoice.totals?.total || 0).toFixed(2)}</span></div>
             </div>
           </div>
-          
-          ${settings?.bankName ? `
-          <div style="margin-top: 40px; font-size: 10px; color: #6B7280; line-height: 1.6;">
-            <strong>Payment Details</strong><br/>
-            Bank: ${settings.bankName}<br/>
-            BSB: ${settings.bsb || ''}<br/>
-            Account: ${settings.account || ''}<br/>
-            Account Name: ${settings.accountName || ''}
-          </div>
-          ` : ''}
+          ${settings?.bankName ? `<div style="margin-top: 40px; font-size: 10px; color: #6B7280; line-height: 1.6;"><strong>Payment Details</strong><br/>Bank: ${settings.bankName}<br/>BSB: ${settings.bsb || ''}<br/>Account: ${settings.account || ''}<br/>Account Name: ${settings.accountName || ''}</div>` : ''}
         </body>
       </html>
     `;
-    const { uri } = await Print.printToFileAsync({ html, base64: false });
-    return uri;
   };
 
-  const handlePreviewPdf = async () => {
-    showToast('Generating Preview...');
-    const uri = await generatePDFUri();
-    navigation.navigate('PdfPreview', { uri, title: `Invoice_${invoice.number}.pdf` });
+  // EXPLICITLY Routes to the Preview Screen using the raw HTML
+  const handlePreviewPdf = () => {
+    const html = generateHTMLString();
+    navigation.navigate('PdfPreview', { html, title: `Invoice_${invoice.number}.pdf` });
   };
 
+  // EXPLICITLY generates the PDF and shares it
   const handleSharePdf = async () => {
     try {
       showToast('Generating Document...');
-      const uri = await generatePDFUri();
-      await Sharing.shareAsync(uri, { 
-        UTI: '.pdf', 
-        mimeType: 'application/pdf',
-        dialogTitle: `Invoice_${invoice.number}.pdf`
-      });
+      const html = generateHTMLString();
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Invoice_${invoice.number}.pdf` });
     } catch (err) {
       Alert.alert("PDF Error", "Could not share the PDF.");
     }
@@ -232,52 +136,32 @@ export default function InvoiceDetailScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} />
+      <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => navigation.navigate('InvoicesList')} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
         <View style={{ marginBottom: 12 }}>
           <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
         </View>
-
         <GstIncludeToggle gstIncluded={invoice.gstIncluded} onToggle={toggleGstIncluded} />
-
         <InvoiceLineItemsEditor items={invoice.items} onChange={updateItems} />
-
         <View style={styles.divider} />
-
         <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
-
         <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
-
+        
+        {/* Actions explicitly bound to the two different functions */}
         <InvoiceActions
           isPaid={isPaid}
-          onTogglePaid={async () => {
-            await togglePaidStatus();
-            showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid');
-          }}
+          onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
           onPreviewPdf={handlePreviewPdf}
           onShare={handleSharePdf}
         />
 
         <FieldLabel style={{ marginVertical: 20, marginBottom: 4 }}>Job costs · internal, not shown to customer</FieldLabel>
         <Text style={styles.hintText}>Attach receipt photos for each expense.</Text>
-
         <FieldLabel style={{ marginBottom: 6 }}>Material expenses</FieldLabel>
-        <CostItemsEditor
-          items={invoice.costs.materials}
-          kind="materials"
-          onSetItems={(items) => setCostItems('materials', items)}
-          onUploadPhoto={(idx, file) => uploadCostItemPhoto('materials', idx, file)}
-        />
-
+        <CostItemsEditor items={invoice.costs.materials} kind="materials" onSetItems={(items) => setCostItems('materials', items)} onUploadPhoto={(idx, file) => uploadCostItemPhoto('materials', idx, file)} />
         <FieldLabel style={{ marginVertical: 14, marginBottom: 6 }}>Other expenses</FieldLabel>
-        <CostItemsEditor
-          items={invoice.costs.other}
-          kind="other"
-          onSetItems={(items) => setCostItems('other', items)}
-          onUploadPhoto={(idx, file) => uploadCostItemPhoto('other', idx, file)}
-        />
-
+        <CostItemsEditor items={invoice.costs.other} kind="other" onSetItems={(items) => setCostItems('other', items)} onUploadPhoto={(idx, file) => uploadCostItemPhoto('other', idx, file)} />
         <View style={styles.expenseCard}>
           <FieldLabel style={{ color: colors.blue }}>Total expense</FieldLabel>
           <Text style={styles.expenseTotal}>{money(invoice.costTotals?.total)}</Text>

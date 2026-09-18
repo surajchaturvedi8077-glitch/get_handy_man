@@ -1,10 +1,3 @@
-/**
- * EnquiryListItem.js
- * ------------------------------------------------------------------
- * One row in the enquiries list: name, status chip, service, and
- * when it was received. Tapping navigates to the detail screen.
- * ------------------------------------------------------------------
- */
 import { View, Text, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Card from '../ui/Card';
@@ -15,6 +8,11 @@ const CHIP_TONE = { new: 'orange', quoted: 'blue', accepted: 'green', rejected: 
 
 export default function EnquiryListItem({ enquiry }) {
   const navigation = useNavigation();
+  
+  const serviceText = (enquiry.services && enquiry.services.length > 0) 
+    ? enquiry.services.join(', ') 
+    : (enquiry.service || 'No service specified');
+
   return (
     <Card onPress={() => navigation.navigate('EnquiryDetail', { id: enquiry._id })}>
       <View style={styles.top}>
@@ -23,7 +21,7 @@ export default function EnquiryListItem({ enquiry }) {
           {enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}
         </Chip>
       </View>
-      <Text style={styles.service}>{enquiry.service}</Text>
+      <Text style={styles.service}>{serviceText}</Text>
       <View style={styles.bottom}>
         <Text style={styles.meta}>{enquiry.when}</Text>
         <Text style={styles.meta}>{new Date(enquiry.received).toLocaleDateString()}</Text>

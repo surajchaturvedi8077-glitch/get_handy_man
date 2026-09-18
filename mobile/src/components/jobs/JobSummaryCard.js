@@ -1,18 +1,15 @@
-/**
- * JobSummaryCard.js
- * ------------------------------------------------------------------
- * Read-only summary shown once a job's details are saved: service,
- * schedule, address, contact info, labour, and notes.
- * ------------------------------------------------------------------
- */
 import { View, Text, StyleSheet } from 'react-native';
 import { money } from '../../utils/money';
 import { colors } from '../../theme/colors';
 
 export default function JobSummaryCard({ job }) {
+  const serviceText = (job.services && job.services.length > 0) 
+    ? job.services.join(', ') 
+    : (job.service || 'None');
+
   return (
     <View style={styles.wrap}>
-      <Text style={styles.service}>{job.service}</Text>
+      <Text style={styles.service}>{serviceText}</Text>
       <Text style={styles.when}>{job.when}</Text>
       <View style={styles.details}>
         <Text style={styles.detail}>{job.address}</Text>

@@ -8,7 +8,8 @@ const { nextInvoiceNumber } = require('../services/numberingService');
 const listJobs = asyncHandler(async (req, res) => {
   const { status } = req.query;
   const filter = status && status !== 'all' ? { status } : {};
-  const jobs = await Job.find(filter).sort({ createdAt: -1 });
+  // FIXED: Sort by scheduledDate so jobs appear in proper chronological order
+  const jobs = await Job.find(filter).sort({ scheduledDate: 1, createdAt: -1 });
   ok(res, jobs);
 });
 
@@ -76,7 +77,6 @@ const markComplete = asyncHandler(async (req, res) => {
     throw new Error('Job not found');
   }
 
-  // FIXED: Prevent duplicate invoices
   if (job.status === 'complete') {
     res.status(400);
     throw new Error('Job is already marked complete');

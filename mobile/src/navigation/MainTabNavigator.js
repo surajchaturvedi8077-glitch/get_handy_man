@@ -10,8 +10,15 @@ import InvoicesStack from './InvoicesStack';
 
 const Tab = createBottomTabNavigator();
 
-// Icons matching the prototype
 const ICONS = { Home: '🏠', Enquiries: '📩', Jobs: '📅', Invoices: '💰' };
+
+// This helper intercepts the tab click and forcefully resets the screen back to the list
+const resetTab = (navigation, tabName, rootScreen) => ({
+  tabPress: (e) => {
+    e.preventDefault();
+    navigation.navigate(tabName, { screen: rootScreen });
+  },
+});
 
 export default function MainTabNavigator() {
   return (
@@ -27,20 +34,30 @@ export default function MainTabNavigator() {
         tabBarStyle: styles.tabBar,
       })}
     >
-      <Tab.Screen name="Home" component={DashboardStack} />
-      <Tab.Screen name="Enquiries" component={EnquiriesStack} />
-      <Tab.Screen name="Jobs" component={JobsStack} />
-      <Tab.Screen name="Invoices" component={InvoicesStack} />
+      <Tab.Screen 
+        name="Home" 
+        component={DashboardStack} 
+        listeners={({navigation}) => resetTab(navigation, 'Home', 'Dashboard')} 
+      />
+      <Tab.Screen 
+        name="Enquiries" 
+        component={EnquiriesStack} 
+        listeners={({navigation}) => resetTab(navigation, 'Enquiries', 'EnquiriesList')} 
+      />
+      <Tab.Screen 
+        name="Jobs" 
+        component={JobsStack} 
+        listeners={({navigation}) => resetTab(navigation, 'Jobs', 'JobsList')} 
+      />
+      <Tab.Screen 
+        name="Invoices" 
+        component={InvoicesStack} 
+        listeners={({navigation}) => resetTab(navigation, 'Invoices', 'InvoicesList')} 
+      />
     </Tab.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: colors.grayLight,
-    height: 60,
-    paddingTop: 8,
-  }
+  tabBar: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: colors.grayLight, height: 60, paddingTop: 8 }
 });

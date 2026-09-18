@@ -11,7 +11,7 @@ export const listJobs = (status) => unwrap(apiClient.get('/api/jobs', { params: 
 export const getJob = (id) => unwrap(apiClient.get(`/api/jobs/${id}`));
 
 export const updateJob = (id, payload) => unwrap(apiClient.put(`/api/jobs/${id}`, payload));
-
+export const createJob = (payload) => unwrap(apiClient.post('/api/jobs', payload));
 export const deleteJob = (id) => unwrap(apiClient.delete(`/api/jobs/${id}`));
 
 export const saveJobDetails = (id, payload) => unwrap(apiClient.put(`/api/jobs/${id}/details`, payload));

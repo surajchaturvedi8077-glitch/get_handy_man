@@ -297,6 +297,7 @@ mobile/
       LoginScreen.js
       NewJobScreen.js
       NotificationsScreen.js
+      PdfPreviewScreen.js
       SettingsScreen.js
     services/
       apiClient.js
@@ -447,144 +448,6 @@ const getMe = asyncHandler(async (req, res) => {
 });
 
 module.exports = { register, login, getMe };
-</file>
-
-<file path="backend/src/controllers/enquiryController.js">
-/**
- * enquiryController.js
- * ------------------------------------------------------------------
- * CRUD for website enquiries plus the enquiry-specific actions:
- * reject, send a quote, and accept (which spins up a Job). Each
- * function is intentionally small and does one thing.
- * ------------------------------------------------------------------
- */
-const asyncHandler = require('../middleware/asyncHandler');
-const Enquiry = require('../models/Enquiry');
-const Job = require('../models/Job');
-const { ok, created } = require('../utils/apiResponse');
-
-// GET /api/enquiries?status=new
-const listEnquiries = asyncHandler(async (req, res) => {
-  const { status } = req.query;
-  const filter = status && status !== 'all' ? { status } : {};
-  const enquiries = await Enquiry.find(filter).sort({ received: -1 });
-  ok(res, enquiries);
-});
-
-// GET /api/enquiries/:id
-const getEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findById(req.params.id);
-  if (!enquiry) {
-    res.status(404);
-    throw new Error('Enquiry not found');
-  }
-  ok(res, enquiry);
-});
-
-// POST /api/enquiries  (public — submitted from the marketing website form)
-const createEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.create(req.body);
-  created(res, enquiry);
-});
-
-// PUT /api/enquiries/:id  (edit details / quote line items while drafting)
-const updateEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true,
-  });
-  if (!enquiry) {
-    res.status(404);
-    throw new Error('Enquiry not found');
-  }
-  ok(res, enquiry);
-});
-
-// DELETE /api/enquiries/:id
-const deleteEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findByIdAndDelete(req.params.id);
-  if (!enquiry) {
-    res.status(404);
-    throw new Error('Enquiry not found');
-  }
-  ok(res, { deleted: true });
-});
-
-// POST /api/enquiries/:id/reject
-const rejectEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findByIdAndUpdate(
-    req.params.id,
-    { status: 'rejected' },
-    { new: true }
-  );
-  if (!enquiry) {
-    res.status(404);
-    throw new Error('Enquiry not found');
-  }
-  ok(res, enquiry);
-});
-
-// POST /api/enquiries/:id/send-quote  { items: [{name, qty, amt}] }
-const sendQuote = asyncHandler(async (req, res) => {
-  const { items = [] } = req.body;
-  const price = items.reduce((sum, it) => sum + (Number(it.qty) || 1) * (Number(it.amt) || 0), 0);
-
-  const enquiry = await Enquiry.findByIdAndUpdate(
-    req.params.id,
-    { quoteItems: items, price, status: 'quoted' },
-    { new: true }
-  );
-  if (!enquiry) {
-    res.status(404);
-    throw new Error('Enquiry not found');
-  }
-  ok(res, enquiry);
-});
-
-// POST /api/enquiries/:id/accept  -> creates a Job from this enquiry
-// ... existing code above ...
-const acceptEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findById(req.params.id);
-  if (!enquiry) {
-    res.status(404);
-    throw new Error('Enquiry not found');
-  }
-
-  const job = await Job.create({
-    enquiryId: enquiry._id,
-    name: enquiry.name,
-    phone: enquiry.phone,
-    email: enquiry.email,
-    service: enquiry.service,
-    when: enquiry.when,
-    // Safely combine address parts
-    address: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', '),
-    suburb: enquiry.suburb,
-    postcode: enquiry.postcode,
-    attachmentUrl: enquiry.attachmentUrl, // Transfer the attachment
-    status: 'accepted',
-    needsDetails: true,
-    labour: enquiry.price || 0,
-    notes: enquiry.message,
-  });
-
-  enquiry.status = 'accepted';
-  enquiry.jobId = job._id;
-  await enquiry.save();
-
-  created(res, { enquiry, job });
-});
-
-module.exports = {
-  listEnquiries,
-  getEnquiry,
-  createEnquiry,
-  updateEnquiry,
-  deleteEnquiry,
-  rejectEnquiry,
-  sendQuote,
-  acceptEnquiry,
-};
 </file>
 
 <file path="backend/src/controllers/invoiceController.js">
@@ -787,54 +650,6 @@ const getBusinessReport = asyncHandler(async (req, res) => {
 module.exports = { getBusinessReport };
 </file>
 
-<file path="backend/src/controllers/settingsController.js">
-/**
- * settingsController.js
- * ------------------------------------------------------------------
- * Reads/updates the single business Settings document (branding, GST
- * toggle & default rate) and handles the business logo upload.
- * ------------------------------------------------------------------
- */
-const asyncHandler = require('../middleware/asyncHandler');
-const Settings = require('../models/Settings');
-const { ok } = require('../utils/apiResponse');
-
-// GET /api/settings
-const getSettings = asyncHandler(async (req, res) => {
-  const settings = await Settings.getSingleton();
-  ok(res, settings);
-});
-
-// PUT /api/settings
-const updateSettings = asyncHandler(async (req, res) => {
-  const settings = await Settings.getSingleton();
-  const { businessName, abn, bizEmail, gstEnabled, gstRate } = req.body;
-
-  if (businessName !== undefined) settings.businessName = businessName;
-  if (abn !== undefined) settings.abn = abn;
-  if (bizEmail !== undefined) settings.bizEmail = bizEmail;
-  if (gstEnabled !== undefined) settings.gstEnabled = gstEnabled;
-  if (gstRate !== undefined) settings.gstRate = gstRate;
-
-  await settings.save();
-  ok(res, settings);
-});
-
-// POST /api/settings/logo  (multipart/form-data, field name "logo")
-const uploadLogo = asyncHandler(async (req, res) => {
-  if (!req.file) {
-    res.status(400);
-    throw new Error('No logo file uploaded');
-  }
-  const settings = await Settings.getSingleton();
-  settings.logoUrl = `/uploads/${req.file.filename}`;
-  await settings.save();
-  ok(res, settings);
-});
-
-module.exports = { getSettings, updateSettings, uploadLogo };
-</file>
-
 <file path="backend/src/middleware/asyncHandler.js">
 /**
  * asyncHandler.js
@@ -1005,35 +820,6 @@ const upload = multer({
 module.exports = upload;
 </file>
 
-<file path="backend/src/models/Enquiry.js">
-const mongoose = require('mongoose');
-
-const quoteItemSchema = new mongoose.Schema({ name: String, qty: { type: Number, default: 1 }, amt: { type: Number, default: 0 } }, { _id: false });
-
-const enquirySchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    phone: String,
-    email: String,
-    service: { type: String, required: true },
-    when: String,
-    address: String,
-    suburb: String,
-    postcode: String, // NEW FIELD
-    message: String,
-    attachmentUrl: String, // NEW FIELD for the file upload
-    status: { type: String, enum: ['new', 'quoted', 'accepted', 'rejected'], default: 'new' },
-    price: { type: Number, default: 0 },
-    quoteItems: [quoteItemSchema],
-    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null },
-    received: { type: Date, default: Date.now },
-  },
-  { timestamps: true }
-);
-
-module.exports = mongoose.model('Enquiry', enquirySchema);
-</file>
-
 <file path="backend/src/models/Invoice.js">
 /**
  * Invoice.js
@@ -1098,70 +884,6 @@ const invoiceSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model('Invoice', invoiceSchema);
-</file>
-
-<file path="backend/src/models/Job.js">
-const mongoose = require('mongoose');
-
-const materialSchema = new mongoose.Schema({ name: String, cost: { type: Number, default: 0 } }, { _id: false });
-
-const jobSchema = new mongoose.Schema(
-  {
-    enquiryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enquiry', default: null },
-    name: { type: String, required: true },
-    phone: String,
-    email: String,
-    service: { type: String, required: true },
-    when: String,
-    scheduledDate: Date,
-    address: { type: String, required: true },
-    suburb: String, // NEW FIELD
-    postcode: String, // NEW FIELD
-    attachmentUrl: String, // NEW FIELD
-    status: { type: String, enum: ['accepted', 'confirmed', 'complete'], default: 'accepted' },
-    needsDetails: { type: Boolean, default: true },
-    materials: [materialSchema],
-    labour: { type: Number, default: 0 },
-    notes: String,
-    invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
-  },
-  { timestamps: true }
-);
-
-module.exports = mongoose.model('Job', jobSchema);
-</file>
-
-<file path="backend/src/models/Settings.js">
-/**
- * Settings.js
- * ------------------------------------------------------------------
- * A single-document collection holding business-wide settings:
- * branding shown on invoice/quote PDFs, and the GST toggle/rate that
- * new invoices default to. getSingleton() always returns the one
- * settings document, creating it with sane defaults on first use.
- * ------------------------------------------------------------------
- */
-const mongoose = require('mongoose');
-
-const settingsSchema = new mongoose.Schema(
-  {
-    businessName: { type: String, default: 'Get Handyman' },
-    abn: { type: String, default: '' },
-    bizEmail: { type: String, default: '' },
-    logoUrl: { type: String, default: null },
-    gstEnabled: { type: Boolean, default: true },
-    gstRate: { type: Number, default: 10 }, // percent
-  },
-  { timestamps: true }
-);
-
-settingsSchema.statics.getSingleton = async function getSingleton() {
-  let doc = await this.findOne();
-  if (!doc) doc = await this.create({});
-  return doc;
-};
-
-module.exports = mongoose.model('Settings', settingsSchema);
 </file>
 
 <file path="backend/src/models/User.js">
@@ -5771,68 +5493,6 @@ export default function PaymentModeSelector({ value, onChange }) {
 }
 </file>
 
-<file path="mobile/src/components/invoices/PhotoUploadButton.js">
-import { Pressable, Image, Text, StyleSheet, Platform, Share, Alert } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { colors } from '../../theme/colors';
-
-const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
-
-export default function PhotoUploadButton({ photoUrl, onUpload }) {
-  async function pickPhoto() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Permission needed", "We need camera roll permissions to upload receipts.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
-    
-    if (!result.canceled) {
-      const asset = result.assets[0];
-      const fileToUpload = {
-        uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
-        type: asset.mimeType || 'image/jpeg',
-        name: asset.fileName || `receipt-${Date.now()}.jpg`
-      };
-      onUpload(fileToUpload);
-    }
-  }
-
-  const sharePhoto = async (url) => {
-    try {
-      await Share.share({ message: `Receipt Attachment: ${url}`, url: url });
-    } catch (error) {
-      Alert.alert("Error", "Could not share the image.");
-    }
-  };
-
-  if (photoUrl) {
-    const fullUrl = photoUrl.startsWith('http') ? photoUrl : `${BASE_URL}${photoUrl}`;
-    return (
-      <Pressable onPress={() => sharePhoto(fullUrl)}>
-        <Image source={{ uri: fullUrl }} style={styles.thumb} />
-      </Pressable>
-    );
-  }
-
-  return (
-    <Pressable onPress={pickPhoto} style={styles.addBtn}>
-      <Text style={styles.icon}>📷</Text>
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  thumb: { width: 30, height: 30, borderRadius: 6 },
-  addBtn: { width: 30, height: 30, borderRadius: 8, backgroundColor: colors.orangeTint, alignItems: 'center', justifyContent: 'center' },
-  icon: { fontSize: 14 },
-});
-</file>
-
 <file path="mobile/src/components/jobs/JobDetailForm.js">
 /**
  * JobDetailForm.js
@@ -7264,31 +6924,6 @@ export default function EnquiriesStack() {
 }
 </file>
 
-<file path="mobile/src/navigation/InvoicesStack.js">
-/**
- * InvoicesStack.js
- * ------------------------------------------------------------------
- * Invoices tab: list/report screen (tabs between Unpaid/Paid/All/
- * Report internally, like the web app), then invoice detail pushed
- * on top.
- * ------------------------------------------------------------------
- */
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import InvoicesScreen from '../screens/InvoicesScreen';
-import InvoiceDetailScreen from '../screens/InvoiceDetailScreen';
-
-const Stack = createNativeStackNavigator();
-
-export default function InvoicesStack() {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="InvoicesList" component={InvoicesScreen} />
-      <Stack.Screen name="InvoiceDetail" component={InvoiceDetailScreen} />
-    </Stack.Navigator>
-  );
-}
-</file>
-
 <file path="mobile/src/navigation/MainTabNavigator.js">
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -7617,185 +7252,6 @@ const styles = StyleSheet.create({
 });
 </file>
 
-<file path="mobile/src/screens/NewJobScreen.js">
-import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import ScreenHeader from '../components/layout/ScreenHeader';
-import Button from '../components/ui/Button';
-import FieldLabel from '../components/ui/FieldLabel';
-import useToast from '../hooks/useToast';
-import * as jobService from '../services/jobService';
-import { colors } from '../theme/colors';
-
-export default function NewJobScreen() {
-  const navigation = useNavigation();
-  const { showToast } = useToast();
-  const [saving, setSaving] = useState(false);
-  const debounceTimer = useRef(null);
-
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [date, setDate] = useState(new Date());
-
-  const [suggestions, setSuggestions] = useState([]);
-  const [form, setForm] = useState({
-    name: '', phone: '', email: '', when: '', address: '', suburb: '', postcode: '',
-    service: 'General Handyman', labour: '180', notes: ''
-  });
-
-  const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
-
-  const handleCreateJob = async () => {
-    setSaving(true);
-    try {
-      const payload = {
-        ...form,
-        name: form.name || 'New Customer',
-        when: form.when || 'Not scheduled yet',
-        address: [form.address, form.suburb, form.postcode].filter(Boolean).join(', '),
-        labour: Number(form.labour) || 0,
-        status: 'confirmed',
-        needsDetails: false, 
-        materials: [] 
-      };
-      await jobService.createJob(payload);
-      showToast('Job created manually');
-      navigation.navigate('Dashboard');
-    } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to create job');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const formatSafeDate = (d) => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    let hrs = d.getHours();
-    const mins = d.getMinutes().toString().padStart(2, '0');
-    const ampm = hrs >= 12 ? 'PM' : 'AM';
-    hrs = hrs % 12 || 12;
-    return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} · ${hrs}:${mins} ${ampm}`;
-  };
-
-  const onDateChange = (event, selectedDate) => {
-    if (Platform.OS === 'android') setShowDatePicker(false);
-    if (selectedDate) {
-      setDate(selectedDate);
-      updateForm('when', formatSafeDate(selectedDate));
-    }
-  };
-
-  const searchPlaces = (text) => {
-    updateForm('address', text);
-    if (text.length < 4) { setSuggestions([]); return; }
-
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(async () => {
-      try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&countrycodes=au&format=json&limit=4`, {
-          headers: { 'User-Agent': 'GetHandymanApp/1.0' }
-        });
-        const data = await response.json();
-        setSuggestions(data);
-      } catch (e) {
-        console.log('Location fetch failed', e);
-      }
-    }, 800);
-  };
-
-  return (
-    <View style={styles.screen}>
-      <ScreenHeader title="NEW JOB" />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.customerStrip}>
-          <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
-          <View style={{ flex: 1 }}>
-            <TextInput style={styles.nameInput} placeholder="Customer name" placeholderTextColor={colors.gray} value={form.name} onChangeText={(val) => updateForm('name', val)} />
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📞</Text>
-          <View style={{ flex: 1 }}><FieldLabel>Phone</FieldLabel><TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" /></View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📅</Text>
-          <View style={{ flex: 1 }}><FieldLabel>Date & Time</FieldLabel>
-            <TouchableOpacity onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
-              <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Tap to select date"}</Text></View>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📍</Text>
-          <View style={{ flex: 1, zIndex: 10 }}>
-            <FieldLabel>Street Address</FieldLabel>
-            <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
-            {suggestions.length > 0 && (
-              <View style={styles.dropdown}>
-                {suggestions.map((item, index) => (
-                  <TouchableOpacity key={item.place_id || index} style={styles.dropdownItem} onPress={() => { updateForm('address', item.display_name); setSuggestions([]); }}>
-                    <Text style={styles.dropdownText} numberOfLines={2}>{item.display_name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        </View>
-        
-        <View style={styles.rowSplit}>
-          <View style={{ flex: 1, marginLeft: 46 }}>
-            <FieldLabel>Suburb</FieldLabel>
-            <TextInput style={styles.input} value={form.suburb} onChangeText={v => updateForm('suburb', v)} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <FieldLabel>Postcode</FieldLabel>
-            <TextInput style={styles.input} value={form.postcode} onChangeText={v => updateForm('postcode', v)} keyboardType="numeric" />
-          </View>
-        </View>
-
-        <View style={[styles.detailsCard, { zIndex: -1 }]}>
-          <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
-          <FieldLabel>Service Type</FieldLabel>
-          <TextInput style={[styles.input, styles.cardInput]} value={form.service} onChangeText={v => updateForm('service', v)} />
-          <FieldLabel>Labour Cost (A$)</FieldLabel>
-          <TextInput style={[styles.input, styles.cardInput]} value={form.labour} onChangeText={v => updateForm('labour', v)} keyboardType="numeric" />
-          <FieldLabel>Other Details / Notes</FieldLabel>
-          <TextInput style={[styles.input, styles.cardInput, { minHeight: 60, textAlignVertical: 'top' }]} value={form.notes} onChangeText={v => updateForm('notes', v)} multiline />
-          <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
-        </View>
-      </ScrollView>
-
-      {showDatePicker && (
-        <DateTimePicker value={date} mode="datetime" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />
-      )}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
-  customerStrip: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 14 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.charcoal, alignItems: 'center', justifyContent: 'center' },
-  nameInput: { fontWeight: '800', fontSize: 16, color: colors.charcoal, padding: 0 },
-  fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 6, alignItems: 'flex-start', zIndex: 10 },
-  rowSplit: { flexDirection: 'row', gap: 12, paddingVertical: 6 },
-  icon: { width: 34, textAlign: 'center', fontSize: 17, marginTop: 18 },
-  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, backgroundColor: '#fff', marginTop: 4 },
-  dropdown: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, marginTop: 4, maxHeight: 150 },
-  dropdownItem: { padding: 10, borderBottomWidth: 1, borderBottomColor: colors.grayLight },
-  dropdownText: { fontSize: 12, color: colors.charcoal },
-  detailsCard: { backgroundColor: colors.orangeTint, borderRadius: 10, padding: 14, marginTop: 20 },
-  cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.orangeDeep, marginBottom: 10 },
-  cardInput: { borderColor: colors.grayLight, marginBottom: 12 }
-});
-</file>
-
 <file path="mobile/src/screens/NotificationsScreen.js">
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
@@ -7885,90 +7341,6 @@ const styles = StyleSheet.create({
   footer: { alignItems: 'center', paddingVertical: 18 },
   backBtn: { backgroundColor: colors.charcoal2, paddingVertical: 9, paddingHorizontal: 18, borderRadius: 20 },
   backBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' }
-});
-</file>
-
-<file path="mobile/src/screens/SettingsScreen.js">
-/**
- * SettingsScreen.js
- * ------------------------------------------------------------------
- * Business settings screen: branding (name/ABN/email/logo) and the
- * GST default toggle/rate. Loads via useSettings(), saves through
- * services/settingsService.js (via update()/uploadLogo()).
- * ------------------------------------------------------------------
- */
-import { useEffect, useState } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
-import ScreenHeader from '../components/layout/ScreenHeader';
-import BusinessDetailsForm from '../components/settings/BusinessDetailsForm';
-import LogoUploader from '../components/settings/LogoUploader';
-import GstSettingsToggle from '../components/settings/GstSettingsToggle';
-import Button from '../components/ui/Button';
-import LoadingState from '../components/ui/LoadingState';
-import useSettings from '../hooks/useSettings';
-import useToast from '../hooks/useToast';
-import * as settingsService from '../services/settingsService';
-
-export default function SettingsScreen() {
-  const { settings, update, refresh } = useSettings();
-  const { showToast } = useToast();
-  const [draft, setDraft] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (settings) setDraft(settings);
-  }, [settings]);
-
-  function patch(fields) {
-    setDraft((prev) => ({ ...prev, ...fields }));
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      await update(draft);
-      showToast('Settings saved');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleLogoUpload(asset) {
-    await settingsService.uploadLogo(asset);
-    await refresh();
-    showToast('Logo updated');
-  }
-
-  return (
-    <View style={styles.screen}>
-      <ScreenHeader title="SETTINGS" />
-      {!draft ? (
-        <LoadingState />
-      ) : (
-        <ScrollView contentContainerStyle={styles.content}>
-          <LogoUploader logoUrl={settingsService.resolveMediaUrl(draft.logoUrl)} onUpload={handleLogoUpload} />
-          <View style={styles.divider} />
-          <BusinessDetailsForm settings={draft} onChange={patch} />
-          <View style={styles.divider} />
-          <GstSettingsToggle
-            gstEnabled={draft.gstEnabled}
-            gstRate={draft.gstRate}
-            onToggle={() => patch({ gstEnabled: !draft.gstEnabled })}
-            onRateChange={(gstRate) => patch({ gstRate })}
-          />
-          <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginTop: 20 }}>
-            {saving ? 'Saving…' : 'Save settings'}
-          </Button>
-        </ScrollView>
-      )}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
-  divider: { borderTopWidth: 1, borderTopColor: '#E5E7EB', marginVertical: 16 },
 });
 </file>
 
@@ -8125,55 +7497,6 @@ export * as jobService from './jobService';
 export * as invoiceService from './invoiceService';
 export * as reportService from './reportService';
 export { apiClient, BASE_URL } from './apiClient';
-</file>
-
-<file path="mobile/src/services/invoiceService.js">
-/**
- * invoiceService.js
- * ------------------------------------------------------------------
- * Every invoice-related API call, one small function per backend
- * route (discount, GST toggle, payment mode/status, cost items,
- * receipt photo upload) — mirrors backend/src/routes/invoiceRoutes.js
- * and the web app's api/invoiceApi.js.
- * ------------------------------------------------------------------
- */
-import { apiClient, unwrap } from './apiClient';
-
-export const listInvoices = (status) => unwrap(apiClient.get('/api/invoices', { params: { status } }));
-
-export const getInvoice = (id) => unwrap(apiClient.get(`/api/invoices/${id}`));
-
-export const updateInvoice = (id, payload) => unwrap(apiClient.put(`/api/invoices/${id}`, payload));
-
-export const deleteInvoice = (id) => unwrap(apiClient.delete(`/api/invoices/${id}`));
-
-export const setDiscount = (id, discount) => unwrap(apiClient.put(`/api/invoices/${id}/discount`, discount));
-
-export const setGstIncluded = (id, gstIncluded) =>
-  unwrap(apiClient.put(`/api/invoices/${id}/gst`, { gstIncluded }));
-
-export const setPaymentMode = (id, paymentMode) =>
-  unwrap(apiClient.put(`/api/invoices/${id}/payment-mode`, { paymentMode }));
-
-export const setInvoiceStatus = (id, status) => unwrap(apiClient.put(`/api/invoices/${id}/status`, { status }));
-
-export const setCostItems = (id, kind, items) =>
-  unwrap(apiClient.put(`/api/invoices/${id}/cost-items/${kind}`, { items }));
-
-// `asset` is what expo-image-picker returns: { uri, fileName, mimeType }.
-export const uploadCostItemPhoto = (id, kind, index, asset) => {
-  const form = new FormData();
-  form.append('photo', {
-    uri: asset.uri,
-    name: asset.fileName || `receipt-${index}.jpg`,
-    type: asset.mimeType || 'image/jpeg',
-  });
-  return unwrap(
-    apiClient.post(`/api/invoices/${id}/cost-items/${kind}/${index}/photo`, form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-  );
-};
 </file>
 
 <file path="mobile/src/services/jobService.js">
@@ -8681,6 +8004,144 @@ All of this lives in `backend/src/services/gstService.js` and
   and can be deployed anywhere that runs those
 </file>
 
+<file path="backend/src/controllers/enquiryController.js">
+/**
+ * enquiryController.js
+ * ------------------------------------------------------------------
+ * CRUD for website enquiries plus the enquiry-specific actions:
+ * reject, send a quote, and accept (which spins up a Job). Each
+ * function is intentionally small and does one thing.
+ * ------------------------------------------------------------------
+ */
+const asyncHandler = require('../middleware/asyncHandler');
+const Enquiry = require('../models/Enquiry');
+const Job = require('../models/Job');
+const { ok, created } = require('../utils/apiResponse');
+
+// GET /api/enquiries?status=new
+const listEnquiries = asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const filter = status && status !== 'all' ? { status } : {};
+  const enquiries = await Enquiry.find(filter).sort({ received: -1 });
+  ok(res, enquiries);
+});
+
+// GET /api/enquiries/:id
+const getEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.findById(req.params.id);
+  if (!enquiry) {
+    res.status(404);
+    throw new Error('Enquiry not found');
+  }
+  ok(res, enquiry);
+});
+
+// POST /api/enquiries  (public — submitted from the marketing website form)
+const createEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.create(req.body);
+  created(res, enquiry);
+});
+
+// PUT /api/enquiries/:id  (edit details / quote line items while drafting)
+const updateEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+    runValidators: true,
+  });
+  if (!enquiry) {
+    res.status(404);
+    throw new Error('Enquiry not found');
+  }
+  ok(res, enquiry);
+});
+
+// DELETE /api/enquiries/:id
+const deleteEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.findByIdAndDelete(req.params.id);
+  if (!enquiry) {
+    res.status(404);
+    throw new Error('Enquiry not found');
+  }
+  ok(res, { deleted: true });
+});
+
+// POST /api/enquiries/:id/reject
+const rejectEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.findByIdAndUpdate(
+    req.params.id,
+    { status: 'rejected' },
+    { new: true }
+  );
+  if (!enquiry) {
+    res.status(404);
+    throw new Error('Enquiry not found');
+  }
+  ok(res, enquiry);
+});
+
+// POST /api/enquiries/:id/send-quote  { items: [{name, qty, amt}] }
+const sendQuote = asyncHandler(async (req, res) => {
+  const { items = [] } = req.body;
+  const price = items.reduce((sum, it) => sum + (Number(it.qty) || 1) * (Number(it.amt) || 0), 0);
+
+  const enquiry = await Enquiry.findByIdAndUpdate(
+    req.params.id,
+    { quoteItems: items, price, status: 'quoted' },
+    { new: true }
+  );
+  if (!enquiry) {
+    res.status(404);
+    throw new Error('Enquiry not found');
+  }
+  ok(res, enquiry);
+});
+
+// POST /api/enquiries/:id/accept  -> creates a Job from this enquiry
+// ... existing code above ...
+const acceptEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.findById(req.params.id);
+  if (!enquiry) {
+    res.status(404);
+    throw new Error('Enquiry not found');
+  }
+
+  const job = await Job.create({
+    enquiryId: enquiry._id,
+    name: enquiry.name,
+    phone: enquiry.phone,
+    email: enquiry.email,
+    service: enquiry.service,
+    when: enquiry.when,
+    // Safely combine address parts
+    address: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', '),
+    suburb: enquiry.suburb,
+    postcode: enquiry.postcode,
+    attachmentUrl: enquiry.attachmentUrl, // Transfer the attachment
+    status: 'accepted',
+    needsDetails: true,
+    labour: enquiry.price || 0,
+    notes: enquiry.message,
+  });
+
+  enquiry.status = 'accepted';
+  enquiry.jobId = job._id;
+  await enquiry.save();
+
+  created(res, { enquiry, job });
+});
+
+module.exports = {
+  listEnquiries,
+  getEnquiry,
+  createEnquiry,
+  updateEnquiry,
+  deleteEnquiry,
+  rejectEnquiry,
+  sendQuote,
+  acceptEnquiry,
+};
+</file>
+
 <file path="backend/src/controllers/jobController.js">
 const asyncHandler = require('../middleware/asyncHandler');
 const Job = require('../models/Job');
@@ -8798,6 +8259,84 @@ const markComplete = asyncHandler(async (req, res) => {
 module.exports = { listJobs, getJob, createJob, updateJob, deleteJob, saveJobDetails, updateMaterials, markComplete };
 </file>
 
+<file path="backend/src/controllers/settingsController.js">
+const asyncHandler = require('../middleware/asyncHandler');
+const Settings = require('../models/Settings');
+const { ok } = require('../utils/apiResponse');
+
+const getSettings = asyncHandler(async (req, res) => {
+  const settings = await Settings.getSingleton();
+  ok(res, settings);
+});
+
+const updateSettings = asyncHandler(async (req, res) => {
+  const settings = await Settings.getSingleton();
+  
+  // Update every field dynamically if it is provided
+  Object.keys(req.body).forEach(key => {
+    if (req.body[key] !== undefined) {
+      settings[key] = req.body[key];
+    }
+  });
+
+  await settings.save();
+  ok(res, settings);
+});
+
+const uploadLogo = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    res.status(400);
+    throw new Error('No logo file uploaded');
+  }
+  const settings = await Settings.getSingleton();
+  settings.logoUrl = `/uploads/${req.file.filename}`;
+  await settings.save();
+  ok(res, settings);
+});
+
+module.exports = { getSettings, updateSettings, uploadLogo };
+</file>
+
+<file path="backend/src/models/Settings.js">
+const mongoose = require('mongoose');
+
+const settingsSchema = new mongoose.Schema(
+  {
+    businessName: { type: String, default: 'Get Handyman' },
+    abn: { type: String, default: '' },
+    bizEmail: { type: String, default: '' },
+    bizPhone: { type: String, default: '' },
+    bizAddress: { type: String, default: '' },
+    bizCityState: { type: String, default: '' },
+    website: { type: String, default: '' },
+    logoUrl: { type: String, default: null },
+    gstEnabled: { type: Boolean, default: true },
+    gstRate: { type: Number, default: 10 },
+    invoicePrefix: { type: String, default: 'GH-' },
+    paymentTerms: { type: String, default: 'Due on receipt' },
+    bankName: { type: String, default: '' },
+    bsb: { type: String, default: '' },
+    account: { type: String, default: '' },
+    accountName: { type: String, default: '' },
+    quoteMessage: { type: String, default: 'Thanks for your enquiry — here is your quote below. Let me know if you would like to go ahead.' },
+    notifJobReminders: { type: Boolean, default: true },
+    notifUnpaidReminders: { type: Boolean, default: true },
+    notifNewEnquiry: { type: Boolean, default: true },
+    defaultServiceRadius: { type: String, default: '25 km' },
+    workingHours: { type: String, default: 'Mon-Fri, 7:00 AM-5:00 PM' }
+  },
+  { timestamps: true }
+);
+
+settingsSchema.statics.getSingleton = async function getSingleton() {
+  let doc = await this.findOne();
+  if (!doc) doc = await this.create({});
+  return doc;
+};
+
+module.exports = mongoose.models.Settings || mongoose.model('Settings', settingsSchema);
+</file>
+
 <file path="backend/server.js">
 /**
  * server.js
@@ -8821,197 +8360,66 @@ app.listen(port, () => {
 });
 </file>
 
-<file path="mobile/src/components/enquiries/QuoteItemRow.js">
-import React, { useState, useEffect } from 'react';
-import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
+<file path="mobile/src/components/invoices/PhotoUploadButton.js">
+import { Pressable, Image, Text, StyleSheet, Platform, Share, Alert } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../../theme/colors';
 
-export default function QuoteItemRow({ item, onChange, onRemove }) {
-  const [name, setName] = useState(item.name || '');
-  const [amt, setAmt] = useState(item.amt?.toString() || '');
+const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
 
-  useEffect(() => {
-    setName(item.name || '');
-    setAmt(item.amt?.toString() || '');
-  }, [item.name, item.amt]);
+export default function PhotoUploadButton({ photoUrl, onUpload }) {
+  async function pickPhoto() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "We need camera roll permissions to upload receipts.");
+      return;
+    }
 
-  const commitChanges = () => {
-    if (name !== item.name || amt !== item.amt?.toString()) {
-      onChange({ ...item, name, amt });
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    
+    if (!result.canceled) {
+      const asset = result.assets[0];
+      const fileToUpload = {
+        uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
+        type: asset.mimeType || 'image/jpeg',
+        name: asset.fileName || `receipt-${Date.now()}.jpg`
+      };
+      onUpload(fileToUpload);
+    }
+  }
+
+  const sharePhoto = async (url) => {
+    try {
+      await Share.share({ message: `Receipt Attachment: ${url}`, url: url });
+    } catch (error) {
+      Alert.alert("Error", "Could not share the image.");
     }
   };
 
-  return (
-    <View style={styles.row}>
-      <TextInput
-        value={name}
-        onChangeText={setName}
-        onBlur={commitChanges}
-        style={[styles.input, { flex: 1 }]}
-        placeholder="Item Name"
-      />
-      <TextInput
-        value={amt}
-        onChangeText={setAmt}
-        onBlur={commitChanges}
-        keyboardType="numeric"
-        style={[styles.input, { width: 70 }]}
-        placeholder="Price"
-      />
-      <Pressable onPress={onRemove} hitSlop={8}><Text style={styles.remove}>×</Text></Pressable>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({ row: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }, input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, fontSize: 12.5 }, remove: { color: colors.red, fontWeight: '700', fontSize: 16 }});
-</file>
-
-<file path="mobile/src/components/invoices/CostItemRow.js">
-import React, { useState, useEffect } from 'react';
-import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
-import PhotoUploadButton from './PhotoUploadButton';
-import { colors } from '../../theme/colors';
-
-export default function CostItemRow({ item, onChange, onRemove, onUploadPhoto }) {
-  const [name, setName] = useState(item.name || '');
-  const [cost, setCost] = useState(item.cost?.toString() || '');
-
-  useEffect(() => {
-    setName(item.name || '');
-    setCost(item.cost?.toString() || '');
-  }, [item.name, item.cost]);
-
-  const commitChanges = () => {
-    if (name !== item.name || cost !== item.cost?.toString()) {
-      onChange({ ...item, name, cost });
-    }
-  };
+  if (photoUrl) {
+    const fullUrl = photoUrl.startsWith('http') ? photoUrl : `${BASE_URL}${photoUrl}`;
+    return (
+      <Pressable onPress={() => sharePhoto(fullUrl)}>
+        <Image source={{ uri: fullUrl }} style={styles.thumb} />
+      </Pressable>
+    );
+  }
 
   return (
-    <View style={styles.row}>
-      <TextInput
-        value={name}
-        onChangeText={setName}
-        onBlur={commitChanges}
-        style={[styles.input, { flex: 1 }]}
-        placeholder="Expense"
-      />
-      <TextInput
-        value={cost}
-        onChangeText={setCost}
-        onBlur={commitChanges}
-        keyboardType="numeric"
-        style={[styles.input, { width: 56 }]}
-        placeholder="Cost"
-      />
-      <PhotoUploadButton photoUrl={item.photoUrl} onUpload={onUploadPhoto} />
-      <Pressable onPress={onRemove} hitSlop={8}><Text style={styles.remove}>×</Text></Pressable>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({ row: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 8 }, input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 9, fontSize: 12 }, remove: { color: colors.red, fontWeight: '700', fontSize: 16 }});
-</file>
-
-<file path="mobile/src/components/invoices/DiscountEditor.js">
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
-import FieldLabel from '../ui/FieldLabel';
-import { colors } from '../../theme/colors';
-
-export default function DiscountEditor({ discount, onChange }) {
-  const [val, setVal] = useState(discount.value?.toString() || '0');
-
-  useEffect(() => {
-    setVal(discount.value?.toString() || '0');
-  }, [discount.value]);
-
-  const commitChanges = () => {
-    if (val !== discount.value?.toString()) {
-      onChange({ ...discount, value: val });
-    }
-  };
-
-  return (
-    <View style={{ marginBottom: 12 }}>
-      <FieldLabel style={{ marginBottom: 6 }}>Discount</FieldLabel>
-      <View style={styles.row}>
-        <View style={styles.typeSwitch}>
-          {['amount', 'percent'].map((type) => (
-            <Pressable
-              key={type}
-              onPress={() => onChange({ ...discount, type })}
-              style={[styles.typeBtn, discount.type === type && styles.typeBtnActive]}
-            >
-              <Text style={styles.typeLabel}>{type === 'amount' ? 'A$' : '%'}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <TextInput
-          value={val}
-          onChangeText={setVal}
-          onBlur={commitChanges}
-          keyboardType="numeric"
-          style={styles.input}
-        />
-      </View>
-    </View>
+    <Pressable onPress={pickPhoto} style={styles.addBtn}>
+      <Text style={styles.icon}>📷</Text>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  typeSwitch: { flexDirection: 'row', backgroundColor: '#F1F0ED', borderRadius: 8, padding: 3, width: 96 },
-  typeBtn: { flex: 1, paddingVertical: 7, borderRadius: 6, alignItems: 'center' },
-  typeBtnActive: { backgroundColor: '#fff' },
-  typeLabel: { fontSize: 11, fontWeight: '700', color: colors.charcoal },
-  input: { flex: 1, borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, fontSize: 12.5 },
+  thumb: { width: 30, height: 30, borderRadius: 6 },
+  addBtn: { width: 30, height: 30, borderRadius: 8, backgroundColor: colors.orangeTint, alignItems: 'center', justifyContent: 'center' },
+  icon: { fontSize: 14 },
 });
-</file>
-
-<file path="mobile/src/components/invoices/InvoiceLineItemRow.js">
-import React, { useState, useEffect } from 'react';
-import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
-import { colors } from '../../theme/colors';
-
-export default function InvoiceLineItemRow({ item, onChange, onRemove }) {
-  const [name, setName] = useState(item.name || '');
-  const [amt, setAmt] = useState(item.amt?.toString() || '');
-
-  useEffect(() => {
-    setName(item.name || '');
-    setAmt(item.amt?.toString() || '');
-  }, [item.name, item.amt]);
-
-  const commitChanges = () => {
-    if (name !== item.name || amt !== item.amt?.toString()) {
-      onChange({ ...item, name, amt });
-    }
-  };
-
-  return (
-    <View style={styles.row}>
-      <TextInput
-        value={name}
-        onChangeText={setName}
-        onBlur={commitChanges}
-        style={[styles.input, { flex: 1 }]}
-        placeholder="Description"
-      />
-      <TextInput
-        value={amt}
-        onChangeText={setAmt}
-        onBlur={commitChanges}
-        keyboardType="numeric"
-        style={[styles.input, { width: 60 }]}
-        placeholder="Amt"
-      />
-      <Pressable onPress={onRemove} hitSlop={8}><Text style={styles.remove}>×</Text></Pressable>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({ row: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 7 }, input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 6, paddingHorizontal: 8, fontSize: 11.5 }, remove: { color: colors.red, fontWeight: '700', fontSize: 16 }});
 </file>
 
 <file path="mobile/src/components/jobs/JobActions.js">
@@ -9069,51 +8477,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8, marginTop: 16 },
   flex: { flex: 1 },
 });
-</file>
-
-<file path="mobile/src/components/jobs/MaterialItemRow.js">
-import React, { useState, useEffect } from 'react';
-import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
-import { colors } from '../../theme/colors';
-
-export default function MaterialItemRow({ material, onChange, onRemove }) {
-  const [name, setName] = useState(material.name || '');
-  const [cost, setCost] = useState(material.cost?.toString() || '');
-
-  useEffect(() => {
-    setName(material.name || '');
-    setCost(material.cost?.toString() || '');
-  }, [material.name, material.cost]);
-
-  const commitChanges = () => {
-    if (name !== material.name || cost !== material.cost?.toString()) {
-      onChange({ ...material, name, cost });
-    }
-  };
-
-  return (
-    <View style={styles.row}>
-      <TextInput
-        value={name}
-        onChangeText={setName}
-        onBlur={commitChanges}
-        style={[styles.input, { flex: 1 }]}
-        placeholder="Item name"
-      />
-      <TextInput
-        value={cost}
-        onChangeText={setCost}
-        onBlur={commitChanges}
-        keyboardType="numeric"
-        style={[styles.input, { width: 70 }]}
-        placeholder="Cost"
-      />
-      <Pressable onPress={onRemove} hitSlop={8}><Text style={styles.remove}>×</Text></Pressable>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({ row: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }, input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, fontSize: 12.5 }, remove: { color: colors.red, fontWeight: '700', fontSize: 16 }});
 </file>
 
 <file path="mobile/src/hooks/useJobs.js">
@@ -9319,6 +8682,853 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 10, fontWeight: '700', color: colors.gray, letterSpacing: 0.4, textTransform: 'uppercase', marginVertical: 12 },
   emptyText: { textAlign: 'center', color: colors.gray, marginTop: 10, fontSize: 12 }
 });
+</file>
+
+<file path="mobile/src/screens/JobsScreen.js">
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import JobListItem from '../components/jobs/JobListItem';
+import SegmentedControl from '../components/ui/SegmentedControl';
+import LoadingState from '../components/ui/LoadingState';
+import useJobs from '../hooks/useJobs';
+import { colors } from '../theme/colors';
+
+const { width } = Dimensions.get('window');
+
+export default function JobsScreen() {
+  const navigation = useNavigation();
+  const { jobs, loading } = useJobs('all');
+  
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
+  const [listFilter, setListFilter] = useState('all'); // 'all' | 'today' | 'upcoming' | 'complete'
+
+  // Filter logic
+  const filteredJobs = jobs.filter(j => {
+    if (listFilter === 'complete') return j.status === 'complete';
+    if (listFilter === 'today') return j.status !== 'complete'; // Simplified for prototype
+    if (listFilter === 'upcoming') return j.status !== 'complete';
+    return true;
+  });
+
+  // Calendar Logic (Mocked month matching prototype)
+  const daysInMonth = Array.from({ length: 30 }, (_, i) => i + 1);
+  const jobsPerDay = {};
+  jobs.forEach(j => {
+    // Mocking a day extraction based on the prototype's data structure
+    const dayMatch = j.when?.match(/\b(\d{1,2})\b/);
+    const day = dayMatch ? parseInt(dayMatch[1], 10) : 4; 
+    jobsPerDay[day] = (jobsPerDay[day] || 0) + 1;
+  });
+
+  return (
+    <View style={styles.screen}>
+      <SafeAreaView edges={['top']} style={styles.header}>
+        <Text style={styles.title}>JOBS</Text>
+        <SegmentedControl 
+          options={[{ value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]}
+          value={viewMode} 
+          onChange={setViewMode} 
+          dark 
+        />
+      </SafeAreaView>
+
+      {loading ? (
+        <LoadingState />
+      ) : (
+        <ScrollView style={styles.content}>
+          {viewMode === 'list' ? (
+            <View style={styles.listContainer}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+                {['all', 'today', 'upcoming', 'complete', 'incomplete'].map(f => (
+                  <TouchableOpacity 
+                    key={f} 
+                    style={[styles.filterChip, listFilter === f && styles.filterChipActive]}
+                    onPress={() => setListFilter(f)}
+                  >
+                    <Text style={[styles.filterText, listFilter === f && styles.filterTextActive]}>
+                      {f.charAt(0).toUpperCase() + f.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              
+              {filteredJobs.length > 0 ? (
+                filteredJobs.map(j => <JobListItem key={j._id} job={j} />)
+              ) : (
+                <Text style={styles.emptyText}>No jobs match this filter.</Text>
+              )}
+            </View>
+          ) : (
+            <View style={styles.calendarContainer}>
+              <View style={styles.daysHeader}>
+                {['S','M','T','W','T','F','S'].map((d, i) => (
+                  <Text key={i} style={styles.dayHeadText}>{d}</Text>
+                ))}
+              </View>
+              <View style={styles.grid}>
+                {/* Empty offset spaces */}
+                <View style={{ width: (width - 28) / 7 * 2 }} /> 
+                {daysInMonth.map(day => {
+                  const isToday = day === 4;
+                  const count = jobsPerDay[day] || 0;
+                  return (
+                    <TouchableOpacity 
+                      key={day} 
+                      style={[styles.dayCell, isToday && styles.todayCell]}
+                      onPress={() => navigation.navigate('DayDetail', { day })}
+                    >
+                      <Text style={[styles.dayText, isToday && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
+                      {count > 0 && (
+                        <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
+                          <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.offwhite },
+  header: { backgroundColor: colors.charcoal, paddingHorizontal: 16, paddingBottom: 14 },
+  title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
+  content: { flex: 1 },
+  listContainer: { padding: 14 },
+  filterScroll: { flexDirection: 'row', marginBottom: 14 },
+  filterChip: { paddingVertical: 6, paddingHorizontal: 13, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, marginRight: 8 },
+  filterChipActive: { backgroundColor: colors.charcoal, borderColor: colors.charcoal },
+  filterText: { fontSize: 11, fontWeight: '700', color: colors.gray },
+  filterTextActive: { color: '#fff' },
+  emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
+  calendarContainer: { padding: 14 },
+  daysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 10 },
+  dayHeadText: { fontSize: 10, color: colors.gray, fontWeight: '700', width: (width - 28) / 7, textAlign: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  dayCell: { width: (width - 28) / 7, height: 46, alignItems: 'center', paddingTop: 4 },
+  todayCell: { backgroundColor: colors.orangeTint, borderRadius: 8, borderWidth: 1, borderColor: colors.orange },
+  dayText: { fontSize: 11, fontWeight: '500', color: colors.charcoal },
+  badge: { backgroundColor: colors.grayLight, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1, marginTop: 2 },
+  badgeText: { fontSize: 8, fontWeight: '800', color: colors.gray }
+});
+</file>
+
+<file path="mobile/src/screens/PdfPreviewScreen.js">
+import React from 'react';
+import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
+import { WebView } from 'react-native-webview';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import * as Sharing from 'expo-sharing';
+import ScreenHeader from '../components/layout/ScreenHeader';
+import { colors } from '../theme/colors';
+
+export default function PdfPreviewScreen() {
+  const { params } = useRoute();
+  const navigation = useNavigation();
+  const { uri, title } = params;
+
+  const handleShare = async () => {
+    await Sharing.shareAsync(uri, { 
+      UTI: '.pdf', 
+      mimeType: 'application/pdf',
+      dialogTitle: title || 'Document.pdf'
+    });
+  };
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader title="PREVIEW PDF" />
+      <WebView 
+        source={{ uri }} 
+        style={styles.webview} 
+        originWhitelist={['*']}
+        allowFileAccess={true}
+      />
+      <View style={styles.footer}>
+        <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
+          <Text style={styles.cancelText}>Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
+          <Text style={styles.shareText}>Share PDF</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#fff' },
+  webview: { flex: 1 },
+  footer: { flexDirection: 'row', padding: 16, borderTopWidth: 1, borderColor: colors.grayLight, gap: 12 },
+  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1.5, borderColor: colors.charcoal, alignItems: 'center' },
+  cancelText: { fontWeight: '700', color: colors.charcoal },
+  shareBtn: { flex: 2, paddingVertical: 12, borderRadius: 8, backgroundColor: colors.orange, alignItems: 'center' },
+  shareText: { fontWeight: '700', color: '#fff' }
+});
+</file>
+
+<file path="mobile/src/screens/SettingsScreen.js">
+import React, { useEffect, useState } from 'react';
+import { View, ScrollView, Text, TextInput, StyleSheet } from 'react-native';
+import ScreenHeader from '../components/layout/ScreenHeader';
+import LogoUploader from '../components/settings/LogoUploader';
+import Button from '../components/ui/Button';
+import Toggle from '../components/ui/Toggle';
+import FieldLabel from '../components/ui/FieldLabel';
+import LoadingState from '../components/ui/LoadingState';
+import useSettings from '../hooks/useSettings';
+import useToast from '../hooks/useToast';
+import * as settingsService from '../services/settingsService';
+import { colors } from '../theme/colors';
+
+function SettingInput({ label, value, onChange, placeholder, multiline = false }) {
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <FieldLabel>{label}</FieldLabel>
+      <TextInput
+        style={[styles.input, multiline && { minHeight: 70, textAlignVertical: 'top' }]}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        multiline={multiline}
+        placeholderTextColor={colors.gray}
+      />
+    </View>
+  );
+}
+
+function ToggleRow({ title, sub, value, onToggle }) {
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: 1, borderColor: colors.grayLight }}>
+      <View style={{ flex: 1, paddingRight: 10 }}>
+        <Text style={{ fontWeight: '700', fontSize: 12.5, color: colors.charcoal }}>{title}</Text>
+        <Text style={{ fontSize: 10.5, color: colors.gray, marginTop: 2 }}>{sub}</Text>
+      </View>
+      <Toggle on={value} onToggle={onToggle} />
+    </View>
+  );
+}
+
+export default function SettingsScreen() {
+  const { settings, update, refresh } = useSettings();
+  const { showToast } = useToast();
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (settings) setDraft(settings); }, [settings]);
+
+  function patch(fields) { setDraft(prev => ({ ...prev, ...fields })); }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await update(draft);
+      showToast('Settings saved successfully');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!draft) return <View style={styles.screen}><ScreenHeader title="SETTINGS" /><LoadingState /></View>;
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader title="SETTINGS" />
+      <ScrollView contentContainerStyle={styles.content}>
+        
+        <FieldLabel style={styles.sectionHeader}>Tax & Invoicing</FieldLabel>
+        <View style={styles.card}>
+          <ToggleRow title="GST on invoices" sub="Applied to online-payment invoices only" value={draft.gstEnabled} onToggle={() => patch({ gstEnabled: !draft.gstEnabled })} />
+          {draft.gstEnabled && <SettingInput label="GST Rate (%)" value={String(draft.gstRate)} onChange={v => patch({ gstRate: Number(v) || 0 })} />}
+          <SettingInput label="Invoice Number Prefix" value={draft.invoicePrefix} onChange={v => patch({ invoicePrefix: v })} />
+          <SettingInput label="Default Payment Terms" value={draft.paymentTerms} onChange={v => patch({ paymentTerms: v })} />
+        </View>
+
+        <FieldLabel style={styles.sectionHeader}>Business Profile</FieldLabel>
+        <View style={styles.card}>
+          <LogoUploader logoUrl={settingsService.resolveMediaUrl(draft.logoUrl)} onUpload={async (asset) => { await settingsService.uploadLogo(asset); refresh(); showToast('Logo updated'); }} />
+          <View style={{ height: 16 }} />
+          <SettingInput label="Business Name" value={draft.businessName} onChange={v => patch({ businessName: v })} />
+          <SettingInput label="ABN" value={draft.abn} onChange={v => patch({ abn: v })} />
+          <SettingInput label="City, State (Shown on invoices)" value={draft.bizCityState} onChange={v => patch({ bizCityState: v })} />
+          <SettingInput label="Website" value={draft.website} onChange={v => patch({ website: v })} />
+          <SettingInput label="Business Address" value={draft.bizAddress} onChange={v => patch({ bizAddress: v })} />
+          <SettingInput label="Phone" value={draft.bizPhone} onChange={v => patch({ bizPhone: v })} />
+          <SettingInput label="Email" value={draft.bizEmail} onChange={v => patch({ bizEmail: v })} />
+        </View>
+
+        <FieldLabel style={styles.sectionHeader}>Bank Transfer Details</FieldLabel>
+        <View style={styles.card}>
+          <SettingInput label="Bank Name" value={draft.bankName} onChange={v => patch({ bankName: v })} />
+          <SettingInput label="BSB" value={draft.bsb} onChange={v => patch({ bsb: v })} />
+          <SettingInput label="Account Number" value={draft.account} onChange={v => patch({ account: v })} />
+          <SettingInput label="Account Name" value={draft.accountName} onChange={v => patch({ accountName: v })} />
+        </View>
+
+        <FieldLabel style={styles.sectionHeader}>Quote Template</FieldLabel>
+        <View style={styles.card}>
+          <SettingInput label="Default Intro Message" value={draft.quoteMessage} onChange={v => patch({ quoteMessage: v })} multiline />
+        </View>
+
+        <FieldLabel style={styles.sectionHeader}>Notifications</FieldLabel>
+        <View style={styles.card}>
+          <ToggleRow title="Job reminders" sub="Today's jobs, on the reminders screen" value={draft.notifJobReminders} onToggle={() => patch({ notifJobReminders: !draft.notifJobReminders })} />
+          <ToggleRow title="Unpaid invoice reminders" sub="Nudges for invoices past due" value={draft.notifUnpaidReminders} onToggle={() => patch({ notifUnpaidReminders: !draft.notifUnpaidReminders })} />
+          <ToggleRow title="New enquiry alerts" sub="Badge on the Enquiries tab" value={draft.notifNewEnquiry} onToggle={() => patch({ notifNewEnquiry: !draft.notifNewEnquiry })} />
+        </View>
+
+        <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginTop: 10 }}>
+          {saving ? 'Saving…' : 'Save all settings'}
+        </Button>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.offwhite },
+  content: { padding: 16 },
+  sectionHeader: { marginBottom: 6, marginTop: 10, color: colors.gray },
+  card: { backgroundColor: '#fff', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: colors.grayLight, marginBottom: 16 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginTop: 4, color: colors.charcoal }
+});
+</file>
+
+<file path="mobile/src/services/invoiceService.js">
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { apiClient, unwrap, BASE_URL } from './apiClient';
+
+export const listInvoices = (status) => unwrap(apiClient.get('/api/invoices', { params: { status } }));
+export const getInvoice = (id) => unwrap(apiClient.get(`/api/invoices/${id}`));
+export const updateInvoice = (id, payload) => unwrap(apiClient.put(`/api/invoices/${id}`, payload));
+export const deleteInvoice = (id) => unwrap(apiClient.delete(`/api/invoices/${id}`));
+export const setDiscount = (id, discount) => unwrap(apiClient.put(`/api/invoices/${id}/discount`, discount));
+export const setGstIncluded = (id, gstIncluded) => unwrap(apiClient.put(`/api/invoices/${id}/gst`, { gstIncluded }));
+export const setPaymentMode = (id, paymentMode) => unwrap(apiClient.put(`/api/invoices/${id}/payment-mode`, { paymentMode }));
+export const setInvoiceStatus = (id, status) => unwrap(apiClient.put(`/api/invoices/${id}/status`, { status }));
+export const setCostItems = (id, kind, items) => unwrap(apiClient.put(`/api/invoices/${id}/cost-items/${kind}`, { items }));
+
+// FIXED: Uses native fetch to ensure Android/iOS multipart boundaries aren't stripped
+export const uploadCostItemPhoto = async (id, kind, index, asset) => {
+  const form = new FormData();
+  form.append('photo', {
+    uri: Platform.OS === 'android' ? asset.uri : asset.uri.replace('file://', ''),
+    name: asset.fileName || `receipt-${index}.jpg`,
+    type: asset.mimeType || 'image/jpeg',
+  });
+  
+  const token = await AsyncStorage.getItem('gh_token');
+  const res = await fetch(`${BASE_URL}/api/invoices/${id}/cost-items/${kind}/${index}/photo`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` }, // Do NOT set Content-Type; fetch sets it automatically
+    body: form
+  });
+  
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message);
+  return data.data;
+};
+</file>
+
+<file path="mobile/src/components/enquiries/QuoteItemRow.js">
+import React, { useState, useEffect } from 'react';
+import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
+import { colors } from '../../theme/colors';
+
+export default function QuoteItemRow({ item, onChange, onRemove }) {
+  const [name, setName] = useState(item.name || '');
+  const [amt, setAmt] = useState(item.amt?.toString() || '');
+
+  useEffect(() => {
+    setName(item.name || '');
+    setAmt(item.amt?.toString() || '');
+  }, [item.name, item.amt]);
+
+  const commitChanges = () => {
+    if (name !== item.name || amt !== item.amt?.toString()) {
+      onChange({ ...item, name, amt });
+    }
+  };
+
+  return (
+    <View style={styles.row}>
+      <TextInput
+        value={name}
+        onChangeText={setName}
+        onBlur={commitChanges}
+        style={[styles.input, { flex: 1 }]}
+        placeholder="Item Name"
+      />
+      <TextInput
+        value={amt}
+        onChangeText={setAmt}
+        onBlur={commitChanges}
+        keyboardType="numeric"
+        style={[styles.input, { width: 70 }]}
+        placeholder="Price"
+      />
+      <Pressable onPress={onRemove} hitSlop={8}><Text style={styles.remove}>×</Text></Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({ row: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }, input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, fontSize: 12.5 }, remove: { color: colors.red, fontWeight: '700', fontSize: 16 }});
+</file>
+
+<file path="mobile/src/components/invoices/DiscountEditor.js">
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
+import FieldLabel from '../ui/FieldLabel';
+import { colors } from '../../theme/colors';
+
+export default function DiscountEditor({ discount, onChange }) {
+  const [val, setVal] = useState(discount.value?.toString() || '0');
+
+  useEffect(() => {
+    setVal(discount.value?.toString() || '0');
+  }, [discount.value]);
+
+  const commitChanges = () => {
+    if (val !== discount.value?.toString()) {
+      onChange({ ...discount, value: val });
+    }
+  };
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <FieldLabel style={{ marginBottom: 6 }}>Discount</FieldLabel>
+      <View style={styles.row}>
+        <View style={styles.typeSwitch}>
+          {['amount', 'percent'].map((type) => (
+            <Pressable
+              key={type}
+              onPress={() => onChange({ ...discount, type })}
+              style={[styles.typeBtn, discount.type === type && styles.typeBtnActive]}
+            >
+              <Text style={styles.typeLabel}>{type === 'amount' ? 'A$' : '%'}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <TextInput
+          value={val}
+          onChangeText={setVal}
+          onBlur={commitChanges}
+          keyboardType="numeric"
+          style={styles.input}
+        />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  typeSwitch: { flexDirection: 'row', backgroundColor: '#F1F0ED', borderRadius: 8, padding: 3, width: 96 },
+  typeBtn: { flex: 1, paddingVertical: 7, borderRadius: 6, alignItems: 'center' },
+  typeBtnActive: { backgroundColor: '#fff' },
+  typeLabel: { fontSize: 11, fontWeight: '700', color: colors.charcoal },
+  input: { flex: 1, borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, fontSize: 12.5 },
+});
+</file>
+
+<file path="mobile/src/navigation/InvoicesStack.js">
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import InvoicesScreen from '../screens/InvoicesScreen';
+import InvoiceDetailScreen from '../screens/InvoiceDetailScreen';
+import PdfPreviewScreen from '../screens/PdfPreviewScreen'; // <-- Added
+
+const Stack = createNativeStackNavigator();
+
+export default function InvoicesStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="InvoicesList" component={InvoicesScreen} />
+      <Stack.Screen name="InvoiceDetail" component={InvoiceDetailScreen} />
+      <Stack.Screen name="PdfPreview" component={PdfPreviewScreen} />
+    </Stack.Navigator>
+  );
+}
+</file>
+
+<file path="mobile/src/screens/NewJobScreen.js">
+import React, { useState, useRef } from 'react';
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import ScreenHeader from '../components/layout/ScreenHeader';
+import Button from '../components/ui/Button';
+import FieldLabel from '../components/ui/FieldLabel';
+import useToast from '../hooks/useToast';
+import * as jobService from '../services/jobService';
+import { colors } from '../theme/colors';
+
+export default function NewJobScreen() {
+  const navigation = useNavigation();
+  const { showToast } = useToast();
+  const [saving, setSaving] = useState(false);
+  const debounceTimer = useRef(null);
+
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [date, setDate] = useState(new Date());
+
+  const [suggestions, setSuggestions] = useState([]);
+  const [form, setForm] = useState({
+    name: '', phone: '', email: '', when: '', address: '', suburb: '', postcode: '',
+    labour: '180', notes: ''
+  });
+  
+  // Arrays for dynamic fields
+  const [services, setServices] = useState(['General Handyman']);
+  const [materials, setMaterials] = useState([]);
+  const [extraFields, setExtraFields] = useState([]);
+
+  const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+
+  const handleCreateJob = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        ...form,
+        name: form.name || 'New Customer',
+        when: form.when || 'Not scheduled yet',
+        address: [form.address, form.suburb, form.postcode].filter(Boolean).join(', '),
+        labour: Number(form.labour) || 0,
+        services: services.filter(Boolean),
+        extraFields: extraFields.filter(f => f.label && f.value),
+        materials,
+        status: 'confirmed',
+        needsDetails: false
+      };
+      await jobService.createJob(payload);
+      showToast('Job created successfully');
+      navigation.navigate('Dashboard');
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to create job');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+const onDateChange = (event, selectedDate) => {
+  try {
+    console.log("Event type:", event.type);
+    console.log("Selected Date object:", selectedDate);
+    
+    setShowDatePicker(false);
+    if (selectedDate) {
+      setDate(selectedDate);
+      updateForm('when', selectedDate.toString());
+    }
+  } catch (err) {
+    console.log("CRASH CAUGHT IN DATE PICKER:", err.message);
+  }
+};
+  const searchPlaces = (text) => {
+    updateForm('address', text);
+    if (text.length < 4) { setSuggestions([]); return; }
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(async () => {
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&countrycodes=au&format=json&limit=4`, { headers: { 'User-Agent': 'GetHandymanApp/1.0' } });
+        setSuggestions(await response.json());
+      } catch (e) { }
+    }, 800);
+  };
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader title="NEW JOB" />
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        
+        <View style={styles.customerStrip}>
+          <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
+          <View style={{ flex: 1 }}>
+            <TextInput style={styles.nameInput} placeholder="Customer name" placeholderTextColor={colors.gray} value={form.name} onChangeText={(val) => updateForm('name', val)} />
+          </View>
+        </View>
+
+        <View style={styles.fieldRow}>
+          <Text style={styles.icon}>📞</Text>
+          <View style={{ flex: 1 }}><FieldLabel>Phone</FieldLabel><TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" /></View>
+        </View>
+
+        <View style={styles.fieldRow}>
+          <Text style={styles.icon}>📅</Text>
+          <View style={{ flex: 1 }}><FieldLabel>Date & Time</FieldLabel>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
+              <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Tap to select date"}</Text></View>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.fieldRow}>
+          <Text style={styles.icon}>📍</Text>
+          <View style={{ flex: 1, zIndex: 10 }}>
+            <FieldLabel>Street Address</FieldLabel>
+            <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
+            {suggestions.length > 0 && (
+              <View style={styles.dropdown}>
+                {suggestions.map((item, index) => (
+                  <TouchableOpacity key={index} style={styles.dropdownItem} onPress={() => { updateForm('address', item.display_name); setSuggestions([]); }}>
+                    <Text style={styles.dropdownText} numberOfLines={2}>{item.display_name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={[styles.detailsCard, { zIndex: -1 }]}>
+          <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
+          
+          <FieldLabel>Services</FieldLabel>
+          {services.map((srv, idx) => (
+            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv} onChangeText={v => { const s = [...services]; s[idx] = v; setServices(s); }} placeholder="e.g. Plumbing Repair" />
+              <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+            </View>
+          ))}
+          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, ''])}>+ Add another service</Button>
+
+          <FieldLabel>Labour Cost (A$)</FieldLabel>
+          <TextInput style={[styles.input, { marginBottom: 14 }]} value={form.labour} onChangeText={v => updateForm('labour', v)} keyboardType="numeric" />
+          
+          <FieldLabel>Other Details / Fields</FieldLabel>
+          {extraFields.map((f, idx) => (
+            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.label} onChangeText={v => { const e = [...extraFields]; e[idx].label = v; setExtraFields(e); }} placeholder="Label" />
+              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.value} onChangeText={v => { const e = [...extraFields]; e[idx].value = v; setExtraFields(e); }} placeholder="Value" />
+              <TouchableOpacity onPress={() => setExtraFields(extraFields.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+            </View>
+          ))}
+          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setExtraFields([...extraFields, {label: '', value: ''}])}>+ Add other field</Button>
+
+          <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
+        </View>
+      </ScrollView>
+
+      {/* SAFELY rendered date picker */}
+      {showDatePicker && (
+        <DateTimePicker value={date || new Date()} mode="datetime" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16 },
+  customerStrip: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 14 },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.charcoal, alignItems: 'center', justifyContent: 'center' },
+  nameInput: { fontWeight: '800', fontSize: 16, color: colors.charcoal, padding: 0 },
+  fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 6, alignItems: 'flex-start', zIndex: 10 },
+  icon: { width: 34, textAlign: 'center', fontSize: 17, marginTop: 18 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, backgroundColor: '#fff', marginTop: 4 },
+  dropdown: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, marginTop: 4, maxHeight: 150 },
+  dropdownItem: { padding: 10, borderBottomWidth: 1, borderBottomColor: colors.grayLight },
+  dropdownText: { fontSize: 12, color: colors.charcoal },
+  detailsCard: { backgroundColor: colors.orangeTint, borderRadius: 10, padding: 14, marginTop: 20 },
+  cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.orangeDeep, marginBottom: 10 },
+});
+</file>
+
+<file path="mobile/package.json">
+{
+  "name": "get-handyman-mobile",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "build": "eas build --platform android",
+    "ios": "expo run:ios"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-community/datetimepicker": "8.0.1",
+    "@react-navigation/bottom-tabs": "^6.6.1",
+    "@react-navigation/native": "^6.1.18",
+    "@react-navigation/native-stack": "^6.11.0",
+    "axios": "^1.7.2",
+    "expo": "~51.0.0",
+    "expo-image-picker": "~15.0.7",
+    "expo-notifications": "~0.28.19",
+    "expo-print": "~13.0.1",
+    "expo-sharing": "~12.0.1",
+    "expo-status-bar": "~1.12.1",
+    "react": "18.2.0",
+    "react-native": "0.74.5",
+    "react-native-safe-area-context": "4.10.5",
+    "react-native-screens": "3.31.1",
+    "react-native-webview": "13.8.6"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "eas-cli": "^24.4.2"
+  },
+  "private": true,
+  "description": ""
+}
+</file>
+
+<file path="backend/src/models/Enquiry.js">
+const mongoose = require('mongoose');
+
+const quoteItemSchema = new mongoose.Schema({ name: String, qty: { type: Number, default: 1 }, amt: { type: Number, default: 0 } }, { _id: false });
+
+const enquirySchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    phone: String,
+    email: String,
+    services: [String], 
+    when: String,
+    exactTime: String,
+    address: String,
+    suburb: String,
+    postcode: String, 
+    message: String,
+    attachmentUrl: String, 
+    status: { type: String, enum: ['new', 'quoted', 'accepted', 'rejected'], default: 'new' },
+    price: { type: Number, default: 0 },
+    quoteItems: [quoteItemSchema],
+    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null },
+    received: { type: Date, default: Date.now },
+  },
+  { timestamps: true }
+);
+
+// FIXED: Check if the model already exists in memory before compiling it
+module.exports = mongoose.models.Enquiry || mongoose.model('Enquiry', enquirySchema);
+</file>
+
+<file path="backend/src/models/Job.js">
+const mongoose = require('mongoose');
+
+const materialSchema = new mongoose.Schema({ name: String, cost: { type: Number, default: 0 } }, { _id: false });
+const extraFieldSchema = new mongoose.Schema({ label: String, value: String }, { _id: false });
+
+const jobSchema = new mongoose.Schema(
+  {
+    enquiryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enquiry', default: null },
+    name: { type: String, required: true },
+    phone: String,
+    email: String,
+    services: { type: [String], default: [] }, // Array for multiple services
+    service: String, // fallback
+    when: String,
+    exactTime: String,
+    scheduledDate: Date,
+    address: { type: String, required: true },
+    suburb: String,
+    postcode: String,
+    attachmentUrl: String,
+    status: { type: String, enum: ['accepted', 'confirmed', 'complete'], default: 'accepted' },
+    needsDetails: { type: Boolean, default: true },
+    materials: [materialSchema],
+    extraFields: [extraFieldSchema], // Array for extra details
+    labour: { type: Number, default: 0 },
+    notes: String,
+    invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.models.Job || mongoose.model('Job', jobSchema);
+</file>
+
+<file path="mobile/src/components/invoices/CostItemRow.js">
+import React from 'react';
+import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
+import PhotoUploadButton from './PhotoUploadButton';
+import { colors } from '../../theme/colors';
+
+export default function CostItemRow({ item, onChange, onRemove, onUploadPhoto }) {
+  return (
+    <View style={styles.row}>
+      <TextInput
+        defaultValue={item.name}
+        onEndEditing={(e) => onChange({ ...item, name: e.nativeEvent.text })}
+        style={[styles.input, { flex: 1 }]}
+        placeholder="Expense"
+      />
+      <TextInput
+        defaultValue={item.cost?.toString()}
+        onEndEditing={(e) => onChange({ ...item, cost: e.nativeEvent.text })}
+        keyboardType="numeric"
+        style={[styles.input, { width: 56 }]}
+        placeholder="Cost"
+      />
+      <PhotoUploadButton photoUrl={item.photoUrl} onUpload={onUploadPhoto} />
+      <Pressable onPress={onRemove} hitSlop={8}><Text style={styles.remove}>×</Text></Pressable>
+    </View>
+  );
+}
+const styles = StyleSheet.create({ row: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 8 }, input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 9, fontSize: 12 }, remove: { color: colors.red, fontWeight: '700', fontSize: 16 }});
+</file>
+
+<file path="mobile/src/components/invoices/InvoiceLineItemRow.js">
+import React from 'react';
+import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
+import { colors } from '../../theme/colors';
+
+export default function InvoiceLineItemRow({ item, onChange, onRemove }) {
+  return (
+    <View style={styles.row}>
+      <TextInput
+        defaultValue={item.name}
+        onEndEditing={(e) => onChange({ ...item, name: e.nativeEvent.text })}
+        style={[styles.input, { flex: 1 }]}
+        placeholder="Description"
+      />
+      <TextInput
+        defaultValue={item.amt?.toString()}
+        onEndEditing={(e) => onChange({ ...item, amt: e.nativeEvent.text })}
+        keyboardType="numeric"
+        style={[styles.input, { width: 60 }]}
+        placeholder="Amt"
+      />
+      <Pressable onPress={onRemove} hitSlop={8}><Text style={styles.remove}>×</Text></Pressable>
+    </View>
+  );
+}
+const styles = StyleSheet.create({ row: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 7 }, input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 6, paddingHorizontal: 8, fontSize: 11.5 }, remove: { color: colors.red, fontWeight: '700', fontSize: 16 }});
+</file>
+
+<file path="mobile/src/components/jobs/MaterialItemRow.js">
+import React from 'react';
+import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
+import { colors } from '../../theme/colors';
+
+export default function MaterialItemRow({ material, onChange, onRemove }) {
+  return (
+    <View style={styles.row}>
+      <TextInput
+        defaultValue={material.name}
+        onEndEditing={(e) => onChange({ ...material, name: e.nativeEvent.text })}
+        style={[styles.input, { flex: 1 }]}
+        placeholder="Item name"
+      />
+      <TextInput
+        defaultValue={material.cost?.toString()}
+        onEndEditing={(e) => onChange({ ...material, cost: e.nativeEvent.text })}
+        keyboardType="numeric"
+        style={[styles.input, { width: 70 }]}
+        placeholder="Cost"
+      />
+      <Pressable onPress={onRemove} hitSlop={8}><Text style={styles.remove}>×</Text></Pressable>
+    </View>
+  );
+}
+const styles = StyleSheet.create({ row: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }, input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, fontSize: 12.5 }, remove: { color: colors.red, fontWeight: '700', fontSize: 16 }});
 </file>
 
 <file path="mobile/src/screens/InvoiceDetailScreen.js">
@@ -9535,13 +9745,9 @@ export default function InvoiceDetailScreen() {
   };
 
   const handlePreviewPdf = async () => {
-    try {
-      showToast('Opening Preview...');
-      const uri = await generatePDFUri();
-      await Print.printAsync({ uri }); // Opens native preview screen
-    } catch (err) {
-      Alert.alert("PDF Error", "Could not preview the PDF.");
-    }
+    showToast('Generating Preview...');
+    const uri = await generatePDFUri();
+    navigation.navigate('PdfPreview', { uri, title: `Invoice_${invoice.number}.pdf` });
   };
 
   const handleSharePdf = async () => {
@@ -9631,6 +9837,7 @@ import { View, ScrollView, Text, StyleSheet, TouchableOpacity, TextInput } from 
 import { useRoute, useNavigation } from '@react-navigation/native';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import JobStatusBadge from '../components/jobs/JobStatusBadge';
+import JobDetailForm from '../components/jobs/JobDetailForm';
 import Button from '../components/ui/Button';
 import LoadingState from '../components/ui/LoadingState';
 import useJob from '../hooks/useJob';
@@ -9646,35 +9853,27 @@ export default function JobDetailScreen() {
   const { job, loading, saveDetails, complete, remove } = useJob(params.id);
   
   const [editingPrice, setEditingPrice] = useState(false);
+  const [isEditingJob, setIsEditingJob] = useState(false); 
   const [priceInput, setPriceInput] = useState('0');
   const [optionsOpen, setOptionsOpen] = useState(false); 
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (loading || !job) return <View style={styles.screen}><LoadingState /></View>;
 
-  const handleSavePrice = async () => {
-    await saveDetails({ labour: Number(priceInput) });
-    setEditingPrice(false);
-    showToast('Price updated');
+  const handleSaveDetails = async (payload) => {
+    await saveDetails(payload);
+    setIsEditingJob(false);
+    showToast('Job details saved');
   };
 
   const handleComplete = async () => {
     try {
       const { invoice } = await complete();
       showToast('Job marked complete');
-      // Navigate directly to the newly created invoice to avoid routing crashes
       navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: invoice._id } });
     } catch (err) {
       showToast(err.response?.data?.message || 'Failed to complete job');
     }
-  };
-
-  const handleDelete = async () => {
-    setOptionsOpen(false);
-    setConfirmDelete(false);
-    await remove();
-    showToast('Job deleted');
-    navigation.getParent()?.navigate('Jobs');
   };
 
   return (
@@ -9682,9 +9881,7 @@ export default function JobDetailScreen() {
       <ScreenHeader 
         title="JOB DETAILS" 
         rightAction={
-          <TouchableOpacity onPress={() => setOptionsOpen(true)} style={{ padding: 4 }}>
-            <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>⋮</Text>
-          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setOptionsOpen(true)} style={{ padding: 4 }}><Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>⋮</Text></TouchableOpacity>
         } 
       />
       <ScrollView contentContainerStyle={styles.content}>
@@ -9701,83 +9898,77 @@ export default function JobDetailScreen() {
 
         <View style={styles.divider} />
 
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📅</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Date & time</Text>
-            <Text style={styles.value}>{job.when}</Text>
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📍</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Location</Text>
-            <Text style={styles.value}>{job.address}</Text>
-          </View>
-          <Button variant="outline" style={{ paddingVertical: 6, paddingHorizontal: 12 }} onPress={() => openMaps(job.address)}>
-            Locate
-          </Button>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📝</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Notes</Text>
-            <Text style={styles.value}>{job.notes || 'No notes provided.'}</Text>
-          </View>
-        </View>
-
-        <View style={styles.priceCard}>
-          {editingPrice ? (
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TextInput style={styles.priceInput} value={priceInput} onChangeText={setPriceInput} keyboardType="numeric" autoFocus />
-              <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={handleSavePrice}>Save</Button>
+        {job.needsDetails || isEditingJob ? (
+          <JobDetailForm job={job} onSave={handleSaveDetails} />
+        ) : (
+          <>
+            <View style={styles.fieldRow}>
+              <Text style={styles.icon}>📅</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Date & time</Text>
+                {/* Safe string render to avoid Invalid Date crash */}
+                <Text style={styles.value}>{job.when || 'Not set'}</Text>
+              </View>
             </View>
-          ) : (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View><Text style={styles.labelOrange}>Price</Text><Text style={styles.priceText}>{money(job.labour)}</Text></View>
-              <TouchableOpacity style={styles.editBtn} onPress={() => { setPriceInput(String(job.labour)); setEditingPrice(true); }}><Text>✏️</Text></TouchableOpacity>
+
+            <View style={styles.fieldRow}>
+              <Text style={styles.icon}>📍</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Location</Text>
+                <Text style={styles.value}>{job.address}</Text>
+              </View>
+              <Button variant="outline" style={{ paddingVertical: 6, paddingHorizontal: 12 }} onPress={() => openMaps(job.address)}>Locate</Button>
             </View>
-          )}
-        </View>
 
-        <View style={styles.buttonRow}>
-          <Button variant="outline" style={{ flex: 1 }} onPress={() => openPhone(job.phone)}>Call</Button>
-          {job.status === 'complete' ? (
-            <Button variant="dark" style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: job.invoiceId } })}>View Invoice</Button>
-          ) : (
-            <Button variant="green" style={{ flex: 1 }} onPress={handleComplete}>Mark complete</Button>
-          )}
-        </View>
+            <View style={styles.fieldRow}>
+              <Text style={styles.icon}>📝</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Services</Text>
+                <Text style={styles.value}>
+                  {(job.services && job.services.length > 0) ? job.services.join(', ') : (job.service || 'None')}
+                </Text>
+              </View>
+            </View>
 
+            {(job.extraFields && job.extraFields.length > 0) && (
+              <View style={styles.fieldRow}>
+                <Text style={styles.icon}>📋</Text>
+                <View style={{ flex: 1 }}>
+                  {job.extraFields.map((f, idx) => (
+                    <View key={idx} style={{ marginBottom: 4 }}>
+                      <Text style={styles.label}>{f.label}</Text>
+                      <Text style={styles.value}>{f.value}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            <View style={styles.priceCard}>
+              {editingPrice ? (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TextInput style={styles.priceInput} value={priceInput} onChangeText={setPriceInput} keyboardType="numeric" autoFocus />
+                  <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={async () => { await saveDetails({ labour: Number(priceInput) }); setEditingPrice(false); showToast('Price saved'); }}>Save</Button>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View><Text style={styles.labelOrange}>Labour Price</Text><Text style={styles.priceText}>{money(job.labour)}</Text></View>
+                  <TouchableOpacity style={styles.editBtn} onPress={() => { setPriceInput(String(job.labour)); setEditingPrice(true); }}><Text>✏️</Text></TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.buttonRow}>
+              <Button variant="outline" style={{ flex: 1 }} onPress={() => setIsEditingJob(true)}>Edit Details</Button>
+              {job.status === 'complete' ? (
+                <Button variant="dark" style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: job.invoiceId } })}>View Invoice</Button>
+              ) : (
+                <Button variant="green" style={{ flex: 1 }} onPress={handleComplete}>Mark complete</Button>
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
-
-      {optionsOpen && (
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOptionsOpen(false)}>
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-            <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setConfirmDelete(true); }}>
-              <View style={[styles.sheetIconBox, { backgroundColor: colors.redTint }]}><Text>🗑️</Text></View>
-              <Text style={[styles.sheetText, { color: colors.red }]}>Delete job</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      )}
-
-      {confirmDelete && (
-        <View style={styles.overlay}>
-          <View style={styles.confirmBox}>
-            <Text style={styles.confirmTitle}>Delete this job?</Text>
-            <Text style={styles.confirmSub}>Are you sure you want to delete it? This can't be undone.</Text>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Button variant="outline" style={{ flex: 1 }} onPress={() => setConfirmDelete(false)}>Cancel</Button>
-              <Button variant="primary" style={{ flex: 1, backgroundColor: colors.red }} onPress={handleDelete}>Delete</Button>
-            </View>
-          </View>
-        </View>
-      )}
-
     </View>
   );
 }
@@ -9799,190 +9990,8 @@ const styles = StyleSheet.create({
   priceText: { fontSize: 18, fontWeight: '800', color: colors.charcoal },
   editBtn: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   priceInput: { flex: 1, borderWidth: 1.5, borderColor: colors.orange, borderRadius: 8, padding: 8, backgroundColor: '#fff', fontSize: 14, fontWeight: '700' },
-  buttonRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
-  overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(17,24,39,0.4)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 30, paddingTop: 10 },
-  handle: { width: 36, height: 4, backgroundColor: colors.grayLight, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  sheetRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
-  sheetIconBox: { width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  sheetText: { fontSize: 14, fontWeight: '600' },
-  confirmBox: { backgroundColor: '#fff', margin: 20, borderRadius: 14, padding: 20, alignSelf: 'center', top: '30%', position: 'absolute', width: '90%' },
-  confirmTitle: { fontWeight: '800', fontSize: 15, marginBottom: 6 },
-  confirmSub: { fontSize: 12.5, color: colors.gray, marginBottom: 18, lineHeight: 18 }
+  buttonRow: { flexDirection: 'row', gap: 10, marginTop: 18 }
 });
-</file>
-
-<file path="mobile/src/screens/JobsScreen.js">
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import JobListItem from '../components/jobs/JobListItem';
-import SegmentedControl from '../components/ui/SegmentedControl';
-import LoadingState from '../components/ui/LoadingState';
-import useJobs from '../hooks/useJobs';
-import { colors } from '../theme/colors';
-
-const { width } = Dimensions.get('window');
-
-export default function JobsScreen() {
-  const navigation = useNavigation();
-  const { jobs, loading } = useJobs('all');
-  
-  const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
-  const [listFilter, setListFilter] = useState('all'); // 'all' | 'today' | 'upcoming' | 'complete'
-
-  // Filter logic
-  const filteredJobs = jobs.filter(j => {
-    if (listFilter === 'complete') return j.status === 'complete';
-    if (listFilter === 'today') return j.status !== 'complete'; // Simplified for prototype
-    if (listFilter === 'upcoming') return j.status !== 'complete';
-    return true;
-  });
-
-  // Calendar Logic (Mocked month matching prototype)
-  const daysInMonth = Array.from({ length: 30 }, (_, i) => i + 1);
-  const jobsPerDay = {};
-  jobs.forEach(j => {
-    // Mocking a day extraction based on the prototype's data structure
-    const dayMatch = j.when?.match(/\b(\d{1,2})\b/);
-    const day = dayMatch ? parseInt(dayMatch[1], 10) : 4; 
-    jobsPerDay[day] = (jobsPerDay[day] || 0) + 1;
-  });
-
-  return (
-    <View style={styles.screen}>
-      <SafeAreaView edges={['top']} style={styles.header}>
-        <Text style={styles.title}>JOBS</Text>
-        <SegmentedControl 
-          options={[{ value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]}
-          value={viewMode} 
-          onChange={setViewMode} 
-          dark 
-        />
-      </SafeAreaView>
-
-      {loading ? (
-        <LoadingState />
-      ) : (
-        <ScrollView style={styles.content}>
-          {viewMode === 'list' ? (
-            <View style={styles.listContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-                {['all', 'today', 'upcoming', 'complete', 'incomplete'].map(f => (
-                  <TouchableOpacity 
-                    key={f} 
-                    style={[styles.filterChip, listFilter === f && styles.filterChipActive]}
-                    onPress={() => setListFilter(f)}
-                  >
-                    <Text style={[styles.filterText, listFilter === f && styles.filterTextActive]}>
-                      {f.charAt(0).toUpperCase() + f.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              
-              {filteredJobs.length > 0 ? (
-                filteredJobs.map(j => <JobListItem key={j._id} job={j} />)
-              ) : (
-                <Text style={styles.emptyText}>No jobs match this filter.</Text>
-              )}
-            </View>
-          ) : (
-            <View style={styles.calendarContainer}>
-              <View style={styles.daysHeader}>
-                {['S','M','T','W','T','F','S'].map((d, i) => (
-                  <Text key={i} style={styles.dayHeadText}>{d}</Text>
-                ))}
-              </View>
-              <View style={styles.grid}>
-                {/* Empty offset spaces */}
-                <View style={{ width: (width - 28) / 7 * 2 }} /> 
-                {daysInMonth.map(day => {
-                  const isToday = day === 4;
-                  const count = jobsPerDay[day] || 0;
-                  return (
-                    <TouchableOpacity 
-                      key={day} 
-                      style={[styles.dayCell, isToday && styles.todayCell]}
-                      onPress={() => navigation.navigate('DayDetail', { day })}
-                    >
-                      <Text style={[styles.dayText, isToday && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
-                      {count > 0 && (
-                        <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
-                          <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-        </ScrollView>
-      )}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.offwhite },
-  header: { backgroundColor: colors.charcoal, paddingHorizontal: 16, paddingBottom: 14 },
-  title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
-  content: { flex: 1 },
-  listContainer: { padding: 14 },
-  filterScroll: { flexDirection: 'row', marginBottom: 14 },
-  filterChip: { paddingVertical: 6, paddingHorizontal: 13, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, marginRight: 8 },
-  filterChipActive: { backgroundColor: colors.charcoal, borderColor: colors.charcoal },
-  filterText: { fontSize: 11, fontWeight: '700', color: colors.gray },
-  filterTextActive: { color: '#fff' },
-  emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
-  calendarContainer: { padding: 14 },
-  daysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 10 },
-  dayHeadText: { fontSize: 10, color: colors.gray, fontWeight: '700', width: (width - 28) / 7, textAlign: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCell: { width: (width - 28) / 7, height: 46, alignItems: 'center', paddingTop: 4 },
-  todayCell: { backgroundColor: colors.orangeTint, borderRadius: 8, borderWidth: 1, borderColor: colors.orange },
-  dayText: { fontSize: 11, fontWeight: '500', color: colors.charcoal },
-  badge: { backgroundColor: colors.grayLight, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1, marginTop: 2 },
-  badgeText: { fontSize: 8, fontWeight: '800', color: colors.gray }
-});
-</file>
-
-<file path="mobile/package.json">
-{
-  "name": "get-handyman-mobile",
-  "version": "1.0.0",
-  "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "build": "eas build --platform android",
-    "ios": "expo run:ios"
-  },
-  "dependencies": {
-    "@react-native-async-storage/async-storage": "1.23.1",
-    "@react-native-community/datetimepicker": "8.0.1",
-    "@react-navigation/bottom-tabs": "^6.6.1",
-    "@react-navigation/native": "^6.1.18",
-    "@react-navigation/native-stack": "^6.11.0",
-    "axios": "^1.7.2",
-    "expo": "~51.0.0",
-    "expo-image-picker": "~15.0.7",
-    "expo-print": "~13.0.1",
-    "expo-sharing": "~12.0.1",
-    "expo-status-bar": "~1.12.1",
-    "react": "18.2.0",
-    "react-native": "0.74.5",
-    "react-native-safe-area-context": "4.10.5",
-    "react-native-screens": "3.31.1"
-  },
-  "devDependencies": {
-    "@babel/core": "^7.24.0",
-    "eas-cli": "^24.4.2"
-  },
-  "private": true,
-  "description": ""
-}
 </file>
 
 </files>

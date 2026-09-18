@@ -1,7 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import InvoicesScreen from '../screens/InvoicesScreen';
 import InvoiceDetailScreen from '../screens/InvoiceDetailScreen';
-import PdfPreviewScreen from '../screens/PdfPreviewScreen'; // <-- Added
+import PdfPreviewScreen from '../screens/PdfPreviewScreen'; 
 
 const Stack = createNativeStackNavigator();
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import ScreenHeader from '../components/layout/ScreenHeader';
@@ -15,16 +15,17 @@ export default function NewJobScreen() {
   const [saving, setSaving] = useState(false);
   const debounceTimer = useRef(null);
 
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [date, setDate] = useState(new Date());
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerMode, setPickerMode] = useState('date');
+  const [tempDate, setTempDate] = useState(new Date());
+  const [dateObj, setDateObj] = useState(new Date());
 
   const [suggestions, setSuggestions] = useState([]);
   const [form, setForm] = useState({
-    name: '', phone: '', email: '', when: '', address: '', suburb: '', postcode: '',
+    name: '', phone: '', email: '', when: '', exactTime: '', scheduledDate: null, address: '', suburb: '', postcode: '',
     labour: '180', notes: ''
   });
   
-  // Arrays for dynamic fields
   const [services, setServices] = useState(['General Handyman']);
   const [materials, setMaterials] = useState([]);
   const [extraFields, setExtraFields] = useState([]);
@@ -34,42 +35,84 @@ export default function NewJobScreen() {
   const handleCreateJob = async () => {
     setSaving(true);
     try {
+      const safeAddress = [form.address, form.suburb, form.postcode].filter(Boolean).join(', ') || 'Address not set';
+      const validServices = services.filter(Boolean);
+      
       const payload = {
         ...form,
         name: form.name || 'New Customer',
         when: form.when || 'Not scheduled yet',
-        address: [form.address, form.suburb, form.postcode].filter(Boolean).join(', '),
+        exactTime: form.exactTime,
+        scheduledDate: form.scheduledDate || new Date().toISOString(),
+        address: safeAddress,
         labour: Number(form.labour) || 0,
-        services: services.filter(Boolean),
+        services: validServices,
+        service: validServices.length > 0 ? validServices[0] : 'General Handyman', // FIXED: Prevents missing field DB error
         extraFields: extraFields.filter(f => f.label && f.value),
         materials,
         status: 'confirmed',
         needsDetails: false
       };
+      
       await jobService.createJob(payload);
       showToast('Job created successfully');
-      navigation.navigate('Dashboard');
+      navigation.navigate('Jobs', { screen: 'JobsList' }); 
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to create job');
+      // FIXED: Display the exact backend error in an alert so it doesn't disappear
+      let errorText = 'An unknown error occurred.';
+      if (err.response?.data?.errors) {
+        errorText = err.response.data.errors.join('\n');
+      } else if (err.response?.data?.message) {
+        errorText = err.response.data.message;
+      } else if (err.message) {
+        errorText = err.message; // usually "Network Error" if server is unreachable
+      }
+      Alert.alert("Cannot Create Job", errorText);
     } finally {
       setSaving(false);
     }
   };
 
-const onDateChange = (event, selectedDate) => {
-  try {
-    console.log("Event type:", event.type);
-    console.log("Selected Date object:", selectedDate);
-    
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setDate(selectedDate);
-      updateForm('when', selectedDate.toString());
+  const formatSafeDate = (d) => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
+  };
+
+  const openPicker = () => {
+    setPickerMode(Platform.OS === 'ios' ? 'datetime' : 'date');
+    setShowPicker(true);
+  };
+
+  const onDateChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') setShowPicker(false);
+
+    if (event.type === 'set' && selectedDate) {
+      if (Platform.OS === 'android' && pickerMode === 'date') {
+        setTempDate(selectedDate);
+        setPickerMode('time');
+        setTimeout(() => setShowPicker(true), 50); 
+      } else {
+        let finalDate = selectedDate;
+        if (Platform.OS === 'android' && pickerMode === 'time') {
+          finalDate = new Date(tempDate);
+          finalDate.setHours(selectedDate.getHours());
+          finalDate.setMinutes(selectedDate.getMinutes());
+        }
+        setDateObj(finalDate);
+        updateForm('when', formatSafeDate(finalDate));
+
+        let hrs = finalDate.getHours();
+        const mins = finalDate.getMinutes().toString().padStart(2, '0');
+        const ampm = hrs >= 12 ? 'PM' : 'AM';
+        hrs = hrs % 12 || 12;
+        updateForm('exactTime', `${hrs}:${mins} ${ampm}`);
+
+        updateForm('scheduledDate', finalDate.toISOString());
+      }
     }
-  } catch (err) {
-    console.log("CRASH CAUGHT IN DATE PICKER:", err.message);
-  }
-};
+  };
+
   const searchPlaces = (text) => {
     updateForm('address', text);
     if (text.length < 4) { setSuggestions([]); return; }
@@ -84,7 +127,7 @@ const onDateChange = (event, selectedDate) => {
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="NEW JOB" />
+      <ScreenHeader title="NEW JOB" onBack={() => navigation.navigate('Dashboard')} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         
         <View style={styles.customerStrip}>
@@ -101,10 +144,17 @@ const onDateChange = (event, selectedDate) => {
 
         <View style={styles.fieldRow}>
           <Text style={styles.icon}>📅</Text>
-          <View style={{ flex: 1 }}><FieldLabel>Date & Time</FieldLabel>
-            <TouchableOpacity onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
-              <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Tap to select date"}</Text></View>
-            </TouchableOpacity>
+          <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <FieldLabel>Date</FieldLabel>
+              <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
+                <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Select"}</Text></View>
+              </TouchableOpacity>
+            </View>
+            <View style={{ flex: 1 }}>
+              <FieldLabel>Exact Time</FieldLabel>
+              <TextInput style={styles.input} value={form.exactTime} onChangeText={v => updateForm('exactTime', v)} placeholder="e.g. 10:30 AM" />
+            </View>
           </View>
         </View>
 
@@ -122,6 +172,17 @@ const onDateChange = (event, selectedDate) => {
                 ))}
               </View>
             )}
+          </View>
+        </View>
+        
+        <View style={styles.rowSplit}>
+          <View style={{ flex: 1, marginLeft: 46 }}>
+            <FieldLabel>Suburb</FieldLabel>
+            <TextInput style={styles.input} value={form.suburb} onChangeText={v => updateForm('suburb', v)} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <FieldLabel>Postcode</FieldLabel>
+            <TextInput style={styles.input} value={form.postcode} onChangeText={v => updateForm('postcode', v)} keyboardType="numeric" />
           </View>
         </View>
 
@@ -154,9 +215,13 @@ const onDateChange = (event, selectedDate) => {
         </View>
       </ScrollView>
 
-      {/* SAFELY rendered date picker */}
-      {showDatePicker && (
-        <DateTimePicker value={date || new Date()} mode="datetime" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />
+      {showPicker && (
+        <DateTimePicker 
+          value={pickerMode === 'time' ? tempDate : dateObj} 
+          mode={pickerMode} 
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'} 
+          onChange={onDateChange} 
+        />
       )}
     </View>
   );
@@ -169,8 +234,9 @@ const styles = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.charcoal, alignItems: 'center', justifyContent: 'center' },
   nameInput: { fontWeight: '800', fontSize: 16, color: colors.charcoal, padding: 0 },
   fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 6, alignItems: 'flex-start', zIndex: 10 },
+  rowSplit: { flexDirection: 'row', gap: 12, paddingVertical: 6 },
   icon: { width: 34, textAlign: 'center', fontSize: 17, marginTop: 18 },
-  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, backgroundColor: '#fff', marginTop: 4 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, backgroundColor: '#fff', marginTop: 4, color: colors.charcoal },
   dropdown: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, marginTop: 4, maxHeight: 150 },
   dropdownItem: { padding: 10, borderBottomWidth: 1, borderBottomColor: colors.grayLight },
   dropdownText: { fontSize: 12, color: colors.charcoal },

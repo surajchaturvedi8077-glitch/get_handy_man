@@ -1,10 +1,3 @@
-/**
- * JobListItem.js
- * ------------------------------------------------------------------
- * One row in the jobs list: scheduled time, status badge, customer +
- * service, and address. Tapping navigates to the job detail screen.
- * ------------------------------------------------------------------
- */
 import { View, Text, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Card from '../ui/Card';
@@ -13,6 +6,12 @@ import { colors } from '../../theme/colors';
 
 export default function JobListItem({ job }) {
   const navigation = useNavigation();
+  
+  // Safely display the array, or fall back to old string, or 'None'
+  const serviceText = (job.services && job.services.length > 0) 
+    ? job.services.join(', ') 
+    : (job.service || 'None');
+
   return (
     <Card
       onPress={() => navigation.navigate('JobDetail', { id: job._id })}
@@ -22,7 +21,7 @@ export default function JobListItem({ job }) {
         <Text style={styles.when}>{job.when}</Text>
         <JobStatusBadge job={job} />
       </View>
-      <Text style={styles.customer}>{job.name} — {job.service}</Text>
+      <Text style={styles.customer}>{job.name} — {serviceText}</Text>
       <Text style={styles.address}>{job.address}</Text>
     </Card>
   );
