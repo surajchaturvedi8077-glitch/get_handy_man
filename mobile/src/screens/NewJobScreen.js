@@ -22,7 +22,7 @@ export default function NewJobScreen() {
 
   const [suggestions, setSuggestions] = useState([]);
   const [form, setForm] = useState({
-    name: '', phone: '', email: '', when: '', exactTime: '', scheduledDate: null, address: '', suburb: '', postcode: '',
+    name: '', phone: '', email: '', when: '', exactTime: '', scheduledDate: null, address: '', suburb: '', postcode: '', lat: null, lng: null,
     labour: '180', notes: ''
   });
   
@@ -45,9 +45,11 @@ export default function NewJobScreen() {
         exactTime: form.exactTime,
         scheduledDate: form.scheduledDate || new Date().toISOString(),
         address: safeAddress,
+        lat: form.lat,
+        lng: form.lng,
         labour: Number(form.labour) || 0,
         services: validServices,
-        service: validServices.length > 0 ? validServices[0] : 'General Handyman', // FIXED: Prevents missing field DB error
+        service: validServices.length > 0 ? validServices[0] : 'General Handyman',
         extraFields: extraFields.filter(f => f.label && f.value),
         materials,
         status: 'confirmed',
@@ -58,35 +60,17 @@ export default function NewJobScreen() {
       showToast('Job created successfully');
       navigation.navigate('Jobs', { screen: 'JobsList' }); 
     } catch (err) {
-      // FIXED: Display the exact backend error in an alert so it doesn't disappear
-      let errorText = 'An unknown error occurred.';
-      if (err.response?.data?.errors) {
-        errorText = err.response.data.errors.join('\n');
-      } else if (err.response?.data?.message) {
-        errorText = err.response.data.message;
-      } else if (err.message) {
-        errorText = err.message; // usually "Network Error" if server is unreachable
-      }
-      Alert.alert("Cannot Create Job", errorText);
+      const errMsg = err.response?.data?.errors ? err.response.data.errors.join('\n') : (err.response?.data?.message || 'Failed to create job');
+      Alert.alert("Cannot Create Job", errMsg);
     } finally {
       setSaving(false);
     }
   };
 
-  const formatSafeDate = (d) => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
-  };
-
-  const openPicker = () => {
-    setPickerMode(Platform.OS === 'ios' ? 'datetime' : 'date');
-    setShowPicker(true);
-  };
+  const openPicker = () => { setPickerMode(Platform.OS === 'ios' ? 'datetime' : 'date'); setShowPicker(true); };
 
   const onDateChange = (event, selectedDate) => {
     if (Platform.OS === 'android') setShowPicker(false);
-
     if (event.type === 'set' && selectedDate) {
       if (Platform.OS === 'android' && pickerMode === 'date') {
         setTempDate(selectedDate);
@@ -100,29 +84,48 @@ export default function NewJobScreen() {
           finalDate.setMinutes(selectedDate.getMinutes());
         }
         setDateObj(finalDate);
-        updateForm('when', formatSafeDate(finalDate));
-
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        updateForm('when', `${days[finalDate.getDay()]}, ${finalDate.getDate()} ${months[finalDate.getMonth()]}`);
         let hrs = finalDate.getHours();
         const mins = finalDate.getMinutes().toString().padStart(2, '0');
-        const ampm = hrs >= 12 ? 'PM' : 'AM';
-        hrs = hrs % 12 || 12;
-        updateForm('exactTime', `${hrs}:${mins} ${ampm}`);
-
+        updateForm('exactTime', `${hrs % 12 || 12}:${mins} ${hrs >= 12 ? 'PM' : 'AM'}`);
         updateForm('scheduledDate', finalDate.toISOString());
       }
     }
   };
 
-  const searchPlaces = (text) => {
+  // NEW: Live Google Maps Search
+  const searchPlaces = async (text) => {
     updateForm('address', text);
-    if (text.length < 4) { setSuggestions([]); return; }
+    if (text.length < 3) { setSuggestions([]); return; }
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(async () => {
       try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&countrycodes=au&format=json&limit=4`, { headers: { 'User-Agent': 'GetHandymanApp/1.0' } });
-        setSuggestions(await response.json());
+        const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
+        if (!key) return; // Failsafe if key isn't set yet
+        const res = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&components=country:au&key=${key}`);
+        const data = await res.json();
+        setSuggestions(data.predictions || []);
       } catch (e) { }
-    }, 800);
+    }, 500);
+  };
+
+  // NEW: Exact Pin-Drop GPS Capture & Postcode Autofill
+  const handleSelectPlace = async (placeId, description) => {
+    updateForm('address', description);
+    setSuggestions([]);
+    try {
+      const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
+      const res = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=address_components,geometry&key=${key}`);
+      const data = await res.json();
+      if (data.result) {
+        updateForm('lat', data.result.geometry.location.lat);
+        updateForm('lng', data.result.geometry.location.lng);
+        const postcodeObj = data.result.address_components.find(c => c.types.includes('postal_code'));
+        if (postcodeObj) updateForm('postcode', postcodeObj.long_name);
+      }
+    } catch (e) { }
   };
 
   return (
@@ -139,7 +142,11 @@ export default function NewJobScreen() {
 
         <View style={styles.fieldRow}>
           <Text style={styles.icon}>📞</Text>
-          <View style={{ flex: 1 }}><FieldLabel>Phone</FieldLabel><TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" /></View>
+          <View style={{ flex: 1 }}>
+            <FieldLabel>Phone & Email</FieldLabel>
+            <TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholder="Phone Number" />
+            <TextInput style={[styles.input, { marginTop: 8 }]} value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="Email Address" />
+          </View>
         </View>
 
         <View style={styles.fieldRow}>
@@ -158,6 +165,7 @@ export default function NewJobScreen() {
           </View>
         </View>
 
+        {/* UPDATED: Google Maps Autocomplete Dropdown */}
         <View style={styles.fieldRow}>
           <Text style={styles.icon}>📍</Text>
           <View style={{ flex: 1, zIndex: 10 }}>
@@ -165,9 +173,9 @@ export default function NewJobScreen() {
             <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
             {suggestions.length > 0 && (
               <View style={styles.dropdown}>
-                {suggestions.map((item, index) => (
-                  <TouchableOpacity key={index} style={styles.dropdownItem} onPress={() => { updateForm('address', item.display_name); setSuggestions([]); }}>
-                    <Text style={styles.dropdownText} numberOfLines={2}>{item.display_name}</Text>
+                {suggestions.map((item) => (
+                  <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
+                    <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -216,12 +224,7 @@ export default function NewJobScreen() {
       </ScrollView>
 
       {showPicker && (
-        <DateTimePicker 
-          value={pickerMode === 'time' ? tempDate : dateObj} 
-          mode={pickerMode} 
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'} 
-          onChange={onDateChange} 
-        />
+        <DateTimePicker value={pickerMode === 'time' ? tempDate : dateObj} mode={pickerMode} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />
       )}
     </View>
   );

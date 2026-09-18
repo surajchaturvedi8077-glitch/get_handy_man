@@ -29,7 +29,19 @@ export default function DashboardScreen() {
   const { jobs } = useJobs('all');
   const { invoices: unpaidInvoices } = useInvoices('unpaid');
 
-  const todaysJobs = jobs.filter(j => j.status !== 'complete'); 
+  // --- "TODAY ONLY" FILTER & PROXIMITY SORTING ---
+  const today = new Date();
+  const isToday = (dateString) => {
+    if (!dateString) return false;
+    const d = new Date(dateString);
+    return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+  };
+
+  const todaysJobs = jobs
+    .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
+    // PROXIMITY SORTING: Sorts jobs chronologically so the closest time is at the top
+    .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
+
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
   const confirmedCount = todaysJobs.filter(j => j.status === 'confirmed').length;
 
@@ -45,24 +57,13 @@ export default function DashboardScreen() {
             <Text style={styles.dateSub}>{todayStr}</Text>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity 
-              style={styles.iconBtnDark} 
-              onPress={() => navigation.navigate('Notifications')}
-            >
+            <TouchableOpacity style={styles.iconBtnDark} onPress={() => navigation.navigate('Notifications')}>
               <Text style={{ fontSize: 14 }}>🔔</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.iconBtnDark} 
-              onPress={() => navigation.navigate('Settings')}
-            >
+            <TouchableOpacity style={styles.iconBtnDark} onPress={() => navigation.navigate('Settings')}>
               <Text style={{ fontSize: 14 }}>⚙️</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.iconBtnOrange} 
-              onPress={() => navigation.navigate('NewJob')}
-            >
+            <TouchableOpacity style={styles.iconBtnOrange} onPress={() => navigation.navigate('NewJob')}>
               <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>+</Text>
             </TouchableOpacity>
           </View>

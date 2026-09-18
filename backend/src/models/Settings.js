@@ -18,6 +18,7 @@ const settingsSchema = new mongoose.Schema(
     bsb: { type: String, default: '' },
     account: { type: String, default: '' },
     accountName: { type: String, default: '' },
+    payId: { type: String, default: '' }, // NEW: Added PayID field
     quoteMessage: { type: String, default: 'Thanks for your enquiry — here is your quote below. Let me know if you would like to go ahead.' },
     notifJobReminders: { type: Boolean, default: true },
     notifUnpaidReminders: { type: Boolean, default: true },

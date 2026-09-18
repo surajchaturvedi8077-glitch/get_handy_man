@@ -9,19 +9,22 @@ const jobSchema = new mongoose.Schema(
     name: { type: String, required: true },
     phone: String,
     email: String,
-    services: { type: [String], default: [] }, // Array for multiple services
-    service: String, // fallback
+    services: { type: [String], default: [] }, 
+    service: String, 
     when: String,
     exactTime: String,
     scheduledDate: Date,
     address: { type: String, required: true },
     suburb: String,
     postcode: String,
+    // NEW: Capture exact GPS coordinates for Google Maps pin-drop routing
+    lat: { type: Number, default: null },
+    lng: { type: Number, default: null },
     attachmentUrl: String,
     status: { type: String, enum: ['accepted', 'confirmed', 'complete'], default: 'accepted' },
     needsDetails: { type: Boolean, default: true },
     materials: [materialSchema],
-    extraFields: [extraFieldSchema], // Array for extra details
+    extraFields: [extraFieldSchema],
     labour: { type: Number, default: 0 },
     notes: String,
     invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },

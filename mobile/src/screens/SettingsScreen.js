@@ -87,24 +87,19 @@ export default function SettingsScreen() {
           <SettingInput label="Email" value={draft.bizEmail} onChange={v => patch({ bizEmail: v })} />
         </View>
 
-        <FieldLabel style={styles.sectionHeader}>Bank Transfer Details</FieldLabel>
+        <FieldLabel style={styles.sectionHeader}>Bank & PayID Transfer Details</FieldLabel>
         <View style={styles.card}>
           <SettingInput label="Bank Name" value={draft.bankName} onChange={v => patch({ bankName: v })} />
           <SettingInput label="BSB" value={draft.bsb} onChange={v => patch({ bsb: v })} />
           <SettingInput label="Account Number" value={draft.account} onChange={v => patch({ account: v })} />
           <SettingInput label="Account Name" value={draft.accountName} onChange={v => patch({ accountName: v })} />
+          {/* NEW: PayID Field */}
+          <SettingInput label="PayID (Email / Phone / ABN)" value={draft.payId} onChange={v => patch({ payId: v })} />
         </View>
 
         <FieldLabel style={styles.sectionHeader}>Quote Template</FieldLabel>
         <View style={styles.card}>
           <SettingInput label="Default Intro Message" value={draft.quoteMessage} onChange={v => patch({ quoteMessage: v })} multiline />
-        </View>
-
-        <FieldLabel style={styles.sectionHeader}>Notifications</FieldLabel>
-        <View style={styles.card}>
-          <ToggleRow title="Job reminders" sub="Today's jobs, on the reminders screen" value={draft.notifJobReminders} onToggle={() => patch({ notifJobReminders: !draft.notifJobReminders })} />
-          <ToggleRow title="Unpaid invoice reminders" sub="Nudges for invoices past due" value={draft.notifUnpaidReminders} onToggle={() => patch({ notifUnpaidReminders: !draft.notifUnpaidReminders })} />
-          <ToggleRow title="New enquiry alerts" sub="Badge on the Enquiries tab" value={draft.notifNewEnquiry} onToggle={() => patch({ notifNewEnquiry: !draft.notifNewEnquiry })} />
         </View>
 
         <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginTop: 10 }}>

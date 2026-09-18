@@ -1,11 +1,11 @@
-import React from 'react';
-import { View, ScrollView, Text, StyleSheet, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, ScrollView, Text, StyleSheet, Alert, TextInput } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import PaymentModeSelector from '../components/invoices/PaymentModeSelector';
-import GstIncludeToggle from '../components/invoices/GstIncludeToggle';
+import Toggle from '../components/ui/Toggle';
 import InvoiceLineItemsEditor from '../components/invoices/InvoiceLineItemsEditor';
 import DiscountEditor from '../components/invoices/DiscountEditor';
 import InvoiceTotals from '../components/invoices/InvoiceTotals';
@@ -22,39 +22,96 @@ import { colors } from '../theme/colors';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
 
+// =====================================================================
+// FIXED: MOVED STYLES TO THE VERY TOP TO PREVENT "OUT OF REACH" ERRORS
+// =====================================================================
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16 },
+  divider: { borderTopWidth: 1, borderTopColor: colors.grayLight, marginVertical: 12 },
+  hintText: { fontSize: 10, color: '#9CA3AF', marginBottom: 10 },
+  expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 12 },
+  expenseTotal: { fontSize: 17, fontWeight: '800', color: colors.charcoal },
+  gstBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.grayLight, marginBottom: 14 },
+  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' }
+});
+
 export default function InvoiceDetailScreen() {
   const { params } = useRoute();
   const navigation = useNavigation();
   const { showToast } = useToast();
-  const { settings } = useSettings();
+  const { settings, update: updateSettings } = useSettings();
   const {
-    invoice,
-    loading,
-    error,
-    updateItems,
-    setDiscount,
-    toggleGstIncluded,
-    setPaymentMode,
-    togglePaidStatus,
-    setCostItems,
-    uploadCostItemPhoto,
+    invoice, loading, error, updateItems, setDiscount, toggleGstIncluded,
+    setPaymentMode, togglePaidStatus, setCostItems, uploadCostItemPhoto,
   } = useInvoice(params.id);
+
+  const [localGstRate, setLocalGstRate] = useState(settings?.gstRate ? String(settings.gstRate) : '10');
 
   if (loading || !invoice) return <View style={styles.screen}><LoadingState /></View>;
   if (error) return <View style={styles.screen}><ErrorState>{error}</ErrorState></View>;
 
   const isPaid = invoice.status === 'paid';
 
+  const handleSaveGstRate = () => {
+    updateSettings({ gstRate: Number(localGstRate) || 0 });
+    showToast('GST Rate Updated');
+  };
+
   const generateHTMLString = () => {
+    // 1. Build the items safely
     const itemsHtml = invoice.items && invoice.items.length 
-      ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB;">${i.qty || 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${(parseFloat(i.amt || 0) * parseInt(i.qty || 1)).toFixed(2)}</td></tr>`).join('')
+      ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB;">${i.name ? i.name : ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB;">${i.qty ? i.qty : 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${parseFloat(i.amt ? i.amt : 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${(parseFloat(i.amt ? i.amt : 0) * parseInt(i.qty ? i.qty : 1)).toFixed(2)}</td></tr>`).join('')
       : '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
 
+    // 2. Prepare variables safely outside the HTML string to prevent syntax bugs
+    const bsbStr = settings?.bsb ? settings.bsb : '';
+    const accountStr = settings?.account ? settings.account : '';
+    const accountNameStr = settings?.accountName ? settings.accountName : '';
+    const bankNameStr = settings?.bankName ? settings.bankName : '';
+    const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
+    
+    const bizNameStr = settings?.businessName ? settings.businessName : 'Get Handyman';
+    const bizCityStr = settings?.bizCityState ? settings.bizCityState : '';
+    const bizPhoneStr = settings?.bizPhone ? settings.bizPhone : '';
+    const bizWebStr = settings?.website ? settings.website : '';
+    
     const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
-    const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${settings?.businessName || 'Get Handyman'}</h2>`;
+    const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${bizNameStr}</h2>`;
+    
     const invDate = new Date(invoice.date).toLocaleDateString('en-GB');
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-GB') : invDate;
+    
+    const customerName = invoice.customer ? invoice.customer : 'Customer Name';
+    const customerEmailHtml = invoice.customerEmail ? `<div>${invoice.customerEmail}</div>` : '';
+    const customerPhoneHtml = invoice.customerPhone ? `<div>${invoice.customerPhone}</div>` : '';
+    
+    const invoiceNum = invoice.number ? invoice.number.replace('GH-', '') : '0';
+    const termsStr = invoice.terms === 'Due on receipt' ? 'NET 0' : invoice.terms;
+    
+    const subtotal = parseFloat(invoice.totals?.subtotal ? invoice.totals.subtotal : 0).toFixed(2);
+    const discAmt = parseFloat(invoice.totals?.discAmt ? invoice.totals.discAmt : 0).toFixed(2);
+    const gstAmt = parseFloat(invoice.totals?.gst ? invoice.totals.gst : 0).toFixed(2);
+    const totalDue = parseFloat(invoice.totals?.total ? invoice.totals.total : 0).toFixed(2);
+    const gstRate = settings?.gstRate ? settings.gstRate : 10;
+    
+    const isPaidAmt = invoice.status === 'paid' ? totalDue : '0.00';
+    const balanceAmt = invoice.status === 'paid' ? '0.00' : totalDue;
 
+    const paymentDetailsHtml = bankNameStr ? `
+      <div style="margin-top: 40px; font-size: 10px; color: #6B7280; line-height: 1.6;">
+        <strong>Payment Details</strong><br/>
+        Bank: ${bankNameStr}<br/>
+        BSB: ${bsbStr}<br/>
+        Account: ${accountStr}<br/>
+        Account Name: ${accountNameStr}
+        ${payIdHtml}
+      </div>
+    ` : '';
+
+    const discountHtml = invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${discAmt}</span></div>` : '';
+
+    // 3. Render clean HTML
     return `
       <html>
         <head>
@@ -92,37 +149,35 @@ export default function InvoiceDetailScreen() {
         </head>
         <body>
           <svg class="bg-shapes" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><circle cx="30" cy="160" r="45" fill="#F4E8FF" /><circle cx="110" cy="120" r="22" fill="#F1F5F9" /><circle cx="160" cy="180" r="35" fill="#FFF1F2" /><circle cx="80" cy="190" r="18" fill="#FDF4FF" /></svg>
-          <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${settings?.bizCityState || 'Melbourne, Victoria'}</div><div>${settings?.bizPhone || '0401923333'}</div><div>${settings?.website || 'www.gethandyman.com.au'}</div></div></div>
-          <div class="title-row"><h1 class="biz-name">${settings?.businessName || 'Get Handyman'}</h1><h2 class="doc-type">Invoice</h2></div>
+          <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${bizCityStr}</div><div>${bizPhoneStr}</div><div>${bizWebStr}</div></div></div>
+          <div class="title-row"><h1 class="biz-name">${bizNameStr}</h1><h2 class="doc-type">Invoice</h2></div>
           <div class="divider"></div>
           <div class="meta-row">
-            <div class="bill-to"><div class="bill-to-label">Bill To:</div><div class="bill-to-details"><div style="font-weight: 700;">${invoice.customer || 'Customer Name'}</div>${invoice.customerEmail ? `<div>${invoice.customerEmail}</div>` : ''}${invoice.customerPhone ? `<div>${invoice.customerPhone}</div>` : ''}</div></div>
-            <div class="meta-right"><table><tr><td class="label">Invoice No:</td><td class="val">${invoice.number?.replace('GH-', '') || '0'}</td></tr><tr><td class="label">Date:</td><td class="val">${invDate}</td></tr><tr><td class="label">Terms:</td><td class="val">${invoice.terms === 'Due on receipt' ? 'NET 0' : invoice.terms}</td></tr><tr><td class="label">Due Date:</td><td class="val">${dueDate}</td></tr></table></div>
+            <div class="bill-to"><div class="bill-to-label">Bill To:</div><div class="bill-to-details"><div style="font-weight: 700;">${customerName}</div>${customerEmailHtml}${customerPhoneHtml}</div></div>
+            <div class="meta-right"><table><tr><td class="label">Invoice No:</td><td class="val">${invoiceNum}</td></tr><tr><td class="label">Date:</td><td class="val">${invDate}</td></tr><tr><td class="label">Terms:</td><td class="val">${termsStr}</td></tr><tr><td class="label">Due Date:</td><td class="val">${dueDate}</td></tr></table></div>
           </div>
           <table class="items-table"><tr><th class="text-left">Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>${itemsHtml}</table>
           <div class="totals-container">
             <div class="totals">
-              <div class="totals-row"><span>Subtotal</span><span>$${parseFloat(invoice.totals?.subtotal || 0).toFixed(2)}</span></div>
-              ${invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${parseFloat(invoice.totals.discAmt).toFixed(2)}</span></div>` : ''}
-              <div class="totals-row"><span>${invoice.totals?.applyGst ? `GST ${settings?.gstRate || 10}%` : 'GST'}</span><span>${invoice.totals?.applyGst ? `$${parseFloat(invoice.totals.gst).toFixed(2)}` : '$0.00'}</span></div>
-              <div class="totals-row"><span>Total</span><span>$${parseFloat(invoice.totals?.total || 0).toFixed(2)}</span></div>
-              <div class="totals-row"><span>Paid</span><span>$${invoice.status === 'paid' ? parseFloat(invoice.totals?.total || 0).toFixed(2) : '0.00'}</span></div>
-              <div class="balance-due"><span>Balance Due</span><span>$${invoice.status === 'paid' ? '0.00' : parseFloat(invoice.totals?.total || 0).toFixed(2)}</span></div>
+              <div class="totals-row"><span>Subtotal</span><span>$${subtotal}</span></div>
+              ${discountHtml}
+              <div class="totals-row"><span>${invoice.totals?.applyGst ? `GST ${gstRate}%` : 'GST'}</span><span>${invoice.totals?.applyGst ? `$${gstAmt}` : '$0.00'}</span></div>
+              <div class="totals-row"><span>Total</span><span>$${totalDue}</span></div>
+              <div class="totals-row"><span>Paid</span><span>$${isPaidAmt}</span></div>
+              <div class="balance-due"><span>Balance Due</span><span>$${balanceAmt}</span></div>
             </div>
           </div>
-          ${settings?.bankName ? `<div style="margin-top: 40px; font-size: 10px; color: #6B7280; line-height: 1.6;"><strong>Payment Details</strong><br/>Bank: ${settings.bankName}<br/>BSB: ${settings.bsb || ''}<br/>Account: ${settings.account || ''}<br/>Account Name: ${settings.accountName || ''}</div>` : ''}
+          ${paymentDetailsHtml}
         </body>
       </html>
     `;
   };
 
-  // EXPLICITLY Routes to the Preview Screen using the raw HTML
   const handlePreviewPdf = () => {
     const html = generateHTMLString();
     navigation.navigate('PdfPreview', { html, title: `Invoice_${invoice.number}.pdf` });
   };
 
-  // EXPLICITLY generates the PDF and shares it
   const handleSharePdf = async () => {
     try {
       showToast('Generating Document...');
@@ -142,15 +197,36 @@ export default function InvoiceDetailScreen() {
         <View style={{ marginBottom: 12 }}>
           <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
         </View>
-        <GstIncludeToggle gstIncluded={invoice.gstIncluded} onToggle={toggleGstIncluded} />
+        
+        <View style={styles.gstBox}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontWeight: '700', fontSize: 12.5, color: invoice.gstIncluded ? colors.green : colors.red }}>
+              {invoice.gstIncluded ? 'Reported income' : 'Cash Bonus'}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+              <Text style={{ fontSize: 11, color: colors.gray, marginRight: 8 }}>Include GST at</Text>
+              <TextInput
+                style={styles.gstInput}
+                value={localGstRate}
+                onChangeText={setLocalGstRate}
+                onBlur={handleSaveGstRate}
+                keyboardType="numeric"
+                editable={invoice.gstIncluded}
+              />
+              <Text style={{ fontSize: 11, color: colors.gray, marginLeft: 4 }}>%</Text>
+            </View>
+          </View>
+          <Toggle on={invoice.gstIncluded} onToggle={toggleGstIncluded} />
+        </View>
+
         <InvoiceLineItemsEditor items={invoice.items} onChange={updateItems} />
         <View style={styles.divider} />
         <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
         <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
         
-        {/* Actions explicitly bound to the two different functions */}
         <InvoiceActions
           isPaid={isPaid}
+          customerEmail={invoice.customerEmail}
           onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
           onPreviewPdf={handlePreviewPdf}
           onShare={handleSharePdf}
@@ -170,12 +246,3 @@ export default function InvoiceDetailScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
-  divider: { borderTopWidth: 1, borderTopColor: colors.grayLight, marginVertical: 12 },
-  hintText: { fontSize: 10, color: '#9CA3AF', marginBottom: 10 },
-  expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 12 },
-  expenseTotal: { fontSize: 17, fontWeight: '800', color: colors.charcoal },
-});

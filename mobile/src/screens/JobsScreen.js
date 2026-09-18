@@ -14,22 +14,39 @@ export default function JobsScreen() {
   const navigation = useNavigation();
   const { jobs, loading } = useJobs('all');
   
-  const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
-  const [listFilter, setListFilter] = useState('all'); // 'all' | 'today' | 'upcoming' | 'complete'
+  const [viewMode, setViewMode] = useState('list'); 
+  const [listFilter, setListFilter] = useState('all'); 
 
-  // Filter logic
+  // --- REAL DATE FILTERING & SORTING ---
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Reset to start of day for comparison
+
+  const isToday = (dateString) => {
+    if (!dateString) return false;
+    const d = new Date(dateString);
+    return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+  };
+
   const filteredJobs = jobs.filter(j => {
     if (listFilter === 'complete') return j.status === 'complete';
-    if (listFilter === 'today') return j.status !== 'complete'; // Simplified for prototype
-    if (listFilter === 'upcoming') return j.status !== 'complete';
-    return true;
-  });
+    if (listFilter === 'incomplete') return j.status !== 'complete';
+    
+    const isJobToday = isToday(j.scheduledDate);
+    
+    if (listFilter === 'today') return j.status !== 'complete' && isJobToday;
+    if (listFilter === 'upcoming') {
+      if (!j.scheduledDate) return true; // Unscheduled jobs count as upcoming
+      const jobDate = new Date(j.scheduledDate);
+      jobDate.setHours(0, 0, 0, 0);
+      return j.status !== 'complete' && jobDate > today;
+    }
+    return true; // 'all'
+  }).sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate)); // Chronological sort
 
   // Calendar Logic (Mocked month matching prototype)
   const daysInMonth = Array.from({ length: 30 }, (_, i) => i + 1);
   const jobsPerDay = {};
   jobs.forEach(j => {
-    // Mocking a day extraction based on the prototype's data structure
     const dayMatch = j.when?.match(/\b(\d{1,2})\b/);
     const day = dayMatch ? parseInt(dayMatch[1], 10) : 4; 
     jobsPerDay[day] = (jobsPerDay[day] || 0) + 1;
@@ -81,18 +98,17 @@ export default function JobsScreen() {
                 ))}
               </View>
               <View style={styles.grid}>
-                {/* Empty offset spaces */}
                 <View style={{ width: (width - 28) / 7 * 2 }} /> 
                 {daysInMonth.map(day => {
-                  const isToday = day === 4;
+                  const isTodayCell = day === today.getDate();
                   const count = jobsPerDay[day] || 0;
                   return (
                     <TouchableOpacity 
                       key={day} 
-                      style={[styles.dayCell, isToday && styles.todayCell]}
+                      style={[styles.dayCell, isTodayCell && styles.todayCell]}
                       onPress={() => navigation.navigate('DayDetail', { day })}
                     >
-                      <Text style={[styles.dayText, isToday && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
+                      <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
                       {count > 0 && (
                         <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
                           <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>

@@ -2,7 +2,7 @@ import { Linking, Platform, Alert } from 'react-native';
 
 export const openPhone = async (phone) => {
   if (!phone) return Alert.alert('No phone number provided');
-  const cleanPhone = phone.replace(/\s+/g, ''); // Fixes Android dialer crash
+  const cleanPhone = phone.replace(/\s+/g, ''); 
   try {
     await Linking.openURL(`tel:${cleanPhone}`);
   } catch (err) {
@@ -19,13 +19,20 @@ export const openEmail = async (email) => {
   }
 };
 
-export const openMaps = async (address) => {
-  if (!address) return Alert.alert('No address provided');
+// UPDATED: Routes using exact lat/lng GPS coordinates if available
+export const openMaps = async (address, lat, lng) => {
+  if (!address && !lat) return Alert.alert('No address provided');
   
-  // Use universal maps link for Android to ensure the app chooser opens perfectly
-  const url = Platform.OS === 'ios' 
-    ? `maps:0,0?q=${encodeURIComponent(address)}` 
-    : `https://maps.google.com/?q=${encodeURIComponent(address)}`;
+  let url = '';
+  if (lat && lng) {
+    url = Platform.OS === 'ios' 
+      ? `maps:0,0?q=${lat},${lng}(${encodeURIComponent(address)})` 
+      : `https://maps.google.com/?q=${lat},${lng}`;
+  } else {
+    url = Platform.OS === 'ios' 
+      ? `maps:0,0?q=${encodeURIComponent(address)}` 
+      : `https://maps.google.com/?q=${encodeURIComponent(address)}`;
+  }
     
   try {
     await Linking.openURL(url);
