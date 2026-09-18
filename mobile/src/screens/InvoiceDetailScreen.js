@@ -21,7 +21,7 @@ import { money } from '../utils/money';
 import { colors } from '../theme/colors';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
-
+sep
 // =====================================================================
 // FIXED: MOVED STYLES TO THE VERY TOP TO PREVENT "OUT OF REACH" ERRORS
 // =====================================================================
