@@ -29,6 +29,11 @@
     },
     "ios": {
       "bundleIdentifier": "y"
-    }
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker",
+      "expo-sharing",
+      "expo-status-bar"
+    ]
   }
 }
