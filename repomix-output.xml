@@ -47,6 +47,7 @@ backend/
       env.js
     controllers/
       authController.js
+      customerController.js
       enquiryController.js
       invoiceController.js
       jobController.js
@@ -59,6 +60,7 @@ backend/
       notFound.js
       upload.js
     models/
+      Customer.js
       Enquiry.js
       Invoice.js
       Job.js
@@ -66,6 +68,7 @@ backend/
       User.js
     routes/
       authRoutes.js
+      customerRoutes.js
       enquiryRoutes.js
       index.js
       invoiceRoutes.js
@@ -168,8 +171,9 @@ mobile/
     settings.gradle
   assets/
     adaptive-icon.png
+    dummy-transparent-image copy.png
     dummy-transparent-image.png
-    splash.png
+    splash1.png
   ios/
     GetHandyman/
       Images.xcassets/
@@ -285,6 +289,7 @@ mobile/
       MainTabNavigator.js
       RootNavigator.js
     screens/
+      CustomersScreen.js
       DashboardScreen.js
       DayDetailScreen.js
       EnquiriesScreen.js
@@ -306,6 +311,7 @@ mobile/
       index.js
       invoiceService.js
       jobService.js
+      notificationService.js
       reportService.js
       settingsService.js
     theme/
@@ -327,6 +333,280 @@ README.md
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="backend/src/controllers/customerController.js">
+const asyncHandler = require('../middleware/asyncHandler');
+const Customer = require('../models/Customer');
+const { ok, created } = require('../utils/apiResponse');
+
+const listCustomers = asyncHandler(async (req, res) => {
+  const customers = await Customer.find().sort({ name: 1 });
+  ok(res, customers);
+});
+
+const createCustomer = asyncHandler(async (req, res) => {
+  const customer = await Customer.create(req.body);
+  created(res, customer);
+});
+
+const updateCustomer = asyncHandler(async (req, res) => {
+  const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  if (!customer) {
+    res.status(404);
+    throw new Error('Customer not found');
+  }
+  ok(res, customer);
+});
+
+const deleteCustomer = asyncHandler(async (req, res) => {
+  const customer = await Customer.findByIdAndDelete(req.params.id);
+  if (!customer) {
+    res.status(404);
+    throw new Error('Customer not found');
+  }
+  ok(res, { deleted: true });
+});
+
+module.exports = { listCustomers, createCustomer, updateCustomer, deleteCustomer };
+</file>
+
+<file path="backend/src/models/Customer.js">
+const mongoose = require('mongoose');
+
+const customerSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    phone: String,
+    email: String,
+    address: String,
+    suburb: String,
+    postcode: String,
+    notes: String,
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.models.Customer || mongoose.model('Customer', customerSchema);
+</file>
+
+<file path="backend/src/routes/customerRoutes.js">
+const express = require('express');
+const { listCustomers, createCustomer, updateCustomer, deleteCustomer } = require('../controllers/customerController');
+const { protect } = require('../middleware/auth');
+
+const router = express.Router();
+router.use(protect);
+
+router.get('/', listCustomers);
+router.post('/', createCustomer);
+router.put('/:id', updateCustomer);
+router.delete('/:id', deleteCustomer);
+
+module.exports = router;
+</file>
+
+<file path="mobile/src/screens/CustomersScreen.js">
+import React, { useState, useCallback } from 'react';
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import ScreenHeader from '../components/layout/ScreenHeader';
+import Button from '../components/ui/Button';
+import FieldLabel from '../components/ui/FieldLabel';
+import { apiClient, unwrap } from '../services/apiClient';
+import useToast from '../hooks/useToast';
+import { colors } from '../theme/colors';
+
+export default function CustomersScreen({ navigation }) {
+  const [customers, setCustomers] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const { showToast } = useToast();
+
+  const [form, setForm] = useState({ name: '', phone: '', email: '', address: '', notes: '' });
+
+  const loadCustomers = async () => {
+    try {
+       const data = await unwrap(apiClient.get('/api/customers'));
+       setCustomers(data);
+    } catch(e) {}
+  };
+
+  useFocusEffect(useCallback(() => { loadCustomers(); }, []));
+
+  const openModal = (customer = null) => {
+    if (customer) {
+      setEditingId(customer._id);
+      setForm(customer);
+    } else {
+      setEditingId(null);
+      setForm({ name: '', phone: '', email: '', address: '', notes: '' });
+    }
+    setModalVisible(true);
+  };
+
+  const saveCustomer = async () => {
+    if (!form.name) return Alert.alert("Required", "Customer Name is required.");
+    try {
+      if (editingId) {
+        await unwrap(apiClient.put(`/api/customers/${editingId}`, form));
+        showToast('Customer Profile Updated');
+      } else {
+        await unwrap(apiClient.post('/api/customers', form));
+        showToast('New Customer Saved');
+      }
+      setModalVisible(false);
+      loadCustomers();
+    } catch (e) { Alert.alert('Error', 'Could not save customer'); }
+  };
+
+  const deleteCustomer = (id) => {
+    Alert.alert("Delete Customer", "Are you sure? This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+          await unwrap(apiClient.delete(`/api/customers/${id}`));
+          showToast('Customer deleted');
+          loadCustomers();
+      }}
+    ]);
+  };
+
+  const filtered = customers.filter(c => 
+    searchQuery === '' ||
+    c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.phone?.includes(searchQuery) ||
+    c.email?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader 
+        title="REGULAR CUSTOMERS" 
+        onBack={() => navigation.goBack()} 
+        rightAction={
+          <TouchableOpacity onPress={() => openModal()} style={styles.addBtn}>
+            <Text style={{color: '#fff', fontSize: 13, fontWeight: 'bold'}}>+ Add</Text>
+          </TouchableOpacity>
+        } 
+      />
+      
+      <View style={{ padding: 16, paddingBottom: 0 }}>
+         <TextInput style={styles.searchBar} placeholder="Search customers..." value={searchQuery} onChangeText={setSearchQuery} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content}>
+         {filtered.length === 0 && <Text style={styles.empty}>No customers found.</Text>}
+         {filtered.map(c => (
+           <View key={c._id} style={styles.card}>
+             <View style={{ flex: 1 }}>
+               <Text style={styles.name}>{c.name}</Text>
+               <Text style={styles.detail}>{c.phone || 'No phone'}  •  {c.email || 'No email'}</Text>
+               <Text style={styles.detail}>{c.address || 'No address saved'}</Text>
+               {c.notes ? <Text style={styles.notes}>Notes: {c.notes}</Text> : null}
+             </View>
+             <View style={styles.actions}>
+               <TouchableOpacity onPress={() => openModal(c)} style={styles.iconBtn}><Text style={{fontSize: 16}}>✏️</Text></TouchableOpacity>
+               <TouchableOpacity onPress={() => deleteCustomer(c._id)} style={styles.iconBtn}><Text style={{fontSize: 16}}>🗑️</Text></TouchableOpacity>
+             </View>
+           </View>
+         ))}
+      </ScrollView>
+
+      {/* CUSTOMER EDITING MODAL */}
+      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.screen}>
+           <ScreenHeader title={editingId ? "EDIT CUSTOMER" : "NEW CUSTOMER"} onBack={() => setModalVisible(false)} />
+           <ScrollView contentContainerStyle={{ padding: 16 }}>
+             <FieldLabel>Name *</FieldLabel>
+             <TextInput style={styles.input} value={form.name} onChangeText={v => setForm({...form, name: v})} />
+             <FieldLabel>Phone</FieldLabel>
+             <TextInput style={styles.input} value={form.phone} onChangeText={v => setForm({...form, phone: v})} keyboardType="phone-pad" />
+             <FieldLabel>Email</FieldLabel>
+             <TextInput style={styles.input} value={form.email} onChangeText={v => setForm({...form, email: v})} keyboardType="email-address" autoCapitalize="none" />
+             <FieldLabel>Address</FieldLabel>
+             <TextInput style={styles.input} value={form.address} onChangeText={v => setForm({...form, address: v})} />
+             <FieldLabel>Internal Notes</FieldLabel>
+             <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline value={form.notes} onChangeText={v => setForm({...form, notes: v})} />
+             
+             <Button variant="primary" onPress={saveCustomer} style={{ marginTop: 10 }}>Save Customer Profile</Button>
+             <Button variant="outline" onPress={() => setModalVisible(false)} style={{marginTop: 10, borderColor: colors.red}}>
+               <Text style={{color: colors.red, fontWeight: 'bold'}}>Cancel</Text>
+             </Button>
+           </ScrollView>
+        </View>
+      </Modal>
+    </View>
+  )
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.offwhite },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: colors.charcoal },
+  content: { padding: 16 },
+  addBtn: { backgroundColor: colors.orange, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 10, padding: 14, marginBottom: 12, flexDirection: 'row', alignItems: 'center' },
+  name: { fontSize: 15, fontWeight: '800', color: colors.charcoal, marginBottom: 4 },
+  detail: { fontSize: 11.5, color: colors.gray, marginBottom: 2 },
+  notes: { fontSize: 11, color: colors.orangeDeep, marginTop: 4, fontStyle: 'italic' },
+  actions: { flexDirection: 'row', gap: 12, paddingLeft: 10 },
+  iconBtn: { backgroundColor: colors.grayLight, padding: 8, borderRadius: 8 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 12, color: colors.charcoal },
+  empty: { textAlign: 'center', color: colors.gray, marginTop: 40, fontSize: 13 }
+});
+</file>
+
+<file path="mobile/src/services/notificationService.js">
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
+
+// Configure how notifications appear when the app is open
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+export async function registerForPushNotificationsAsync() {
+  let token;
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+  
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+  
+  if (finalStatus !== 'granted') {
+    return;
+  }
+
+  if (Platform.OS === 'android') {
+    Notifications.setNotificationChannelAsync('default', {
+      name: 'Job Reminders & Alerts',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#F5821F',
+    });
+  }
+}
+
+// Schedule a local notification reminder for an upcoming job
+export async function scheduleJobReminder(jobTitle, jobDate) {
+  const triggerTime = new Date(jobDate).getTime() - (30 * 60 * 1000); // 30 mins before
+  if (triggerTime <= Date.now()) return; // Don't schedule past events
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Upcoming Job Reminder 🔔",
+      body: `You have an upcoming job: ${jobTitle} in 30 minutes.`,
+      sound: true,
+    },
+    trigger: { date: new Date(triggerTime) },
+  });
+}
+</file>
 
 <file path="backend/src/config/db.js">
 /**
@@ -997,6 +1277,7 @@ router.use('/enquiries', require('./enquiryRoutes'));
 router.use('/jobs', require('./jobRoutes'));
 router.use('/invoices', require('./invoiceRoutes'));
 router.use('/report', require('./reportRoutes'));
+router.use('/customers', require('./customerRoutes'));
 
 module.exports = router;
 </file>
@@ -3676,15 +3957,6 @@ const styles = StyleSheet.create({
 </file>
 
 <file path="mobile/src/components/enquiries/EnquiryDetail.js">
-/**
- * EnquiryDetail.js
- * ------------------------------------------------------------------
- * Composes the small enquiry-detail pieces (summary card, quote
- * composer, accept/reject actions) based on the enquiry's status.
- * Holds no logic of its own — every action is passed down from
- * EnquiryDetailScreen, which owns the useEnquiry() hook.
- * ------------------------------------------------------------------
- */
 import { View, Text, StyleSheet } from 'react-native';
 import EnquirySummaryCard from './EnquirySummaryCard';
 import QuoteComposer from './QuoteComposer';
@@ -3693,7 +3965,7 @@ import Button from '../ui/Button';
 import { money } from '../../utils/money';
 import { colors } from '../../theme/colors';
 
-export default function EnquiryDetail({ enquiry, onReject, onSendQuote, onAccept }) {
+export default function EnquiryDetail({ enquiry, onReject, onSendQuote, onAccept, onReactivate }) {
   return (
     <View>
       <EnquirySummaryCard enquiry={enquiry} />
@@ -3714,8 +3986,18 @@ export default function EnquiryDetail({ enquiry, onReject, onSendQuote, onAccept
         </>
       )}
 
-      {(enquiry.status === 'accepted' || enquiry.status === 'rejected') && (
-        <Text style={styles.note}>This enquiry is {enquiry.status}. No further action needed here.</Text>
+      {enquiry.status === 'accepted' && (
+        <Text style={styles.note}>This enquiry is accepted and linked to a job.</Text>
+      )}
+
+      {enquiry.status === 'rejected' && (
+        <>
+          <Text style={styles.noteError}>This enquiry was previously rejected.</Text>
+          {/* Feature 4: Reactivate rejected enquiry */}
+          <Button variant="primary" onPress={onReactivate} style={{ marginTop: 12 }}>
+            Reactivate & Edit Details
+          </Button>
+        </>
       )}
     </View>
   );
@@ -3724,7 +4006,8 @@ export default function EnquiryDetail({ enquiry, onReject, onSendQuote, onAccept
 const styles = StyleSheet.create({
   rejectBtn: { marginTop: 10 },
   quoted: { fontWeight: '800', fontSize: 15, marginVertical: 10 },
-  note: { fontSize: 12.5, color: colors.gray },
+  note: { fontSize: 12.5, color: colors.green, fontWeight: '700', marginTop: 10 },
+  noteError: { fontSize: 12.5, color: colors.red, fontWeight: '700', marginTop: 10 },
 });
 </file>
 
@@ -5549,16 +5832,8 @@ const styles = StyleSheet.create({
 </file>
 
 <file path="mobile/src/screens/InvoicesScreen.js">
-/**
- * InvoicesScreen.js
- * ------------------------------------------------------------------
- * The invoices screen: Unpaid / Paid / All tabs show InvoiceList;
- * the Report tab (was "Summary") shows ReportScreen instead, backed
- * by its own useReport() hook so it only fetches when selected.
- * ------------------------------------------------------------------
- */
 import { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import InvoiceTabs from '../components/invoices/InvoiceTabs';
 import InvoiceList from '../components/invoices/InvoiceList';
@@ -5566,17 +5841,39 @@ import ReportScreen from '../components/report/ReportScreen';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import useInvoices from '../hooks/useInvoices';
-import useReport from '../hooks/useReport';
 import { colors } from '../theme/colors';
 
 function InvoiceListPane({ tab }) {
   const { invoices, loading, error } = useInvoices(tab);
+  const [searchQuery, setSearchQuery] = useState(''); // NEW: Search state
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorState>{error}</ErrorState>;
-  return <InvoiceList invoices={invoices} showUnpaidTotal={tab === 'unpaid'} />;
+
+  // NEW: Filter logic for the search bar
+  const filteredInvoices = invoices.filter(i => 
+    searchQuery === '' ||
+    i.customer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    i.number?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <View style={{ flex: 1 }}>
+      {/* NEW: Global Search Bar */}
+      <TextInput 
+        style={styles.searchBar} 
+        placeholder="Search by customer name or invoice #..." 
+        value={searchQuery} 
+        onChangeText={setSearchQuery} 
+        placeholderTextColor={colors.gray}
+      />
+      <InvoiceList invoices={filteredInvoices} showUnpaidTotal={tab === 'unpaid'} />
+    </View>
+  );
 }
 
 function ReportPane() {
+  const useReport = require('../hooks/useReport').default;
   const { report, loading, error } = useReport();
   if (loading) return <LoadingState />;
   if (error) return <ErrorState>{error}</ErrorState>;
@@ -5592,7 +5889,7 @@ export default function InvoicesScreen() {
         <Text style={styles.title}>INVOICES</Text>
         <InvoiceTabs value={tab} onChange={setTab} />
       </SafeAreaView>
-      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} keyboardShouldPersistTaps="handled">
         {tab === 'report' ? <ReportPane /> : <InvoiceListPane tab={tab} />}
       </ScrollView>
     </View>
@@ -5605,6 +5902,7 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
   body: { flex: 1 },
   bodyContent: { padding: 14 },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal }
 });
 </file>
 
@@ -5656,85 +5954,103 @@ export default function NewQuoteScreen() {
   const [generating, setGenerating] = useState(false);
 
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', address: ''
+    name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt'
   });
-  const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150' }]);
+  const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150.00' }]);
 
   const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
   const generateQuotePDF = async () => {
-    if (!form.name) return Alert.alert("Required", "Please enter a customer name.");
+    if (!form.name || !form.phone || !form.email) {
+      return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
+    }
     
     setGenerating(true);
     try {
-      showToast('Generating Quote...');
+      showToast('Generating Quote PDF...');
       
-      const itemsHtml = items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB;">${i.name || ''}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`).join('');
+      const itemsHtml = items.map(i => `
+        <tr>
+          <td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td>
+          <td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td>
+        </tr>
+      `).join('');
+      
       const total = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
 
       const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
       const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${settings?.businessName || 'Get Handyman'}</h2>`;
       const quoteDate = new Date().toLocaleDateString('en-GB');
 
-      // Uses upgraded quote formatting matching the premium invoice layout
       const html = `
         <html>
           <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
             <style>
               @page { margin: 0; }
-              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; position: relative; min-height: 100vh; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
               .header { display: flex; justify-content: space-between; align-items: flex-start; }
-              .logo { max-height: 120px; max-width: 250px; object-fit: contain; }
-              .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.6; }
+              .logo { max-height: 100px; max-width: 200px; object-fit: contain; }
+              .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.5; }
               .title-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; }
-              .biz-name { font-size: 28px; font-weight: 800; color: #1F2937; margin: 0; letter-spacing: -0.5px; }
+              .biz-name { font-size: 24px; font-weight: 800; color: #1F2937; margin: 0; }
               .doc-type { font-size: 22px; font-weight: 800; color: #1D4ED8; margin: 0; }
               .divider { border-top: 2px solid #111827; margin: 15px 0 25px 0; }
               .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #374151; }
-              .bill-to { display: flex; gap: 20px; }
-              .bill-to-label { color: #9CA3AF; width: 40px; }
-              .bill-to-details { line-height: 1.6; }
-              .meta-right table { font-size: 11px; text-align: right; border-collapse: collapse; line-height: 1.6; }
-              .meta-right td { padding: 0 0 0 15px; }
-              .meta-right .label { color: #9CA3AF; }
-              .meta-right .val { color: #374151; }
-              .items-table { width: 100%; border-collapse: collapse; margin-top: 40px; font-size: 11px; }
-              .items-table th { background-color: #111827; color: #ffffff; padding: 12px 10px; font-weight: 700; }
-              .items-table td { padding: 12px 10px; color: #374151; }
-              .text-left { text-align: left; }
+              .bill-to-details { line-height: 1.5; }
+              .items-table { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 11px; }
+              .items-table th { background-color: #111827; color: #ffffff; padding: 10px; font-weight: 700; text-align: left; }
               .text-right { text-align: right; }
               .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
-              .totals { width: 260px; font-size: 11px; color: #374151; }
-              .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; }
-              .balance-due { background-color: #1D4ED8; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
-              .bg-shapes { position: absolute; bottom: 0; left: 0; width: 350px; height: 350px; z-index: -1; opacity: 0.6; pointer-events: none; }
+              .balance-due { background-color: #1D4ED8; color: #ffffff; font-size: 14px; font-weight: 700; padding: 10px 15px; display: flex; justify-content: space-between; width: 220px; border-radius: 4px; }
             </style>
           </head>
           <body>
-            <svg class="bg-shapes" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><circle cx="30" cy="160" r="45" fill="#EAF3FF" /><circle cx="110" cy="120" r="22" fill="#F1F5F9" /><circle cx="160" cy="180" r="35" fill="#F4E8FF" /></svg>
-            <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${settings?.bizCityState || ''}</div><div>${settings?.bizPhone || ''}</div><div>${settings?.website || ''}</div></div></div>
+            <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${settings?.abn ? `ABN: ${settings.abn}` : ''}</div><div>${settings?.bizPhone || ''}</div><div>${settings?.bizEmail || ''}</div><div>${settings?.website || ''}</div></div></div>
             <div class="title-row"><h1 class="biz-name">${settings?.businessName || 'Get Handyman'}</h1><h2 class="doc-type">QUOTE</h2></div>
             <div class="divider"></div>
             <div class="meta-row">
-              <div class="bill-to"><div class="bill-to-label">Quote For:</div><div class="bill-to-details"><div style="font-weight: 700;">${form.name}</div>${form.email ? `<div>${form.email}</div>` : ''}${form.phone ? `<div>${form.phone}</div>` : ''}${form.address ? `<div>${form.address}</div>` : ''}</div></div>
-              <div class="meta-right"><table><tr><td class="label">Date:</td><td class="val">${quoteDate}</td></tr></table></div>
-            </div>
-            <table class="items-table"><tr><th class="text-left">Description</th><th class="text-right">Amount</th></tr>${itemsHtml}</table>
-            <div class="totals-container">
-              <div class="totals">
-                <div class="balance-due"><span>Total Quote</span><span>$${total.toFixed(2)}</span></div>
+              <div>
+                <div style="color: #9CA3AF; font-weight: 700; margin-bottom: 4px;">BILL TO:</div>
+                <div class="bill-to-details">
+                  <div style="font-weight: 700;">${form.name}</div>
+                  <div>${form.email}</div>
+                  <div>${form.phone}</div>
+                  ${form.address ? `<div>${form.address}</div>` : ''}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div><span style="color: #9CA3AF;">Quote Date:</span> ${quoteDate}</div>
+                <div><span style="color: #9CA3AF;">Currency:</span> ${form.currency}</div>
+                <div><span style="color: #9CA3AF;">Terms:</span> ${form.terms}</div>
               </div>
             </div>
-            ${settings?.quoteMessage ? `<div style="margin-top: 40px; font-size: 11px; color: #374151; line-height: 1.6;">${settings.quoteMessage}</div>` : ''}
+            <table class="items-table">
+              <tr><th>DESCRIPTION</th><th class="text-right">AMOUNT</th></tr>
+              ${itemsHtml}
+            </table>
+            <div class="totals-container">
+              <div class="balance-due"><span>TOTAL</span><span>$${total.toFixed(2)}</span></div>
+            </div>
+            ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #4B5563; line-height: 1.5;">${settings.quoteMessage}</div>` : ''}
           </body>
         </html>
       `;
 
-      // Navigate to the preview screen for Native Sharing
-      navigation.navigate('PdfPreview', { html, title: `Quote_${form.name.replace(/\s+/g, '_')}.pdf` });
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      
+      // Forces native sharing dialog to work across all apps (WhatsApp, Gmail, Drive, etc.)
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { 
+          mimeType: 'application/pdf', 
+          dialogTitle: `Share Quote for ${form.name}`,
+          UTI: '.pdf' 
+        });
+      } else {
+        Alert.alert("Sharing not available", "Sharing is not available on this device");
+      }
     } catch (err) {
-      Alert.alert("Error", "Failed to generate quote.");
+      Alert.alert("Error", "Failed to generate quote PDF: " + err.message);
     } finally {
       setGenerating(false);
     }
@@ -5745,24 +6061,30 @@ export default function NewQuoteScreen() {
       <ScreenHeader title="NEW QUOTE" onBack={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         
-        <FieldLabel>Customer Details</FieldLabel>
-        <TextInput style={styles.input} placeholder="Customer Name" value={form.name} onChangeText={v => updateForm('name', v)} />
-        <TextInput style={styles.input} placeholder="Phone Number" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" />
-        <TextInput style={styles.input} placeholder="Email Address" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" />
-        <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} />
+        <FieldLabel>Customer Details (Mandatory)</FieldLabel>
+        <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} placeholderTextColor={colors.gray} />
+        <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
+        <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
+        <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} placeholderTextColor={colors.gray} />
 
-        <FieldLabel style={{ marginTop: 14 }}>Quote Items</FieldLabel>
+        <FieldLabel style={{ marginTop: 10 }}>Quote Configuration</FieldLabel>
+        <View style={styles.row}>
+          <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} placeholder="Currency" value={form.currency} onChangeText={v => updateForm('currency', v)} />
+          <TextInput style={[styles.input, { flex: 2, marginTop: 0 }]} placeholder="Terms" value={form.terms} onChangeText={v => updateForm('terms', v)} />
+        </View>
+
+        <FieldLabel style={{ marginTop: 14 }}>Line Items (Fully Editable)</FieldLabel>
         {items.map((it, idx) => (
           <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
             <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={it.name} onChangeText={v => { const n = [...items]; n[idx].name = v; setItems(n); }} placeholder="Description" />
-            <TextInput style={[styles.input, { width: 80, marginTop: 0 }]} value={it.amt} onChangeText={v => { const n = [...items]; n[idx].amt = v; setItems(n); }} placeholder="Cost" keyboardType="numeric" />
+            <TextInput style={[styles.input, { width: 90, marginTop: 0 }]} value={it.amt} onChangeText={v => { const n = [...items]; n[idx].amt = v; setItems(n); }} placeholder="Amount" keyboardType="numeric" />
             <TouchableOpacity onPress={() => setItems(items.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
           </View>
         ))}
-        <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add item</Button>
+        <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add line item</Button>
 
-        <Button variant="primary" style={{ marginTop: 12 }} onPress={generateQuotePDF} disabled={generating}>
-          {generating ? <ActivityIndicator color="#fff" /> : <Text style={{fontWeight: 'bold', color: '#fff'}}>Preview & Share Quote</Text>}
+        <Button variant="primary" style={{ marginTop: 12, backgroundColor: colors.orange }} onPress={generateQuotePDF} disabled={generating}>
+          {generating ? <ActivityIndicator color="#fff" /> : <Text style={{fontWeight: 'bold', color: '#fff'}}>✓ Preview & Share Quote PDF</Text>}
         </Button>
       </ScrollView>
     </View>
@@ -5772,7 +6094,8 @@ export default function NewQuoteScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16 },
-  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 10, color: colors.charcoal },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 10, color: colors.charcoal },
+  row: { flexDirection: 'row', gap: 10, marginBottom: 10 }
 });
 </file>
 
@@ -6134,14 +6457,7 @@ dist/
 </file>
 
 <file path="mobile/App.js">
-/**
- * App.js
- * ------------------------------------------------------------------
- * Root component: wraps the whole app in the shared context providers
- * (auth, settings, toast) and the navigation container. Kept tiny —
- * the actual screens live in src/screens/, routing in src/navigation/.
- * ------------------------------------------------------------------
- */
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -6150,8 +6466,13 @@ import { AuthProvider } from './src/context/AuthContext';
 import { SettingsProvider } from './src/context/SettingsContext';
 import { ToastProvider } from './src/context/ToastContext';
 import RootNavigator from './src/navigation/RootNavigator';
+import { registerForPushNotificationsAsync } from './src/services/notificationService';
 
 export default function App() {
+  useEffect(() => {
+    registerForPushNotificationsAsync();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
@@ -6625,9 +6946,13 @@ import { View, StyleSheet } from 'react-native';
 import Button from '../ui/Button';
 import { openEmail } from '../../utils/linking';
 
-export default function InvoiceActions({ isPaid, customerEmail, onTogglePaid, onPreviewPdf, onShare }) {
+export default function InvoiceActions({ isPaid, customerEmail, onUpdateInvoice, onTogglePaid, onPreviewPdf, onShare }) {
   return (
     <View style={styles.container}>
+      {/* Feature 8 & 9: Explicit Update / Save Changes Button */}
+      <Button variant="primary" onPress={onUpdateInvoice} style={{ marginBottom: 4 }}>
+        💾 Update & Save Invoice Changes
+      </Button>
       <View style={styles.row}>
         <Button variant={isPaid ? 'outline' : 'green'} onPress={onTogglePaid} style={styles.flex}>
           {isPaid ? 'Mark unpaid' : 'Mark as paid'}
@@ -6999,6 +7324,7 @@ import DashboardScreen from '../screens/DashboardScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import NewJobScreen from '../screens/NewJobScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import CustomersScreen from '../screens/CustomersScreen'; // NEW
 
 const Stack = createNativeStackNavigator();
 
@@ -7009,6 +7335,7 @@ export default function DashboardStack() {
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="NewJob" component={NewJobScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="Customers" component={CustomersScreen} />
     </Stack.Navigator>
   );
 }
@@ -7121,7 +7448,7 @@ const styles = StyleSheet.create({
 
 <file path="mobile/src/screens/EnquiriesScreen.js">
 import { useState } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Text } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity, Text, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import EnquiryFilterTabs from '../components/enquiries/EnquiryFilterTabs';
@@ -7133,12 +7460,22 @@ import { colors } from '../theme/colors';
 
 export default function EnquiriesScreen() {
   const [filter, setFilter] = useState('new');
+  const [searchQuery, setSearchQuery] = useState(''); // NEW: Search state
   const { enquiries, loading, error } = useEnquiries(filter);
   const navigation = useNavigation();
 
+  // NEW: Filter logic for the search bar
+  const filteredEnquiries = enquiries.filter(e => 
+    searchQuery === '' ||
+    e.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.phone?.includes(searchQuery) ||
+    e.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (e.services && e.services.some(s => s.toLowerCase().includes(searchQuery.toLowerCase())))
+  );
+
   return (
     <View style={styles.screen}>
-      {/* ADDED: "Create Quote" button for direct callers */}
       <ScreenHeader 
         title="ENQUIRIES" 
         showBack={false} 
@@ -7148,13 +7485,23 @@ export default function EnquiriesScreen() {
           </TouchableOpacity>
         }
       />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.tabs}>
           <EnquiryFilterTabs value={filter} onChange={setFilter} />
         </View>
+
+        {/* NEW: Global Search Bar */}
+        <TextInput 
+          style={styles.searchBar} 
+          placeholder="Search by name, phone, email, address..." 
+          value={searchQuery} 
+          onChangeText={setSearchQuery} 
+          placeholderTextColor={colors.gray}
+        />
+
         {loading && <LoadingState />}
         {error && <ErrorState>{error}</ErrorState>}
-        {!loading && !error && <EnquiryList enquiries={enquiries} />}
+        {!loading && !error && <EnquiryList enquiries={filteredEnquiries} />}
       </ScrollView>
     </View>
   );
@@ -7164,6 +7511,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16 },
   tabs: { marginBottom: 14 },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
   quoteBtn: { backgroundColor: colors.orange, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
   quoteText: { color: '#fff', fontSize: 11, fontWeight: '700' }
 });
@@ -7723,7 +8071,6 @@ export default function DashboardScreen() {
   const { jobs } = useJobs('all');
   const { invoices: unpaidInvoices } = useInvoices('unpaid');
 
-  // --- "TODAY ONLY" FILTER & PROXIMITY SORTING ---
   const today = new Date();
   const isToday = (dateString) => {
     if (!dateString) return false;
@@ -7733,7 +8080,6 @@ export default function DashboardScreen() {
 
   const todaysJobs = jobs
     .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
-    // PROXIMITY SORTING: Sorts jobs chronologically so the closest time is at the top
     .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
 
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
@@ -7751,6 +8097,10 @@ export default function DashboardScreen() {
             <Text style={styles.dateSub}>{todayStr}</Text>
           </View>
           <View style={styles.headerActions}>
+            {/* Navigates to the new Customers CRM screen */}
+            <TouchableOpacity style={styles.iconBtnDark} onPress={() => navigation.navigate('Customers')}>
+              <Text style={{ fontSize: 14 }}>👥</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtnDark} onPress={() => navigation.navigate('Notifications')}>
               <Text style={{ fontSize: 14 }}>🔔</Text>
             </TouchableOpacity>
@@ -7838,6 +8188,7 @@ import useJobs from '../hooks/useJobs';
 import { colors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function JobsScreen() {
   const navigation = useNavigation();
@@ -7845,41 +8196,56 @@ export default function JobsScreen() {
   
   const [viewMode, setViewMode] = useState('list'); 
   const [listFilter, setListFilter] = useState('all'); 
+  const [searchQuery, setSearchQuery] = useState(''); // Feature 1: Search Bar
 
-  // --- REAL DATE FILTERING & SORTING ---
-  const today = new Date();
-  today.setHours(0, 0, 0, 0); // Reset to start of day for comparison
+  // Calendar navigation state
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
 
-  const isToday = (dateString) => {
-    if (!dateString) return false;
-    const d = new Date(dateString);
-    return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
-  };
+  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
+  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
 
+  // Days in selected month calculation
+  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayIndex = new Date(year, month, 1).getDay();
+  const daysArray = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
+
+  const jobsPerDay = {};
+  jobs.forEach(j => {
+    if (!j.scheduledDate) return;
+    const d = new Date(j.scheduledDate);
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const dayNum = d.getDate();
+      jobsPerDay[dayNum] = (jobsPerDay[dayNum] || 0) + 1;
+    }
+  });
+
+  // Feature 1 & 2: Search Bar & Filtering logic
   const filteredJobs = jobs.filter(j => {
+    const matchesSearch = searchQuery === '' || 
+      j.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      j.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (j.services && j.services.some(s => s.toLowerCase().includes(searchQuery.toLowerCase())));
+
+    if (!matchesSearch) return false;
+
     if (listFilter === 'complete') return j.status === 'complete';
     if (listFilter === 'incomplete') return j.status !== 'complete';
     
-    const isJobToday = isToday(j.scheduledDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isJobToday = j.scheduledDate && new Date(j.scheduledDate).toDateString() === today.toDateString();
     
     if (listFilter === 'today') return j.status !== 'complete' && isJobToday;
     if (listFilter === 'upcoming') {
-      if (!j.scheduledDate) return true; // Unscheduled jobs count as upcoming
+      if (!j.scheduledDate) return true;
       const jobDate = new Date(j.scheduledDate);
       jobDate.setHours(0, 0, 0, 0);
       return j.status !== 'complete' && jobDate > today;
     }
-    return true; // 'all'
-  }).sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate)); // Chronological sort
-
-  // Calendar Logic (Mocked month matching prototype)
-  const daysInMonth = Array.from({ length: 30 }, (_, i) => i + 1);
-  const jobsPerDay = {};
-  jobs.forEach(j => {
-    const dayMatch = j.when?.match(/\b(\d{1,2})\b/);
-    const day = dayMatch ? parseInt(dayMatch[1], 10) : 4; 
-    jobsPerDay[day] = (jobsPerDay[day] || 0) + 1;
-  });
+    return true;
+  }).sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
 
   return (
     <View style={styles.screen}>
@@ -7899,6 +8265,15 @@ export default function JobsScreen() {
         <ScrollView style={styles.content}>
           {viewMode === 'list' ? (
             <View style={styles.listContainer}>
+              {/* Feature 1: Global Search Bar */}
+              <TextInput
+                style={styles.searchBar}
+                placeholder="Search jobs by client, address, service..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor={colors.gray}
+              />
+
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
                 {['all', 'today', 'upcoming', 'complete', 'incomplete'].map(f => (
                   <TouchableOpacity 
@@ -7921,21 +8296,30 @@ export default function JobsScreen() {
             </View>
           ) : (
             <View style={styles.calendarContainer}>
+              {/* Feature 11: Month Navigation Header */}
+              <View style={styles.monthNav}>
+                <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
+                <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
+                <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
+              </View>
+
               <View style={styles.daysHeader}>
                 {['S','M','T','W','T','F','S'].map((d, i) => (
                   <Text key={i} style={styles.dayHeadText}>{d}</Text>
                 ))}
               </View>
               <View style={styles.grid}>
-                <View style={{ width: (width - 28) / 7 * 2 }} /> 
-                {daysInMonth.map(day => {
-                  const isTodayCell = day === today.getDate();
+                {Array.from({ length: firstDayIndex }).map((_, i) => (
+                  <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} />
+                ))}
+                {daysArray.map(day => {
+                  const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
                   const count = jobsPerDay[day] || 0;
                   return (
                     <TouchableOpacity 
                       key={day} 
                       style={[styles.dayCell, isTodayCell && styles.todayCell]}
-                      onPress={() => navigation.navigate('DayDetail', { day })}
+                      onPress={() => navigation.navigate('DayDetail', { day, year, month })}
                     >
                       <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
                       {count > 0 && (
@@ -7961,6 +8345,7 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
   content: { flex: 1 },
   listContainer: { padding: 14 },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 12, color: colors.charcoal },
   filterScroll: { flexDirection: 'row', marginBottom: 14 },
   filterChip: { paddingVertical: 6, paddingHorizontal: 13, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, marginRight: 8 },
   filterChipActive: { backgroundColor: colors.charcoal, borderColor: colors.charcoal },
@@ -7968,6 +8353,10 @@ const styles = StyleSheet.create({
   filterTextActive: { color: '#fff' },
   emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
   calendarContainer: { padding: 14 },
+  monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.grayLight },
+  monthBtn: { padding: 8 },
+  monthBtnText: { fontSize: 14, fontWeight: 'bold', color: colors.charcoal },
+  monthTitle: { fontSize: 15, fontWeight: '800', color: colors.charcoal },
   daysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 10 },
   dayHeadText: { fontSize: 10, color: colors.gray, fontWeight: '700', width: (width - 28) / 7, textAlign: 'center' },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
@@ -8881,6 +9270,7 @@ import CostItemsEditor from '../components/invoices/CostItemsEditor';
 import FieldLabel from '../components/ui/FieldLabel';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
+import Button from '../components/ui/Button';
 import useInvoice from '../hooks/useInvoice';
 import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
@@ -8888,10 +9278,7 @@ import { money } from '../utils/money';
 import { colors } from '../theme/colors';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
-sep
-// =====================================================================
-// FIXED: MOVED STYLES TO THE VERY TOP TO PREVENT "OUT OF REACH" ERRORS
-// =====================================================================
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16 },
@@ -8925,23 +9312,41 @@ export default function InvoiceDetailScreen() {
     showToast('GST Rate Updated');
   };
 
+  // DELETE INVOICE HANDLER
+  const handleDeleteInvoice = () => {
+    Alert.alert("Delete Invoice", "Are you sure you want to delete this invoice?", [
+      { text: "Cancel", style: "cancel" },
+      { 
+        text: "Delete", 
+        style: "destructive", 
+        onPress: async () => {
+          try {
+            await invoiceService.deleteInvoice(invoice._id);
+            showToast("Invoice deleted");
+            navigation.navigate('InvoicesList');
+          } catch (e) {
+            Alert.alert("Error", "Could not delete invoice");
+          }
+        }
+      }
+    ]);
+  };
+
   const generateHTMLString = () => {
-    // 1. Build the items safely
     const itemsHtml = invoice.items && invoice.items.length 
       ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB;">${i.name ? i.name : ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB;">${i.qty ? i.qty : 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${parseFloat(i.amt ? i.amt : 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${(parseFloat(i.amt ? i.amt : 0) * parseInt(i.qty ? i.qty : 1)).toFixed(2)}</td></tr>`).join('')
       : '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
 
-    // 2. Prepare variables safely outside the HTML string to prevent syntax bugs
-    const bsbStr = settings?.bsb ? settings.bsb : '';
-    const accountStr = settings?.account ? settings.account : '';
-    const accountNameStr = settings?.accountName ? settings.accountName : '';
-    const bankNameStr = settings?.bankName ? settings.bankName : '';
+    const bsbStr = settings?.bsb || '';
+    const accountStr = settings?.account || '';
+    const accountNameStr = settings?.accountName || '';
+    const bankNameStr = settings?.bankName || '';
     const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
     
-    const bizNameStr = settings?.businessName ? settings.businessName : 'Get Handyman';
-    const bizCityStr = settings?.bizCityState ? settings.bizCityState : '';
-    const bizPhoneStr = settings?.bizPhone ? settings.bizPhone : '';
-    const bizWebStr = settings?.website ? settings.website : '';
+    const bizNameStr = settings?.businessName || 'Get Handyman';
+    const bizCityStr = settings?.bizCityState || '';
+    const bizPhoneStr = settings?.bizPhone || '';
+    const bizWebStr = settings?.website || '';
     
     const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
     const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${bizNameStr}</h2>`;
@@ -8949,18 +9354,18 @@ export default function InvoiceDetailScreen() {
     const invDate = new Date(invoice.date).toLocaleDateString('en-GB');
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-GB') : invDate;
     
-    const customerName = invoice.customer ? invoice.customer : 'Customer Name';
+    const customerName = invoice.customer || 'Customer Name';
     const customerEmailHtml = invoice.customerEmail ? `<div>${invoice.customerEmail}</div>` : '';
     const customerPhoneHtml = invoice.customerPhone ? `<div>${invoice.customerPhone}</div>` : '';
     
     const invoiceNum = invoice.number ? invoice.number.replace('GH-', '') : '0';
     const termsStr = invoice.terms === 'Due on receipt' ? 'NET 0' : invoice.terms;
     
-    const subtotal = parseFloat(invoice.totals?.subtotal ? invoice.totals.subtotal : 0).toFixed(2);
-    const discAmt = parseFloat(invoice.totals?.discAmt ? invoice.totals.discAmt : 0).toFixed(2);
-    const gstAmt = parseFloat(invoice.totals?.gst ? invoice.totals.gst : 0).toFixed(2);
-    const totalDue = parseFloat(invoice.totals?.total ? invoice.totals.total : 0).toFixed(2);
-    const gstRate = settings?.gstRate ? settings.gstRate : 10;
+    const subtotal = parseFloat(invoice.totals?.subtotal || 0).toFixed(2);
+    const discAmt = parseFloat(invoice.totals?.discAmt || 0).toFixed(2);
+    const gstAmt = parseFloat(invoice.totals?.gst || 0).toFixed(2);
+    const totalDue = parseFloat(invoice.totals?.total || 0).toFixed(2);
+    const gstRate = settings?.gstRate || 10;
     
     const isPaidAmt = invoice.status === 'paid' ? totalDue : '0.00';
     const balanceAmt = invoice.status === 'paid' ? '0.00' : totalDue;
@@ -8978,52 +9383,53 @@ export default function InvoiceDetailScreen() {
 
     const discountHtml = invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${discAmt}</span></div>` : '';
 
-    // 3. Render clean HTML
     return `
       <html>
         <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <style>
             @page { margin: 0; }
-            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; position: relative; min-height: 100vh; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
             .header { display: flex; justify-content: space-between; align-items: flex-start; }
             .logo { max-height: 120px; max-width: 250px; object-fit: contain; }
             .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.6; }
             .title-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; }
-            .biz-name { font-size: 28px; font-weight: 800; color: #1F2937; margin: 0; letter-spacing: -0.5px; }
+            .biz-name { font-size: 28px; font-weight: 800; color: #1F2937; margin: 0; }
             .doc-type { font-size: 22px; font-weight: 800; color: #6B7280; margin: 0; }
             .divider { border-top: 2px solid #111827; margin: 15px 0 25px 0; }
             .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #374151; }
-            .bill-to { display: flex; gap: 20px; }
-            .bill-to-label { color: #9CA3AF; width: 40px; }
             .bill-to-details { line-height: 1.6; }
-            .meta-right table { font-size: 11px; text-align: right; border-collapse: collapse; line-height: 1.6; }
-            .meta-right td { padding: 0 0 0 15px; }
-            .meta-right .label { color: #9CA3AF; }
-            .meta-right .val { color: #374151; }
             .items-table { width: 100%; border-collapse: collapse; margin-top: 40px; font-size: 11px; }
-            .items-table th { background-color: #1D4ED8; color: #ffffff; padding: 12px 10px; font-weight: 700; }
+            .items-table th { background-color: #1D4ED8; color: #ffffff; padding: 12px 10px; font-weight: 700; text-align: left; }
             .items-table td { padding: 12px 10px; color: #374151; }
-            .text-left { text-align: left; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
             .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
             .totals { width: 260px; font-size: 11px; color: #374151; }
             .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; }
             .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
-            .bg-shapes { position: absolute; bottom: 0; left: 0; width: 350px; height: 350px; z-index: -1; opacity: 0.6; pointer-events: none; }
           </style>
         </head>
         <body>
-          <svg class="bg-shapes" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><circle cx="30" cy="160" r="45" fill="#F4E8FF" /><circle cx="110" cy="120" r="22" fill="#F1F5F9" /><circle cx="160" cy="180" r="35" fill="#FFF1F2" /><circle cx="80" cy="190" r="18" fill="#FDF4FF" /></svg>
           <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${bizCityStr}</div><div>${bizPhoneStr}</div><div>${bizWebStr}</div></div></div>
           <div class="title-row"><h1 class="biz-name">${bizNameStr}</h1><h2 class="doc-type">Invoice</h2></div>
           <div class="divider"></div>
           <div class="meta-row">
-            <div class="bill-to"><div class="bill-to-label">Bill To:</div><div class="bill-to-details"><div style="font-weight: 700;">${customerName}</div>${customerEmailHtml}${customerPhoneHtml}</div></div>
-            <div class="meta-right"><table><tr><td class="label">Invoice No:</td><td class="val">${invoiceNum}</td></tr><tr><td class="label">Date:</td><td class="val">${invDate}</td></tr><tr><td class="label">Terms:</td><td class="val">${termsStr}</td></tr><tr><td class="label">Due Date:</td><td class="val">${dueDate}</td></tr></table></div>
+            <div>
+              <div style="color: #9CA3AF; margin-bottom: 2px;">Bill To:</div>
+              <div class="bill-to-details"><div style="font-weight: 700;">${customerName}</div>${customerEmailHtml}${customerPhoneHtml}</div>
+            </div>
+            <div style="text-align: right;">
+              <div><span style="color: #9CA3AF;">Invoice No:</span> ${invoiceNum}</div>
+              <div><span style="color: #9CA3AF;">Date:</span> ${invDate}</div>
+              <div><span style="color: #9CA3AF;">Terms:</span> ${termsStr}</div>
+              <div><span style="color: #9CA3AF;">Due Date:</span> ${dueDate}</div>
+            </div>
           </div>
-          <table class="items-table"><tr><th class="text-left">Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>${itemsHtml}</table>
+          <table class="items-table">
+            <tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>
+            ${itemsHtml}
+          </table>
           <div class="totals-container">
             <div class="totals">
               <div class="totals-row"><span>Subtotal</span><span>$${subtotal}</span></div>
@@ -9050,7 +9456,9 @@ export default function InvoiceDetailScreen() {
       showToast('Generating Document...');
       const html = generateHTMLString();
       const { uri } = await Print.printToFileAsync({ html, base64: false });
-      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Invoice_${invoice.number}.pdf` });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Invoice_${invoice.number}.pdf` });
+      }
     } catch (err) {
       Alert.alert("PDF Error", "Could not share the PDF.");
     }
@@ -9099,16 +9507,10 @@ export default function InvoiceDetailScreen() {
           onShare={handleSharePdf}
         />
 
-        <FieldLabel style={{ marginVertical: 20, marginBottom: 4 }}>Job costs · internal, not shown to customer</FieldLabel>
-        <Text style={styles.hintText}>Attach receipt photos for each expense.</Text>
-        <FieldLabel style={{ marginBottom: 6 }}>Material expenses</FieldLabel>
-        <CostItemsEditor items={invoice.costs.materials} kind="materials" onSetItems={(items) => setCostItems('materials', items)} onUploadPhoto={(idx, file) => uploadCostItemPhoto('materials', idx, file)} />
-        <FieldLabel style={{ marginVertical: 14, marginBottom: 6 }}>Other expenses</FieldLabel>
-        <CostItemsEditor items={invoice.costs.other} kind="other" onSetItems={(items) => setCostItems('other', items)} onUploadPhoto={(idx, file) => uploadCostItemPhoto('other', idx, file)} />
-        <View style={styles.expenseCard}>
-          <FieldLabel style={{ color: colors.blue }}>Total expense</FieldLabel>
-          <Text style={styles.expenseTotal}>{money(invoice.costTotals?.total)}</Text>
-        </View>
+        {/* Delete Invoice Button */}
+        <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={handleDeleteInvoice}>
+          <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
+        </Button>
       </ScrollView>
     </View>
   );

@@ -1,12 +1,3 @@
-/**
- * EnquiryDetail.js
- * ------------------------------------------------------------------
- * Composes the small enquiry-detail pieces (summary card, quote
- * composer, accept/reject actions) based on the enquiry's status.
- * Holds no logic of its own — every action is passed down from
- * EnquiryDetailScreen, which owns the useEnquiry() hook.
- * ------------------------------------------------------------------
- */
 import { View, Text, StyleSheet } from 'react-native';
 import EnquirySummaryCard from './EnquirySummaryCard';
 import QuoteComposer from './QuoteComposer';
@@ -15,7 +6,7 @@ import Button from '../ui/Button';
 import { money } from '../../utils/money';
 import { colors } from '../../theme/colors';
 
-export default function EnquiryDetail({ enquiry, onReject, onSendQuote, onAccept }) {
+export default function EnquiryDetail({ enquiry, onReject, onSendQuote, onAccept, onReactivate }) {
   return (
     <View>
       <EnquirySummaryCard enquiry={enquiry} />
@@ -36,8 +27,18 @@ export default function EnquiryDetail({ enquiry, onReject, onSendQuote, onAccept
         </>
       )}
 
-      {(enquiry.status === 'accepted' || enquiry.status === 'rejected') && (
-        <Text style={styles.note}>This enquiry is {enquiry.status}. No further action needed here.</Text>
+      {enquiry.status === 'accepted' && (
+        <Text style={styles.note}>This enquiry is accepted and linked to a job.</Text>
+      )}
+
+      {enquiry.status === 'rejected' && (
+        <>
+          <Text style={styles.noteError}>This enquiry was previously rejected.</Text>
+          {/* Feature 4: Reactivate rejected enquiry */}
+          <Button variant="primary" onPress={onReactivate} style={{ marginTop: 12 }}>
+            Reactivate & Edit Details
+          </Button>
+        </>
       )}
     </View>
   );
@@ -46,5 +47,6 @@ export default function EnquiryDetail({ enquiry, onReject, onSendQuote, onAccept
 const styles = StyleSheet.create({
   rejectBtn: { marginTop: 10 },
   quoted: { fontWeight: '800', fontSize: 15, marginVertical: 10 },
-  note: { fontSize: 12.5, color: colors.gray },
+  note: { fontSize: 12.5, color: colors.green, fontWeight: '700', marginTop: 10 },
+  noteError: { fontSize: 12.5, color: colors.red, fontWeight: '700', marginTop: 10 },
 });

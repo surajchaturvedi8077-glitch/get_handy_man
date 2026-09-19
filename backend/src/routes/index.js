@@ -15,5 +15,6 @@ router.use('/enquiries', require('./enquiryRoutes'));
 router.use('/jobs', require('./jobRoutes'));
 router.use('/invoices', require('./invoiceRoutes'));
 router.use('/report', require('./reportRoutes'));
+router.use('/customers', require('./customerRoutes'));
 
 module.exports = router;

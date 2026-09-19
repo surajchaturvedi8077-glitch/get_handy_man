@@ -9,6 +9,7 @@ import useJobs from '../hooks/useJobs';
 import { colors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function JobsScreen() {
   const navigation = useNavigation();
@@ -16,41 +17,56 @@ export default function JobsScreen() {
   
   const [viewMode, setViewMode] = useState('list'); 
   const [listFilter, setListFilter] = useState('all'); 
+  const [searchQuery, setSearchQuery] = useState(''); // Feature 1: Search Bar
 
-  // --- REAL DATE FILTERING & SORTING ---
-  const today = new Date();
-  today.setHours(0, 0, 0, 0); // Reset to start of day for comparison
+  // Calendar navigation state
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
 
-  const isToday = (dateString) => {
-    if (!dateString) return false;
-    const d = new Date(dateString);
-    return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
-  };
+  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
+  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
 
+  // Days in selected month calculation
+  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayIndex = new Date(year, month, 1).getDay();
+  const daysArray = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
+
+  const jobsPerDay = {};
+  jobs.forEach(j => {
+    if (!j.scheduledDate) return;
+    const d = new Date(j.scheduledDate);
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const dayNum = d.getDate();
+      jobsPerDay[dayNum] = (jobsPerDay[dayNum] || 0) + 1;
+    }
+  });
+
+  // Feature 1 & 2: Search Bar & Filtering logic
   const filteredJobs = jobs.filter(j => {
+    const matchesSearch = searchQuery === '' || 
+      j.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      j.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (j.services && j.services.some(s => s.toLowerCase().includes(searchQuery.toLowerCase())));
+
+    if (!matchesSearch) return false;
+
     if (listFilter === 'complete') return j.status === 'complete';
     if (listFilter === 'incomplete') return j.status !== 'complete';
     
-    const isJobToday = isToday(j.scheduledDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isJobToday = j.scheduledDate && new Date(j.scheduledDate).toDateString() === today.toDateString();
     
     if (listFilter === 'today') return j.status !== 'complete' && isJobToday;
     if (listFilter === 'upcoming') {
-      if (!j.scheduledDate) return true; // Unscheduled jobs count as upcoming
+      if (!j.scheduledDate) return true;
       const jobDate = new Date(j.scheduledDate);
       jobDate.setHours(0, 0, 0, 0);
       return j.status !== 'complete' && jobDate > today;
     }
-    return true; // 'all'
-  }).sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate)); // Chronological sort
-
-  // Calendar Logic (Mocked month matching prototype)
-  const daysInMonth = Array.from({ length: 30 }, (_, i) => i + 1);
-  const jobsPerDay = {};
-  jobs.forEach(j => {
-    const dayMatch = j.when?.match(/\b(\d{1,2})\b/);
-    const day = dayMatch ? parseInt(dayMatch[1], 10) : 4; 
-    jobsPerDay[day] = (jobsPerDay[day] || 0) + 1;
-  });
+    return true;
+  }).sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
 
   return (
     <View style={styles.screen}>
@@ -70,6 +86,15 @@ export default function JobsScreen() {
         <ScrollView style={styles.content}>
           {viewMode === 'list' ? (
             <View style={styles.listContainer}>
+              {/* Feature 1: Global Search Bar */}
+              <TextInput
+                style={styles.searchBar}
+                placeholder="Search jobs by client, address, service..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor={colors.gray}
+              />
+
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
                 {['all', 'today', 'upcoming', 'complete', 'incomplete'].map(f => (
                   <TouchableOpacity 
@@ -92,21 +117,30 @@ export default function JobsScreen() {
             </View>
           ) : (
             <View style={styles.calendarContainer}>
+              {/* Feature 11: Month Navigation Header */}
+              <View style={styles.monthNav}>
+                <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
+                <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
+                <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
+              </View>
+
               <View style={styles.daysHeader}>
                 {['S','M','T','W','T','F','S'].map((d, i) => (
                   <Text key={i} style={styles.dayHeadText}>{d}</Text>
                 ))}
               </View>
               <View style={styles.grid}>
-                <View style={{ width: (width - 28) / 7 * 2 }} /> 
-                {daysInMonth.map(day => {
-                  const isTodayCell = day === today.getDate();
+                {Array.from({ length: firstDayIndex }).map((_, i) => (
+                  <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} />
+                ))}
+                {daysArray.map(day => {
+                  const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
                   const count = jobsPerDay[day] || 0;
                   return (
                     <TouchableOpacity 
                       key={day} 
                       style={[styles.dayCell, isTodayCell && styles.todayCell]}
-                      onPress={() => navigation.navigate('DayDetail', { day })}
+                      onPress={() => navigation.navigate('DayDetail', { day, year, month })}
                     >
                       <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
                       {count > 0 && (
@@ -132,6 +166,7 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
   content: { flex: 1 },
   listContainer: { padding: 14 },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 12, color: colors.charcoal },
   filterScroll: { flexDirection: 'row', marginBottom: 14 },
   filterChip: { paddingVertical: 6, paddingHorizontal: 13, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, marginRight: 8 },
   filterChipActive: { backgroundColor: colors.charcoal, borderColor: colors.charcoal },
@@ -139,6 +174,10 @@ const styles = StyleSheet.create({
   filterTextActive: { color: '#fff' },
   emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
   calendarContainer: { padding: 14 },
+  monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.grayLight },
+  monthBtn: { padding: 8 },
+  monthBtnText: { fontSize: 14, fontWeight: 'bold', color: colors.charcoal },
+  monthTitle: { fontSize: 15, fontWeight: '800', color: colors.charcoal },
   daysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 10 },
   dayHeadText: { fontSize: 10, color: colors.gray, fontWeight: '700', width: (width - 28) / 7, textAlign: 'center' },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },

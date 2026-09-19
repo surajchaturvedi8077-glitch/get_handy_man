@@ -4,6 +4,7 @@ import DashboardScreen from '../screens/DashboardScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import NewJobScreen from '../screens/NewJobScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import CustomersScreen from '../screens/CustomersScreen'; // NEW
 
 const Stack = createNativeStackNavigator();
 
@@ -14,6 +15,7 @@ export default function DashboardStack() {
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="NewJob" component={NewJobScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="Customers" component={CustomersScreen} />
     </Stack.Navigator>
   );
 }

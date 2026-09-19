@@ -29,7 +29,6 @@ export default function DashboardScreen() {
   const { jobs } = useJobs('all');
   const { invoices: unpaidInvoices } = useInvoices('unpaid');
 
-  // --- "TODAY ONLY" FILTER & PROXIMITY SORTING ---
   const today = new Date();
   const isToday = (dateString) => {
     if (!dateString) return false;
@@ -39,7 +38,6 @@ export default function DashboardScreen() {
 
   const todaysJobs = jobs
     .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
-    // PROXIMITY SORTING: Sorts jobs chronologically so the closest time is at the top
     .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
 
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
@@ -57,6 +55,10 @@ export default function DashboardScreen() {
             <Text style={styles.dateSub}>{todayStr}</Text>
           </View>
           <View style={styles.headerActions}>
+            {/* Navigates to the new Customers CRM screen */}
+            <TouchableOpacity style={styles.iconBtnDark} onPress={() => navigation.navigate('Customers')}>
+              <Text style={{ fontSize: 14 }}>👥</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtnDark} onPress={() => navigation.navigate('Notifications')}>
               <Text style={{ fontSize: 14 }}>🔔</Text>
             </TouchableOpacity>

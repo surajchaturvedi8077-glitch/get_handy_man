@@ -2,9 +2,13 @@ import { View, StyleSheet } from 'react-native';
 import Button from '../ui/Button';
 import { openEmail } from '../../utils/linking';
 
-export default function InvoiceActions({ isPaid, customerEmail, onTogglePaid, onPreviewPdf, onShare }) {
+export default function InvoiceActions({ isPaid, customerEmail, onUpdateInvoice, onTogglePaid, onPreviewPdf, onShare }) {
   return (
     <View style={styles.container}>
+      {/* Feature 8 & 9: Explicit Update / Save Changes Button */}
+      <Button variant="primary" onPress={onUpdateInvoice} style={{ marginBottom: 4 }}>
+        💾 Update & Save Invoice Changes
+      </Button>
       <View style={styles.row}>
         <Button variant={isPaid ? 'outline' : 'green'} onPress={onTogglePaid} style={styles.flex}>
           {isPaid ? 'Mark unpaid' : 'Mark as paid'}
