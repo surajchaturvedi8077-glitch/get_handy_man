@@ -21,10 +21,7 @@ import { money } from '../utils/money';
 import { colors } from '../theme/colors';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
-sep
-// =====================================================================
-// FIXED: MOVED STYLES TO THE VERY TOP TO PREVENT "OUT OF REACH" ERRORS
-// =====================================================================
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16 },
@@ -59,12 +56,10 @@ export default function InvoiceDetailScreen() {
   };
 
   const generateHTMLString = () => {
-    // 1. Build the items safely
     const itemsHtml = invoice.items && invoice.items.length 
       ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB;">${i.name ? i.name : ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB;">${i.qty ? i.qty : 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${parseFloat(i.amt ? i.amt : 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${(parseFloat(i.amt ? i.amt : 0) * parseInt(i.qty ? i.qty : 1)).toFixed(2)}</td></tr>`).join('')
       : '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
 
-    // 2. Prepare variables safely outside the HTML string to prevent syntax bugs
     const bsbStr = settings?.bsb ? settings.bsb : '';
     const accountStr = settings?.account ? settings.account : '';
     const accountNameStr = settings?.accountName ? settings.accountName : '';
@@ -111,7 +106,6 @@ export default function InvoiceDetailScreen() {
 
     const discountHtml = invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${discAmt}</span></div>` : '';
 
-    // 3. Render clean HTML
     return `
       <html>
         <head>
