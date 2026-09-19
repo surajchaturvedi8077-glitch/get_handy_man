@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import JobListItem from '../components/jobs/JobListItem';
@@ -17,9 +17,8 @@ export default function JobsScreen() {
   
   const [viewMode, setViewMode] = useState('list'); 
   const [listFilter, setListFilter] = useState('all'); 
-  const [searchQuery, setSearchQuery] = useState(''); // Feature 1: Search Bar
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Calendar navigation state
   const [currentDate, setCurrentDate] = useState(new Date());
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -27,7 +26,6 @@ export default function JobsScreen() {
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
 
-  // Days in selected month calculation
   const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
   const firstDayIndex = new Date(year, month, 1).getDay();
   const daysArray = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
@@ -42,12 +40,13 @@ export default function JobsScreen() {
     }
   });
 
-  // Feature 1 & 2: Search Bar & Filtering logic
+  // FIXED: Crash-proof search filter!
   const filteredJobs = jobs.filter(j => {
-    const matchesSearch = searchQuery === '' || 
-      j.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      j.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (j.services && j.services.some(s => s.toLowerCase().includes(searchQuery.toLowerCase())));
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = q === '' || 
+      (j.name && j.name.toLowerCase().includes(q)) ||
+      (j.address && j.address.toLowerCase().includes(q)) ||
+      (j.services && j.services.some(s => s && s.toLowerCase().includes(q)));
 
     if (!matchesSearch) return false;
 
@@ -74,74 +73,41 @@ export default function JobsScreen() {
         <Text style={styles.title}>JOBS</Text>
         <SegmentedControl 
           options={[{ value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]}
-          value={viewMode} 
-          onChange={setViewMode} 
-          dark 
+          value={viewMode} onChange={setViewMode} dark 
         />
       </SafeAreaView>
 
-      {loading ? (
-        <LoadingState />
-      ) : (
+      {loading ? ( <LoadingState /> ) : (
         <ScrollView style={styles.content}>
           {viewMode === 'list' ? (
             <View style={styles.listContainer}>
-              {/* Feature 1: Global Search Bar */}
-              <TextInput
-                style={styles.searchBar}
-                placeholder="Search jobs by client, address, service..."
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholderTextColor={colors.gray}
-              />
-
+              <TextInput style={styles.searchBar} placeholder="Search jobs by client, address..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor={colors.gray} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
                 {['all', 'today', 'upcoming', 'complete', 'incomplete'].map(f => (
-                  <TouchableOpacity 
-                    key={f} 
-                    style={[styles.filterChip, listFilter === f && styles.filterChipActive]}
-                    onPress={() => setListFilter(f)}
-                  >
-                    <Text style={[styles.filterText, listFilter === f && styles.filterTextActive]}>
-                      {f.charAt(0).toUpperCase() + f.slice(1)}
-                    </Text>
+                  <TouchableOpacity key={f} style={[styles.filterChip, listFilter === f && styles.filterChipActive]} onPress={() => setListFilter(f)}>
+                    <Text style={[styles.filterText, listFilter === f && styles.filterTextActive]}>{f.charAt(0).toUpperCase() + f.slice(1)}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-              
-              {filteredJobs.length > 0 ? (
-                filteredJobs.map(j => <JobListItem key={j._id} job={j} />)
-              ) : (
-                <Text style={styles.emptyText}>No jobs match this filter.</Text>
-              )}
+              {filteredJobs.length > 0 ? ( filteredJobs.map(j => <JobListItem key={j._id} job={j} />) ) : ( <Text style={styles.emptyText}>No jobs match this filter.</Text> )}
             </View>
           ) : (
             <View style={styles.calendarContainer}>
-              {/* Feature 11: Month Navigation Header */}
               <View style={styles.monthNav}>
                 <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
                 <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
                 <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
               </View>
-
               <View style={styles.daysHeader}>
-                {['S','M','T','W','T','F','S'].map((d, i) => (
-                  <Text key={i} style={styles.dayHeadText}>{d}</Text>
-                ))}
+                {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
               </View>
               <View style={styles.grid}>
-                {Array.from({ length: firstDayIndex }).map((_, i) => (
-                  <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} />
-                ))}
+                {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
                 {daysArray.map(day => {
                   const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
                   const count = jobsPerDay[day] || 0;
                   return (
-                    <TouchableOpacity 
-                      key={day} 
-                      style={[styles.dayCell, isTodayCell && styles.todayCell]}
-                      onPress={() => navigation.navigate('DayDetail', { day, year, month })}
-                    >
+                    <TouchableOpacity key={day} style={[styles.dayCell, isTodayCell && styles.todayCell]} onPress={() => navigation.navigate('DayDetail', { day, year, month })}>
                       <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
                       {count > 0 && (
                         <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>

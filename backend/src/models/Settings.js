@@ -18,13 +18,15 @@ const settingsSchema = new mongoose.Schema(
     bsb: { type: String, default: '' },
     account: { type: String, default: '' },
     accountName: { type: String, default: '' },
-    payId: { type: String, default: '' }, // NEW: Added PayID field
+    payId: { type: String, default: '' }, 
     quoteMessage: { type: String, default: 'Thanks for your enquiry — here is your quote below. Let me know if you would like to go ahead.' },
     notifJobReminders: { type: Boolean, default: true },
     notifUnpaidReminders: { type: Boolean, default: true },
     notifNewEnquiry: { type: Boolean, default: true },
     defaultServiceRadius: { type: String, default: '25 km' },
-    workingHours: { type: String, default: 'Mon-Fri, 7:00 AM-5:00 PM' }
+    workingHours: { type: String, default: 'Mon-Fri, 7:00 AM-5:00 PM' },
+    // NEW: Stores your device's exact notification ID
+    expoPushToken: { type: String, default: '' } 
   },
   { timestamps: true }
 );

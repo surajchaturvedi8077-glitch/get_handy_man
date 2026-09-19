@@ -1,17 +1,16 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-// Configure how notifications appear when the app is open
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
-    shouldSetBadge: false,
+    shouldSetBadge: true,
   }),
 });
 
-export async function registerForPushNotificationsAsync() {
-  let token;
+// Gets the unique hardware token so the backend can text this specific device
+export async function getExpoPushToken() {
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
   
@@ -20,9 +19,7 @@ export async function registerForPushNotificationsAsync() {
     finalStatus = status;
   }
   
-  if (finalStatus !== 'granted') {
-    return;
-  }
+  if (finalStatus !== 'granted') return null;
 
   if (Platform.OS === 'android') {
     Notifications.setNotificationChannelAsync('default', {
@@ -32,17 +29,30 @@ export async function registerForPushNotificationsAsync() {
       lightColor: '#F5821F',
     });
   }
+
+  try {
+    // Project ID is strictly required for Expo's push service
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: '9bc67899-cae6-4259-ba01-5d512cb0fb8e' 
+    });
+    return tokenData.data;
+  } catch (error) {
+    console.log("Could not fetch push token", error);
+    return null;
+  }
 }
 
-// Schedule a local notification reminder for an upcoming job
-export async function scheduleJobReminder(jobTitle, jobDate) {
-  const triggerTime = new Date(jobDate).getTime() - (30 * 60 * 1000); // 30 mins before
-  if (triggerTime <= Date.now()) return; // Don't schedule past events
+// Local Job Reminder scheduling
+export async function scheduleLocalJobReminder(job) {
+  if (!job.scheduledDate) return;
+  const triggerTime = new Date(job.scheduledDate).getTime() - (60 * 60 * 1000); // 1 hour before
+  
+  if (triggerTime <= Date.now()) return;
 
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: "Upcoming Job Reminder 🔔",
-      body: `You have an upcoming job: ${jobTitle} in 30 minutes.`,
+      title: "Upcoming Job 🛠️",
+      body: `You have a job at ${job.address} in 1 hour.`,
       sound: true,
     },
     trigger: { date: new Date(triggerTime) },
