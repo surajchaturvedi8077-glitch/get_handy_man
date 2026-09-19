@@ -4,7 +4,6 @@ const Job = require('../models/Job');
 const Settings = require('../models/Settings');
 const { ok, created } = require('../utils/apiResponse');
 const { Expo } = require('expo-server-sdk');
-const Settings = require('../models/Settings');
 
 const listEnquiries = asyncHandler(async (req, res) => {
   const { status } = req.query;
