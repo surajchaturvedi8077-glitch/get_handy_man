@@ -11,7 +11,6 @@ import { colors } from '../theme/colors';
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// FIXED: Prevents Hermes Engine Fatal Crash by never returning NaN during sorting
 const safeTime = (dateStr) => {
   if (!dateStr) return 0;
   const time = new Date(dateStr).getTime();
@@ -61,18 +60,27 @@ export default function JobsScreen() {
     if (listFilter === 'incomplete') return j.status !== 'complete';
     
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const isJobToday = j.scheduledDate && new Date(j.scheduledDate).toDateString() === today.toDateString();
+    
+    // BULLETPROOF ANDROID DATE CHECK
+    const isJobToday = j.scheduledDate ? (
+      new Date(j.scheduledDate).getFullYear() === today.getFullYear() &&
+      new Date(j.scheduledDate).getMonth() === today.getMonth() &&
+      new Date(j.scheduledDate).getDate() === today.getDate()
+    ) : false;
     
     if (listFilter === 'today') return j.status !== 'complete' && isJobToday;
+    
     if (listFilter === 'upcoming') {
       if (!j.scheduledDate) return true;
       const jobDate = new Date(j.scheduledDate);
       jobDate.setHours(0, 0, 0, 0);
-      return j.status !== 'complete' && jobDate > today;
+      const todayZeroed = new Date();
+      todayZeroed.setHours(0, 0, 0, 0);
+      return j.status !== 'complete' && jobDate > todayZeroed;
     }
+    
     return true;
-  }).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); // CRASH PREVENTED HERE
+  }).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
 
   return (
     <View style={styles.screen}>

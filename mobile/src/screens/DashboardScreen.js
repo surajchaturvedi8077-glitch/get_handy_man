@@ -50,16 +50,20 @@ export default function DashboardScreen() {
     syncPushToken();
   }, [settings]);
 
-  const today = new Date();
+  // BULLETPROOF ANDROID DATE CHECK
   const isToday = (dateString) => {
     if (!dateString) return false;
     const d = new Date(dateString);
-    return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+    const today = new Date();
+    
+    return d.getFullYear() === today.getFullYear() &&
+           d.getMonth() === today.getMonth() &&
+           d.getDate() === today.getDate();
   };
 
   const todaysJobs = jobs
     .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
-    .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); // CRASH PREVENTED HERE
+    .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
 
   useEffect(() => {
     todaysJobs.forEach(job => scheduleLocalJobReminder(job));

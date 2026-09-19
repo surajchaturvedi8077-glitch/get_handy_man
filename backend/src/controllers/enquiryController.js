@@ -3,6 +3,8 @@ const Enquiry = require('../models/Enquiry');
 const Job = require('../models/Job');
 const Settings = require('../models/Settings');
 const { ok, created } = require('../utils/apiResponse');
+const { Expo } = require('expo-server-sdk');
+const Settings = require('../models/Settings');
 
 const listEnquiries = asyncHandler(async (req, res) => {
   const { status } = req.query;
@@ -18,30 +20,31 @@ const getEnquiry = asyncHandler(async (req, res) => {
 });
 
 const createEnquiry = asyncHandler(async (req, res) => {
+  // 1. Existing code: create the enquiry in the database
   const enquiry = await Enquiry.create(req.body);
-  
-  // FIXED: Push Notification to Worker's Phone with channelId for Android Lock Screen
+
+  // 2. NEW CODE: Fetch the worker's saved push token from Settings
   try {
     const settings = await Settings.getSingleton();
-    if (settings.expoPushToken) {
-      await fetch('https://exp.host/--/api/v2/push/send', {
-        method: 'POST',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: settings.expoPushToken,
-          title: "New Enquiry Received! 📩",
-          body: `${enquiry.name} requested a quote for ${enquiry.services?.[0] || enquiry.service || 'Handyman Services'}`,
-          sound: "default",
-          priority: "high",
-          channelId: "default" // CRITICAL FOR ANDROID LOCK SCREEN
-        })
-      });
+    
+    // 3. NEW CODE: If a token exists, send the push notification
+    if (settings.expoPushToken && Expo.isExpoPushToken(settings.expoPushToken)) {
+      const expo = new Expo();
+      await expo.sendPushNotificationsAsync([{
+        to: settings.expoPushToken,
+        sound: 'default',
+        title: 'New Enquiry! 🛠️',
+        body: `${enquiry.name} requested a quote for ${req.body.service || 'a job'}.`,
+        data: { enquiryId: enquiry._id },
+      }]);
     }
   } catch (err) {
-    console.error("Push Notification Failed:", err);
+    console.error("Push notification failed to send:", err);
+    // We catch the error so the enquiry still successfully saves even if the notification fails
   }
 
-  created(res, enquiry);
+  // 4. Existing code: send response to website
+  res.status(201).json({ success: true, data: enquiry });
 });
 
 const updateEnquiry = asyncHandler(async (req, res) => {
