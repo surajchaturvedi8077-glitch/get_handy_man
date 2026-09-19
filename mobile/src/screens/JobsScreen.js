@@ -11,6 +11,13 @@ import { colors } from '../theme/colors';
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+// FIXED: Prevents Hermes Engine Fatal Crash by never returning NaN during sorting
+const safeTime = (dateStr) => {
+  if (!dateStr) return 0;
+  const time = new Date(dateStr).getTime();
+  return isNaN(time) ? 0 : time;
+};
+
 export default function JobsScreen() {
   const navigation = useNavigation();
   const { jobs, loading } = useJobs('all');
@@ -40,13 +47,13 @@ export default function JobsScreen() {
     }
   });
 
-  // FIXED: Crash-proof search filter!
   const filteredJobs = jobs.filter(j => {
     const q = searchQuery.toLowerCase();
     const matchesSearch = q === '' || 
       (j.name && j.name.toLowerCase().includes(q)) ||
       (j.address && j.address.toLowerCase().includes(q)) ||
-      (j.services && j.services.some(s => s && s.toLowerCase().includes(q)));
+      (Array.isArray(j.services) && j.services.some(s => s && s.toLowerCase().includes(q))) ||
+      (typeof j.service === 'string' && j.service.toLowerCase().includes(q));
 
     if (!matchesSearch) return false;
 
@@ -65,7 +72,7 @@ export default function JobsScreen() {
       return j.status !== 'complete' && jobDate > today;
     }
     return true;
-  }).sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
+  }).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); // CRASH PREVENTED HERE
 
   return (
     <View style={styles.screen}>

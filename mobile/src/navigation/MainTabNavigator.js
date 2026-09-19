@@ -12,7 +12,6 @@ const Tab = createBottomTabNavigator();
 
 const ICONS = { Home: '🏠', Enquiries: '📩', Jobs: '📅', Invoices: '💰' };
 
-// This helper intercepts the tab click and forcefully resets the screen back to the list
 const resetTab = (navigation, tabName, rootScreen) => ({
   tabPress: (e) => {
     e.preventDefault();
@@ -29,7 +28,8 @@ export default function MainTabNavigator() {
         tabBarInactiveTintColor: colors.gray,
         tabBarLabelStyle: { fontSize: 10, fontWeight: '700', paddingBottom: 5 },
         tabBarIcon: ({ color }) => (
-          <Text style={{ fontSize: 18, color }}>{ICONS[route.name]}</Text>
+          // FIXED: Increased the font size of the tab icons drastically so they pop
+          <Text style={{ fontSize: 24, color, marginBottom: -4 }}>{ICONS[route.name]}</Text>
         ),
         tabBarStyle: styles.tabBar,
       })}
@@ -59,5 +59,5 @@ export default function MainTabNavigator() {
 }
 
 const styles = StyleSheet.create({
-  tabBar: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: colors.grayLight, height: 60, paddingTop: 8 }
+  tabBar: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: colors.grayLight, height: 64, paddingTop: 8 }
 });

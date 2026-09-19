@@ -34,9 +34,8 @@ export default function EnquiryDetail({ enquiry, onReject, onSendQuote, onAccept
       {enquiry.status === 'rejected' && (
         <>
           <Text style={styles.noteError}>This enquiry was previously rejected.</Text>
-          {/* Feature 4: Reactivate rejected enquiry */}
-          <Button variant="primary" onPress={onReactivate} style={{ marginTop: 12 }}>
-            Reactivate & Edit Details
+          <Button variant="primary" style={{ backgroundColor: colors.green, marginTop: 12 }} onPress={onReactivate}>
+            🔄 Reactivate & Edit Details
           </Button>
         </>
       )}

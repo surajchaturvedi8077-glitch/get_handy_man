@@ -9,7 +9,8 @@ const CHIP_TONE = { new: 'orange', quoted: 'blue', accepted: 'green', rejected: 
 export default function EnquiryListItem({ enquiry }) {
   const navigation = useNavigation();
   
-  const serviceText = (enquiry.services && enquiry.services.length > 0) 
+  // FIXED: Crash-proof check for older single-string data
+  const serviceText = (Array.isArray(enquiry.services) && enquiry.services.length > 0) 
     ? enquiry.services.join(', ') 
     : (enquiry.service || 'No service specified');
 

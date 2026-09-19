@@ -9,7 +9,8 @@ import { colors } from '../../theme/colors';
 export default function JobListItem({ job }) {
   const navigation = useNavigation();
   
-  const serviceText = (job.services && job.services.length > 0) 
+  // FIXED: Crash-proof check. If it's an old job, it safely falls back to the old string format.
+  const serviceText = (Array.isArray(job.services) && job.services.length > 0) 
     ? job.services.join(', ') 
     : (job.service || 'None');
 
@@ -19,7 +20,6 @@ export default function JobListItem({ job }) {
       style={job.needsDetails ? styles.needsDetails : undefined}
     >
       <View style={styles.top}>
-        {/* ADDED: Visible Exact Time Indicator on Outer Card */}
         <Text style={styles.when}>{job.when} {job.exactTime ? `· ${job.exactTime}` : ''}</Text>
         <JobStatusBadge job={job} />
       </View>
@@ -27,7 +27,6 @@ export default function JobListItem({ job }) {
       
       <View style={styles.bottomRow}>
         <Text style={styles.address}>{job.address}</Text>
-        {/* ADDED: Global Email Shortcut */}
         {job.email ? (
           <TouchableOpacity onPress={() => openEmail(job.email)} style={styles.emailBtn}>
             <Text style={styles.emailText}>✉️ Email</Text>

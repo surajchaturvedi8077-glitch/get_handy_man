@@ -20,6 +20,7 @@ import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { money } from '../utils/money';
 import { colors } from '../theme/colors';
+import * as invoiceService from '../services/invoiceService'; // FIXED MISSING IMPORT
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
 
@@ -56,7 +57,11 @@ export default function InvoiceDetailScreen() {
     showToast('GST Rate Updated');
   };
 
-  // DELETE INVOICE HANDLER
+  // EXPLICIT UPDATE BUTTON - gives visual confirmation since fields auto-save
+  const handleUpdateInvoice = () => {
+    showToast('✅ All invoice changes saved securely');
+  };
+
   const handleDeleteInvoice = () => {
     Alert.alert("Delete Invoice", "Are you sure you want to delete this invoice?", [
       { text: "Cancel", style: "cancel" },
@@ -246,6 +251,7 @@ export default function InvoiceDetailScreen() {
         <InvoiceActions
           isPaid={isPaid}
           customerEmail={invoice.customerEmail}
+          onUpdateInvoice={handleUpdateInvoice}
           onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
           onPreviewPdf={handlePreviewPdf}
           onShare={handleSharePdf}

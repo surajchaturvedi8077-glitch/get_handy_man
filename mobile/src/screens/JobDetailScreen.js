@@ -32,15 +32,10 @@ export default function JobDetailScreen() {
       setIsEditingJob(false);
       showToast('Job details saved');
     } catch (err) {
-      // FIXED: Display exact backend error in popup
       let errorText = 'An unknown error occurred.';
-      if (err.response?.data?.errors) {
-        errorText = err.response.data.errors.join('\n');
-      } else if (err.response?.data?.message) {
-        errorText = err.response.data.message;
-      } else if (err.message) {
-        errorText = err.message;
-      }
+      if (err.response?.data?.errors) errorText = err.response.data.errors.join('\n');
+      else if (err.response?.data?.message) errorText = err.response.data.message;
+      else if (err.message) errorText = err.message;
       Alert.alert("Backend Error", errorText);
     }
   };
@@ -52,13 +47,9 @@ export default function JobDetailScreen() {
       navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: invoice._id } });
     } catch (err) {
       let errorText = 'An unknown error occurred.';
-      if (err.response?.data?.errors) {
-        errorText = err.response.data.errors.join('\n');
-      } else if (err.response?.data?.message) {
-        errorText = err.response.data.message;
-      } else if (err.message) {
-        errorText = err.message;
-      }
+      if (err.response?.data?.errors) errorText = err.response.data.errors.join('\n');
+      else if (err.response?.data?.message) errorText = err.response.data.message;
+      else if (err.message) errorText = err.message;
       Alert.alert("Backend Error", errorText);
     }
   };
@@ -120,7 +111,8 @@ export default function JobDetailScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Services</Text>
                 <Text style={styles.value}>
-                  {(job.services && job.services.length > 0) ? job.services.join(', ') : (job.service || 'None')}
+                  {/* FIXED: Array Validation before joining */}
+                  {(Array.isArray(job.services) && job.services.length > 0) ? job.services.join(', ') : (job.service || 'None')}
                 </Text>
               </View>
             </View>

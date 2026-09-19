@@ -11,6 +11,12 @@ import JobListItem from '../components/jobs/JobListItem';
 import { getExpoPushToken, scheduleLocalJobReminder } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
+const safeTime = (dateStr) => {
+  if (!dateStr) return 0;
+  const time = new Date(dateStr).getTime();
+  return isNaN(time) ? 0 : time;
+};
+
 function SummaryCard({ big, label, sub, bg, fg, onPress }) {
   return (
     <TouchableOpacity onPress={onPress} style={[styles.card, { backgroundColor: bg }]}>
@@ -32,7 +38,6 @@ export default function DashboardScreen() {
   const { jobs } = useJobs('all');
   const { invoices: unpaidInvoices } = useInvoices('unpaid');
 
-  // NEW: Instantly syncs this phone's notification token to the backend
   useEffect(() => {
     async function syncPushToken() {
       if (settings && !settings.expoPushToken) {
@@ -54,9 +59,8 @@ export default function DashboardScreen() {
 
   const todaysJobs = jobs
     .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
-    .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
+    .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); // CRASH PREVENTED HERE
 
-  // Auto-schedule local reminders for today's jobs
   useEffect(() => {
     todaysJobs.forEach(job => scheduleLocalJobReminder(job));
   }, [todaysJobs]);
@@ -75,7 +79,6 @@ export default function DashboardScreen() {
           <Text style={styles.dateSub}>{todayStr}</Text>
         </View>
 
-        {/* REDESIGNED: Large Icons with Labels and Proper Spacing */}
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Customers')}>
             <View style={styles.iconBoxDark}><Text style={styles.iconLarge}>👥</Text></View>
@@ -152,13 +155,13 @@ const styles = StyleSheet.create({
   dateSub: { color: '#C7CCD4', fontSize: 11, marginTop: 4 },
   
   headerActions: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 10 },
-  navItem: { alignItems: 'center' },
-  iconBoxDark: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.charcoal2, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  iconBoxOrange: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.orange, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  iconLarge: { fontSize: 20 },
-  iconPlus: { fontSize: 24, color: '#fff', fontWeight: 'bold' },
-  navLabel: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  alertDot: { position: 'absolute', top: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: colors.red, borderWidth: 2, borderColor: colors.charcoal2 },
+  navItem: { alignItems: 'center', width: '23%' },
+  iconBoxDark: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.charcoal2, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  iconBoxOrange: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.orange, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  iconLarge: { fontSize: 26 },
+  iconPlus: { fontSize: 32, color: '#fff', fontWeight: 'bold' },
+  navLabel: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  alertDot: { position: 'absolute', top: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: colors.red, borderWidth: 2, borderColor: colors.charcoal2 },
 
   content: { flex: 1 },
   card: { borderRadius: 10, padding: 14, marginBottom: 12 },

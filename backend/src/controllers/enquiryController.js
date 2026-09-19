@@ -20,7 +20,7 @@ const getEnquiry = asyncHandler(async (req, res) => {
 const createEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.create(req.body);
   
-  // NEW: TRIGGER REAL PUSH NOTIFICATION TO WORKER'S PHONE
+  // FIXED: Push Notification to Worker's Phone with channelId for Android Lock Screen
   try {
     const settings = await Settings.getSingleton();
     if (settings.expoPushToken) {
@@ -32,7 +32,8 @@ const createEnquiry = asyncHandler(async (req, res) => {
           title: "New Enquiry Received! 📩",
           body: `${enquiry.name} requested a quote for ${enquiry.services?.[0] || enquiry.service || 'Handyman Services'}`,
           sound: "default",
-          priority: "high"
+          priority: "high",
+          channelId: "default" // CRITICAL FOR ANDROID LOCK SCREEN
         })
       });
     }

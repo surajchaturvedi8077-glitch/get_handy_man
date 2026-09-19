@@ -11,19 +11,21 @@ import { colors } from '../theme/colors';
 
 export default function EnquiriesScreen() {
   const [filter, setFilter] = useState('new');
-  const [searchQuery, setSearchQuery] = useState(''); // NEW: Search state
+  const [searchQuery, setSearchQuery] = useState(''); 
   const { enquiries, loading, error } = useEnquiries(filter);
   const navigation = useNavigation();
 
-  // NEW: Filter logic for the search bar
-  const filteredEnquiries = enquiries.filter(e => 
-    searchQuery === '' ||
-    e.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    e.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    e.phone?.includes(searchQuery) ||
-    e.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (e.services && e.services.some(s => s.toLowerCase().includes(searchQuery.toLowerCase())))
-  );
+  // FIXED: Crash-proof search filter handling old string services
+  const filteredEnquiries = enquiries.filter(e => {
+    const q = searchQuery.toLowerCase();
+    return q === '' ||
+      (e.name && e.name.toLowerCase().includes(q)) ||
+      (e.email && e.email.toLowerCase().includes(q)) ||
+      (e.phone && e.phone.includes(q)) ||
+      (e.address && e.address.toLowerCase().includes(q)) ||
+      (Array.isArray(e.services) && e.services.some(s => s && s.toLowerCase().includes(q))) ||
+      (typeof e.service === 'string' && e.service.toLowerCase().includes(q));
+  });
 
   return (
     <View style={styles.screen}>
@@ -41,7 +43,6 @@ export default function EnquiriesScreen() {
           <EnquiryFilterTabs value={filter} onChange={setFilter} />
         </View>
 
-        {/* NEW: Global Search Bar */}
         <TextInput 
           style={styles.searchBar} 
           placeholder="Search by name, phone, email, address..." 
