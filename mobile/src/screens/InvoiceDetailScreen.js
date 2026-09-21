@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, ScrollView, Text, StyleSheet, Alert, TextInput } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
@@ -20,20 +20,9 @@ import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { money } from '../utils/money';
 import { colors } from '../theme/colors';
-import * as invoiceService from '../services/invoiceService'; // FIXED MISSING IMPORT
+import * as invoiceService from '../services/invoiceService';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
-  divider: { borderTopWidth: 1, borderTopColor: colors.grayLight, marginVertical: 12 },
-  hintText: { fontSize: 10, color: '#9CA3AF', marginBottom: 10 },
-  expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 12 },
-  expenseTotal: { fontSize: 17, fontWeight: '800', color: colors.charcoal },
-  gstBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.grayLight, marginBottom: 14 },
-  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' }
-});
 
 export default function InvoiceDetailScreen() {
   const { params } = useRoute();
@@ -41,11 +30,24 @@ export default function InvoiceDetailScreen() {
   const { showToast } = useToast();
   const { settings, update: updateSettings } = useSettings();
   const {
-    invoice, loading, error, updateItems, setDiscount, toggleGstIncluded,
+    invoice, loading, error, refresh, updateItems, setDiscount, toggleGstIncluded,
     setPaymentMode, togglePaidStatus, setCostItems, uploadCostItemPhoto,
   } = useInvoice(params.id);
 
-  const [localGstRate, setLocalGstRate] = useState(settings?.gstRate ? String(settings.gstRate) : '10');
+  const [localGstRate, setLocalGstRate] = useState('10');
+  const [localCustomer, setLocalCustomer] = useState('');
+  const [localPhone, setLocalPhone] = useState('');
+  const [localEmail, setLocalEmail] = useState('');
+
+  // Sync state when invoice loads
+  useEffect(() => {
+    if (settings?.gstRate) setLocalGstRate(String(settings.gstRate));
+    if (invoice) {
+      setLocalCustomer(invoice.customer || '');
+      setLocalPhone(invoice.customerPhone || '');
+      setLocalEmail(invoice.customerEmail || '');
+    }
+  }, [invoice, settings]);
 
   if (loading || !invoice) return <View style={styles.screen}><LoadingState /></View>;
   if (error) return <View style={styles.screen}><ErrorState>{error}</ErrorState></View>;
@@ -57,9 +59,18 @@ export default function InvoiceDetailScreen() {
     showToast('GST Rate Updated');
   };
 
-  // EXPLICIT UPDATE BUTTON - gives visual confirmation since fields auto-save
-  const handleUpdateInvoice = () => {
-    showToast('✅ All invoice changes saved securely');
+  const handleUpdateInvoice = async () => {
+    try {
+      await invoiceService.updateInvoice(invoice._id, {
+        customer: localCustomer,
+        customerPhone: localPhone,
+        customerEmail: localEmail
+      });
+      refresh();
+      showToast('✅ All invoice changes saved securely');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save changes');
+    }
   };
 
   const handleDeleteInvoice = () => {
@@ -103,9 +114,9 @@ export default function InvoiceDetailScreen() {
     const invDate = new Date(invoice.date).toLocaleDateString('en-GB');
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-GB') : invDate;
     
-    const customerName = invoice.customer || 'Customer Name';
-    const customerEmailHtml = invoice.customerEmail ? `<div>${invoice.customerEmail}</div>` : '';
-    const customerPhoneHtml = invoice.customerPhone ? `<div>${invoice.customerPhone}</div>` : '';
+    const customerName = localCustomer || 'Customer Name';
+    const customerEmailHtml = localEmail ? `<div>${localEmail}</div>` : '';
+    const customerPhoneHtml = localPhone ? `<div>${localPhone}</div>` : '';
     
     const invoiceNum = invoice.number ? invoice.number.replace('GH-', '') : '0';
     const termsStr = invoice.terms === 'Due on receipt' ? 'NET 0' : invoice.terms;
@@ -217,7 +228,14 @@ export default function InvoiceDetailScreen() {
     <View style={styles.screen}>
       <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => navigation.navigate('InvoicesList')} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
+        
+        {/* Editable Customer Fields */}
+        <FieldLabel>Customer Details</FieldLabel>
+        <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
+        <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+        <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+
+        <FieldLabel style={{ marginTop: 12, marginBottom: 6 }}>Payment mode</FieldLabel>
         <View style={{ marginBottom: 12 }}>
           <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
         </View>
@@ -248,6 +266,26 @@ export default function InvoiceDetailScreen() {
         <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
         <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
         
+        {/* Restored Cost/Material Tracking (Internal Only) */}
+        <FieldLabel style={{ marginTop: 24 }}>Internal Tracking (Not on PDF)</FieldLabel>
+        <View style={styles.expenseCard}>
+          <Text style={styles.cardTitle}>Materials</Text>
+          <CostItemsEditor
+            items={invoice.costs?.materials}
+            kind="materials"
+            onSetItems={(items) => setCostItems('materials', items)}
+            onUploadPhoto={(idx, asset) => uploadCostItemPhoto('materials', idx, asset)}
+          />
+          <View style={styles.divider} />
+          <Text style={styles.cardTitle}>Other Expenses</Text>
+          <CostItemsEditor
+            items={invoice.costs?.other}
+            kind="other"
+            onSetItems={(items) => setCostItems('other', items)}
+            onUploadPhoto={(idx, asset) => uploadCostItemPhoto('other', idx, asset)}
+          />
+        </View>
+
         <InvoiceActions
           isPaid={isPaid}
           customerEmail={invoice.customerEmail}
@@ -257,7 +295,6 @@ export default function InvoiceDetailScreen() {
           onShare={handleSharePdf}
         />
 
-        {/* Delete Invoice Button */}
         <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={handleDeleteInvoice}>
           <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
         </Button>
@@ -265,3 +302,14 @@ export default function InvoiceDetailScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 8, color: colors.charcoal },
+  divider: { borderTopWidth: 1, borderTopColor: colors.grayLight, marginVertical: 12 },
+  expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 6 },
+  cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.blue, marginBottom: 10 },
+  gstBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.grayLight, marginBottom: 14 },
+  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' }
+});
