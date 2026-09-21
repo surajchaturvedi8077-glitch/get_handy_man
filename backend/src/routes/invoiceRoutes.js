@@ -20,6 +20,7 @@ const {
   setStatus,
   setCostItems,
   uploadCostItemPhoto,
+  uploadCompletionPhoto
 } = require('../controllers/invoiceController');
 const { protect } = require('../middleware/auth');
 const upload = require('../middleware/upload');
@@ -40,6 +41,8 @@ router.put('/:id/status', setStatus);
 
 router.put('/:id/cost-items/:kind', setCostItems);
 router.post('/:id/cost-items/:kind/:index/photo', upload.single('photo'), uploadCostItemPhoto);
+
+// NEW ROUTE: Job Completion Photo
 router.post('/:id/completion-photo', upload.single('photo'), uploadCompletionPhoto);
 
 module.exports = router;

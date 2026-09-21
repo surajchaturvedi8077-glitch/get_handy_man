@@ -13,6 +13,7 @@ connectDB().catch(err => {
   console.error('[server] MongoDB connection error:', err);
 });
 
+startCronJobs();
 // 2. Start listening IMMEDIATELY so Hostinger is happy
 app.listen(port, () => {
   // eslint-disable-next-line no-console
