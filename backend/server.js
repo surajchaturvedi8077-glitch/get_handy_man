@@ -7,6 +7,7 @@
 const app = require('./src/app');
 const connectDB = require('./src/config/db');
 const { port } = require('./src/config/env');
+const { startCronJobs } = require('./src/services/cronService');
 
 // 1. Connect to DB in the background
 connectDB().catch(err => {

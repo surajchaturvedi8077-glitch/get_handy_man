@@ -16,7 +16,6 @@ const { nodeEnv, clientOrigins, uploadDir } = require('./config/env');
 const apiRoutes = require('./routes');
 const notFound = require('./middleware/notFound');
 const errorHandler = require('./middleware/errorHandler');
-const { startCronJobs } = require('./src/services/cronService');
 const app = express();
 
 app.use(helmet({ crossOriginResourcePolicy: false })); // allow serving /uploads images cross-origin
