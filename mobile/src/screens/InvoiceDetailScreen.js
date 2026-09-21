@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Alert, TextInput } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -11,6 +11,7 @@ import DiscountEditor from '../components/invoices/DiscountEditor';
 import InvoiceTotals from '../components/invoices/InvoiceTotals';
 import InvoiceActions from '../components/invoices/InvoiceActions';
 import CostItemsEditor from '../components/invoices/CostItemsEditor';
+import PhotoUploadButton from '../components/invoices/PhotoUploadButton';
 import FieldLabel from '../components/ui/FieldLabel';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
@@ -38,6 +39,7 @@ export default function InvoiceDetailScreen() {
   const [localCustomer, setLocalCustomer] = useState('');
   const [localPhone, setLocalPhone] = useState('');
   const [localEmail, setLocalEmail] = useState('');
+  const [savingInvoice, setSavingInvoice] = useState(false);
 
   // Sync state when invoice loads
   useEffect(() => {
@@ -60,6 +62,8 @@ export default function InvoiceDetailScreen() {
   };
 
   const handleUpdateInvoice = async () => {
+    Keyboard.dismiss();
+    setSavingInvoice(true);
     try {
       await invoiceService.updateInvoice(invoice._id, {
         customer: localCustomer,
@@ -67,9 +71,11 @@ export default function InvoiceDetailScreen() {
         customerEmail: localEmail
       });
       refresh();
-      showToast('✅ All invoice changes saved securely');
+      showToast('✅ Invoice details updated successfully');
     } catch (e) {
       Alert.alert('Error', 'Failed to save changes');
+    } finally {
+      setSavingInvoice(false);
     }
   };
 
@@ -94,7 +100,7 @@ export default function InvoiceDetailScreen() {
 
   const generateHTMLString = () => {
     const itemsHtml = invoice.items && invoice.items.length 
-      ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB;">${i.name ? i.name : ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB;">${i.qty ? i.qty : 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${parseFloat(i.amt ? i.amt : 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${(parseFloat(i.amt ? i.amt : 0) * parseInt(i.qty ? i.qty : 1)).toFixed(2)}</td></tr>`).join('')
+      ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name ? i.name : ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.qty ? i.qty : 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt ? i.amt : 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${(parseFloat(i.amt ? i.amt : 0) * parseInt(i.qty ? i.qty : 1)).toFixed(2)}</td></tr>`).join('')
       : '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
 
     const bsbStr = settings?.bsb || '';
@@ -131,7 +137,7 @@ export default function InvoiceDetailScreen() {
     const balanceAmt = invoice.status === 'paid' ? '0.00' : totalDue;
 
     const paymentDetailsHtml = bankNameStr ? `
-      <div style="margin-top: 40px; font-size: 10px; color: #6B7280; line-height: 1.6;">
+      <div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;">
         <strong>Payment Details</strong><br/>
         Bank: ${bankNameStr}<br/>
         BSB: ${bsbStr}<br/>
@@ -142,6 +148,14 @@ export default function InvoiceDetailScreen() {
     ` : '';
 
     const discountHtml = invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${discAmt}</span></div>` : '';
+
+    // NEW: Render the Job Completion Photo directly on the PDF if it exists
+    const completionPhotoHtml = invoice.completionPhotoUrl ? `
+      <div style="margin-top: 30px; page-break-inside: avoid;">
+        <h3 style="color: #374151; font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px;">Job Completion Proof</h3>
+        <img src="${invoice.completionPhotoUrl.startsWith('http') ? invoice.completionPhotoUrl : `${BASE_URL}${invoice.completionPhotoUrl}`}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1px solid #E5E7EB;" />
+      </div>
+    ` : '';
 
     return `
       <html>
@@ -164,7 +178,7 @@ export default function InvoiceDetailScreen() {
             .items-table td { padding: 12px 10px; color: #374151; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
-            .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+            .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid; }
             .totals { width: 260px; font-size: 11px; color: #374151; }
             .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; }
             .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
@@ -201,6 +215,7 @@ export default function InvoiceDetailScreen() {
             </div>
           </div>
           ${paymentDetailsHtml}
+          ${completionPhotoHtml}
         </body>
       </html>
     `;
@@ -235,7 +250,12 @@ export default function InvoiceDetailScreen() {
         <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
         <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
 
-        <FieldLabel style={{ marginTop: 12, marginBottom: 6 }}>Payment mode</FieldLabel>
+        {/* FIXED: The explicit save button for Customer Details */}
+        <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
+          {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
+        </Button>
+
+        <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
         <View style={{ marginBottom: 12 }}>
           <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
         </View>
@@ -266,8 +286,26 @@ export default function InvoiceDetailScreen() {
         <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
         <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
         
+        {/* NEW FEATURE: Completion Photo (Appears on PDF) */}
+        <FieldLabel style={{ marginTop: 24 }}>Job Completion Photo (Sent with PDF Invoice)</FieldLabel>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <PhotoUploadButton 
+            photoUrl={invoice.completionPhotoUrl} 
+            onUpload={async (asset) => {
+              try {
+                await invoiceService.uploadCompletionPhoto(invoice._id, asset);
+                showToast('Completion photo attached to invoice!');
+                refresh();
+              } catch (e) { Alert.alert('Error', 'Upload failed'); }
+            }} 
+          />
+          <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>
+            {invoice.completionPhotoUrl ? "Photo attached. It will appear at the bottom of the PDF." : "Tap the icon to attach a completion photo."}
+          </Text>
+        </View>
+
         {/* Restored Cost/Material Tracking (Internal Only) */}
-        <FieldLabel style={{ marginTop: 24 }}>Internal Tracking (Not on PDF)</FieldLabel>
+        <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
         <View style={styles.expenseCard}>
           <Text style={styles.cardTitle}>Materials</Text>
           <CostItemsEditor
@@ -276,11 +314,10 @@ export default function InvoiceDetailScreen() {
             onSetItems={(items) => setCostItems('materials', items)}
             onUploadPhoto={async (idx, asset) => {
               try {
-                await uploadCostItemPhoto('materials', idx, asset);
+                await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset);
                 showToast('Material photo saved!');
-              } catch (e) {
-                Alert.alert('Upload Failed', 'Could not save the photo. Make sure your server is online.');
-              }
+                refresh();
+              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
             }}
           />
           <View style={styles.divider} />
@@ -291,11 +328,10 @@ export default function InvoiceDetailScreen() {
             onSetItems={(items) => setCostItems('other', items)}
             onUploadPhoto={async (idx, asset) => {
               try {
-                await uploadCostItemPhoto('other', idx, asset);
+                await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset);
                 showToast('Expense photo saved!');
-              } catch (e) {
-                Alert.alert('Upload Failed', 'Could not save the photo. Make sure your server is online.');
-              }
+                refresh();
+              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
             }}
           />
         </View>

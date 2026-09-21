@@ -52,6 +52,7 @@ const invoiceSchema = new mongoose.Schema(
       value: { type: Number, default: 0 },
     },
 
+    completionPhotoUrl: { type: String, default: null }, // NEW FIELD FOR JOB COMPLETION PHOTO
     costs: {
       materials: [costItemSchema],
       other: [costItemSchema], // was "vehicle expenses" — generalised, same shape

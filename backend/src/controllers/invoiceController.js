@@ -158,6 +158,18 @@ async function findInvoiceOr404(res, id) {
   return invoice;
 }
 
+// POST /api/invoices/:id/completion-photo
+const uploadCompletionPhoto = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    res.status(400);
+    throw new Error('No photo uploaded');
+  }
+  const invoice = await findInvoiceOr404(res, req.params.id);
+  invoice.completionPhotoUrl = `/uploads/${req.file.filename}`;
+  await invoice.save();
+  ok(res, await withTotals(invoice));
+});
+
 module.exports = {
   listInvoices,
   getInvoice,
@@ -170,4 +182,5 @@ module.exports = {
   setStatus,
   setCostItems,
   uploadCostItemPhoto,
+  uploadCompletionPhoto
 };

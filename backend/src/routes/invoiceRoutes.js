@@ -40,5 +40,6 @@ router.put('/:id/status', setStatus);
 
 router.put('/:id/cost-items/:kind', setCostItems);
 router.post('/:id/cost-items/:kind/:index/photo', upload.single('photo'), uploadCostItemPhoto);
+router.post('/:id/completion-photo', upload.single('photo'), uploadCompletionPhoto);
 
 module.exports = router;
