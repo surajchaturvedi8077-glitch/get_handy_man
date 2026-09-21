@@ -11,25 +11,17 @@ const Invoice = require('../models/Invoice');
 const Settings = require('../models/Settings');
 
 function startCronJobs() {
-  // Valid 5-field cron expression: minute hour day month day-of-week
-  // '0 8-18 * * *' = At minute 0 past every hour from 8 through 18.
   cron.schedule('0 8-18 * * *', async () => {
     try {
       const settings = await Settings.getSingleton();
       
-      // Stop if push notifications aren't set up yet
       if (!settings.expoPushToken || !Expo.isExpoPushToken(settings.expoPushToken)) {
         return;
       }
 
-      // Find all unpaid invoices
       const unpaidInvoices = await Invoice.find({ status: 'unpaid' });
-      
-      if (unpaidInvoices.length === 0) {
-        return; // Nothing to report
-      }
+      if (unpaidInvoices.length === 0) return;
 
-      // Calculate how many are technically "Overdue" (older than 7 days)
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
       const overdueCount = unpaidInvoices.filter(inv => new Date(inv.date) < oneWeekAgo).length;
@@ -39,13 +31,14 @@ function startCronJobs() {
         message = `⚠️ ${overdueCount} invoice(s) are severely overdue! ` + message;
       }
 
-      // Send the remote push notification
       const expo = new Expo();
       await expo.sendPushNotificationsAsync([{
         to: settings.expoPushToken,
         sound: 'default',
         title: 'Invoice Reminder 💰',
         body: message,
+        priority: 'high',      // REQUIRED FOR ANDROID LOCK SCREEN
+        channelId: 'default'   // REQUIRED FOR ANDROID LOCK SCREEN
       }]);
       
       console.log(`[cron] Sent unpaid invoice reminder for ${unpaidInvoices.length} invoices.`);

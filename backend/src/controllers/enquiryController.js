@@ -46,6 +46,8 @@ const createEnquiry = asyncHandler(async (req, res) => {
         title: 'New Enquiry! 🛠️',
         body: `${enquiry.name} requested a quote for ${req.body.service || 'a job'}.`,
         data: { enquiryId: enquiry._id },
+        priority: 'high',      // REQUIRED FOR ANDROID LOCK SCREEN
+        channelId: 'default'   // REQUIRED FOR ANDROID LOCK SCREEN
       }]);
     }
   } catch (err) {

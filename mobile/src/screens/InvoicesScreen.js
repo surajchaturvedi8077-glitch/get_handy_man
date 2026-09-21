@@ -53,7 +53,6 @@ function ReportPane() {
   const shiftDate = (dir) => {
     const next = new Date(refDate);
     if (period === 'day') next.setDate(next.getDate() + dir);
-    if (period === 'week') next.setDate(next.getDate() + (dir * 7));
     if (period === 'month') next.setMonth(next.getMonth() + dir);
     if (period === 'year') next.setFullYear(next.getFullYear() + dir);
     setRefDate(next);
@@ -66,15 +65,6 @@ function ReportPane() {
     start = new Date(d.setHours(0,0,0,0));
     end = new Date(d.setHours(23,59,59,999));
     label = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  } else if (period === 'week') {
-    const day = d.getDay(); 
-    const diff = d.getDate() - day; 
-    start = new Date(d.setDate(diff));
-    start.setHours(0,0,0,0);
-    end = new Date(start);
-    end.setDate(end.getDate() + 6);
-    end.setHours(23,59,59,999);
-    label = `${start.toLocaleDateString('en-GB', {day:'numeric', month:'short'})} - ${end.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'})}`;
   } else if (period === 'month') {
     start = new Date(d.getFullYear(), d.getMonth(), 1);
     end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23,59,59,999);
@@ -95,17 +85,17 @@ function ReportPane() {
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.filterControlRow}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <SegmentedControl
-            options={[
-              {label: 'Day', value: 'day'}, {label: 'Week', value: 'week'},
-              {label: 'Month', value: 'month'}, {label: 'Year', value: 'year'},
-              {label: 'Custom', value: 'custom'}, {label: 'All Time', value: 'all'}
-            ]}
-            value={period}
-            onChange={setPeriod}
-          />
-        </ScrollView>
+        <SegmentedControl
+          options={[
+            {label: 'Day', value: 'day'}, 
+            {label: 'Month', value: 'month'}, 
+            {label: 'Year', value: 'year'},
+            {label: 'Custom', value: 'custom'}, 
+            {label: 'All Time', value: 'all'}
+          ]}
+          value={period}
+          onChange={setPeriod}
+        />
       </View>
 
       {period === 'custom' && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard, TouchableOpacity } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -149,7 +149,6 @@ export default function InvoiceDetailScreen() {
 
     const discountHtml = invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${discAmt}</span></div>` : '';
 
-    // NEW: Render the Job Completion Photo directly on the PDF if it exists
     const completionPhotoHtml = invoice.completionPhotoUrl ? `
       <div style="margin-top: 30px; page-break-inside: avoid;">
         <h3 style="color: #374151; font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px;">Job Completion Proof</h3>
@@ -244,13 +243,11 @@ export default function InvoiceDetailScreen() {
       <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => navigation.navigate('InvoicesList')} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         
-        {/* Editable Customer Fields */}
         <FieldLabel>Customer Details</FieldLabel>
         <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
         <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
         <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
 
-        {/* FIXED: The explicit save button for Customer Details */}
         <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
           {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
         </Button>
@@ -286,7 +283,6 @@ export default function InvoiceDetailScreen() {
         <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
         <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
         
-        {/* NEW FEATURE: Completion Photo (Appears on PDF) */}
         <FieldLabel style={{ marginTop: 24 }}>Job Completion Photo (Sent with PDF Invoice)</FieldLabel>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <PhotoUploadButton 
@@ -299,12 +295,24 @@ export default function InvoiceDetailScreen() {
               } catch (e) { Alert.alert('Error', 'Upload failed'); }
             }} 
           />
-          <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>
-            {invoice.completionPhotoUrl ? "Photo attached. It will appear at the bottom of the PDF." : "Tap the icon to attach a completion photo."}
-          </Text>
+          {invoice.completionPhotoUrl ? (
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Photo attached. It will appear on PDF.</Text>
+              <TouchableOpacity onPress={async () => {
+                try {
+                  await invoiceService.updateInvoice(invoice._id, { completionPhotoUrl: null });
+                  showToast('Photo removed');
+                  refresh();
+                } catch(e) { Alert.alert('Error', 'Could not remove photo'); }
+              }}>
+                <Text style={{ color: colors.red, fontSize: 24, fontWeight: 'bold', paddingHorizontal: 10 }}>×</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Tap the icon to attach a completion photo.</Text>
+          )}
         </View>
 
-        {/* Restored Cost/Material Tracking (Internal Only) */}
         <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
         <View style={styles.expenseCard}>
           <Text style={styles.cardTitle}>Materials</Text>
