@@ -1,7 +1,7 @@
 /**
  * cronService.js
  * ------------------------------------------------------------------
- * Automated background tasks. Runs daily to check for unpaid invoices
+ * Automated background tasks. Runs to check for unpaid invoices
  * and pushes a lock-screen notification to the worker's device.
  * ------------------------------------------------------------------
  */
@@ -11,8 +11,9 @@ const Invoice = require('../models/Invoice');
 const Settings = require('../models/Settings');
 
 function startCronJobs() {
-  // Runs every day at 9:00 AM server time
-  cron.schedule('** * * *', async () => {
+  // Valid 5-field cron expression: minute hour day month day-of-week
+  // '0 8-18 * * *' = At minute 0 past every hour from 8 through 18.
+  cron.schedule('0 8-18 * * *', async () => {
     try {
       const settings = await Settings.getSingleton();
       
@@ -43,7 +44,7 @@ function startCronJobs() {
       await expo.sendPushNotificationsAsync([{
         to: settings.expoPushToken,
         sound: 'default',
-        title: 'Daily Invoice Reminder 💰',
+        title: 'Invoice Reminder 💰',
         body: message,
       }]);
       
@@ -53,7 +54,7 @@ function startCronJobs() {
     }
   });
   
-  console.log('[cron] Automated daily invoice reminders initialized.');
+  console.log('[cron] Automated hourly invoice reminders (8 AM - 6 PM) initialized.');
 }
 
 module.exports = { startCronJobs };
