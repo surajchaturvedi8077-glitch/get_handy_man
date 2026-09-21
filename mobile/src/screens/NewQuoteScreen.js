@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import ScreenHeader from '../components/layout/ScreenHeader';
@@ -14,6 +14,7 @@ const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
 
 export default function NewQuoteScreen() {
   const navigation = useNavigation();
+  const { params } = useRoute();
   const { showToast } = useToast();
   const { settings } = useSettings();
   const [generating, setGenerating] = useState(false);
@@ -22,6 +23,19 @@ export default function NewQuoteScreen() {
     name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt'
   });
   const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150.00' }]);
+
+  // Prefill if navigating from customer screen
+  useEffect(() => {
+    if (params?.customer) {
+      setForm(prev => ({
+        ...prev,
+        name: params.customer.name || '',
+        phone: params.customer.phone || '',
+        email: params.customer.email || '',
+        address: params.customer.address || '',
+      }));
+    }
+  }, [params?.customer]);
 
   const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -104,7 +118,6 @@ export default function NewQuoteScreen() {
 
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       
-      // Forces native sharing dialog to work across all apps (WhatsApp, Gmail, Drive, etc.)
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { 
           mimeType: 'application/pdf', 

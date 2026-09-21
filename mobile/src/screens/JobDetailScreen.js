@@ -11,6 +11,7 @@ import useToast from '../hooks/useToast';
 import { openPhone, openEmail, openMaps } from '../utils/linking';
 import { money } from '../utils/money';
 import { colors } from '../theme/colors';
+import * as invoiceService from '../services/invoiceService';
 
 export default function JobDetailScreen() {
   const { params } = useRoute();
@@ -29,7 +30,23 @@ export default function JobDetailScreen() {
   const handleSaveDetails = async (payload) => {
     try {
       await saveDetails(payload);
+
+      // SYNCHRONIZE JOB COST DIRECTLY TO LINKED INVOICE
+      if (payload.labour !== undefined && job.invoiceId) {
+        try {
+          const inv = await invoiceService.getInvoice(job.invoiceId);
+          if (inv && inv.items && inv.items.length > 0) {
+            const updatedItems = [...inv.items];
+            updatedItems[0].amt = payload.labour; // Syncs the new price to the first line item
+            await invoiceService.updateInvoice(job.invoiceId, { items: updatedItems });
+          }
+        } catch (invErr) {
+          console.log("Invoice sync failed silently", invErr);
+        }
+      }
+
       setIsEditingJob(false);
+      setEditingPrice(false); 
       showToast('Job details saved');
     } catch (err) {
       let errorText = 'An unknown error occurred.';
@@ -111,7 +128,6 @@ export default function JobDetailScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Services</Text>
                 <Text style={styles.value}>
-                  {/* FIXED: Array Validation before joining */}
                   {(Array.isArray(job.services) && job.services.length > 0) ? job.services.join(', ') : (job.service || 'None')}
                 </Text>
               </View>
@@ -135,7 +151,7 @@ export default function JobDetailScreen() {
               {editingPrice ? (
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <TextInput style={styles.priceInput} value={priceInput} onChangeText={setPriceInput} keyboardType="numeric" autoFocus />
-                  <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={async () => { await handleSaveDetails({ labour: Number(priceInput) }); setEditingPrice(false); }}>Save</Button>
+                  <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={() => handleSaveDetails({ labour: Number(priceInput) })}>Save</Button>
                 </View>
               ) : (
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

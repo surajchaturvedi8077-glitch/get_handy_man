@@ -1,11 +1,7 @@
-/**
- * useReport.js
- * ------------------------------------------------------------------
- */
 import { useCallback, useEffect, useState } from 'react';
 import * as reportService from '../services/reportService';
 
-export default function useReport() {
+export default function useReport(start, end) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -14,13 +10,13 @@ export default function useReport() {
     setLoading(true);
     setError(null);
     try {
-      setReport(await reportService.getBusinessReport());
+      setReport(await reportService.getBusinessReport(start, end));
     } catch (err) {
       setError(err.response?.data?.message || err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [start, end]);
 
   useEffect(() => {
     refresh();

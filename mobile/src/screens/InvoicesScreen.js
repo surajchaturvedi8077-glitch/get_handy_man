@@ -1,22 +1,23 @@
-import { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TextInput } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import InvoiceTabs from '../components/invoices/InvoiceTabs';
 import InvoiceList from '../components/invoices/InvoiceList';
 import ReportScreen from '../components/report/ReportScreen';
+import SegmentedControl from '../components/ui/SegmentedControl';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import useInvoices from '../hooks/useInvoices';
+import useReport from '../hooks/useReport';
 import { colors } from '../theme/colors';
 
 function InvoiceListPane({ tab }) {
   const { invoices, loading, error } = useInvoices(tab);
-  const [searchQuery, setSearchQuery] = useState(''); // NEW: Search state
+  const [searchQuery, setSearchQuery] = useState('');
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState>{error}</ErrorState>;
 
-  // NEW: Filter logic for the search bar
   const filteredInvoices = invoices.filter(i => 
     searchQuery === '' ||
     i.customer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -25,7 +26,6 @@ function InvoiceListPane({ tab }) {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* NEW: Global Search Bar */}
       <TextInput 
         style={styles.searchBar} 
         placeholder="Search by customer name or invoice #..." 
@@ -39,11 +39,70 @@ function InvoiceListPane({ tab }) {
 }
 
 function ReportPane() {
-  const useReport = require('../hooks/useReport').default;
-  const { report, loading, error } = useReport();
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState>{error}</ErrorState>;
-  return <ReportScreen report={report} />;
+  const [period, setPeriod] = useState('month'); 
+  const [refDate, setRefDate] = useState(new Date());
+
+  const shiftDate = (dir) => {
+    const next = new Date(refDate);
+    if (period === 'day') next.setDate(next.getDate() + dir);
+    if (period === 'week') next.setDate(next.getDate() + (dir * 7));
+    if (period === 'month') next.setMonth(next.getMonth() + dir);
+    if (period === 'year') next.setFullYear(next.getFullYear() + dir);
+    setRefDate(next);
+  };
+
+  let start = null, end = null, label = "All Time";
+  const d = new Date(refDate);
+
+  if (period === 'day') {
+    start = new Date(d.setHours(0,0,0,0));
+    end = new Date(d.setHours(23,59,59,999));
+    label = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  } else if (period === 'week') {
+    const day = d.getDay(); 
+    const diff = d.getDate() - day; 
+    start = new Date(d.setDate(diff));
+    start.setHours(0,0,0,0);
+    end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23,59,59,999);
+    label = `${start.toLocaleDateString('en-GB', {day:'numeric', month:'short'})} - ${end.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'})}`;
+  } else if (period === 'month') {
+    start = new Date(d.getFullYear(), d.getMonth(), 1);
+    end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23,59,59,999);
+    label = start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  } else if (period === 'year') {
+    start = new Date(d.getFullYear(), 0, 1);
+    end = new Date(d.getFullYear(), 11, 31, 23,59,59,999);
+    label = start.getFullYear().toString();
+  }
+
+  const { report, loading, error } = useReport(start?.toISOString(), end?.toISOString());
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.filterControlRow}>
+        <SegmentedControl
+          options={[
+            {label: 'Day', value: 'day'}, {label: 'Week', value: 'week'},
+            {label: 'Month', value: 'month'}, {label: 'Year', value: 'year'},
+            {label: 'All Time', value: 'all'}
+          ]}
+          value={period}
+          onChange={setPeriod}
+        />
+      </View>
+      {period !== 'all' && (
+        <View style={styles.dateNavRow}>
+          <TouchableOpacity onPress={() => shiftDate(-1)} style={styles.arrowBtn}><Text style={styles.arrowText}>◀</Text></TouchableOpacity>
+          <Text style={styles.dateLabel}>{label}</Text>
+          <TouchableOpacity onPress={() => shiftDate(1)} style={styles.arrowBtn}><Text style={styles.arrowText}>▶</Text></TouchableOpacity>
+        </View>
+      )}
+
+      {loading ? <LoadingState /> : error ? <ErrorState>{error}</ErrorState> : <ReportScreen report={report} />}
+    </View>
+  );
 }
 
 export default function InvoicesScreen() {
@@ -68,5 +127,10 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
   body: { flex: 1 },
   bodyContent: { padding: 14 },
-  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal }
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
+  filterControlRow: { marginBottom: 16 },
+  dateNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 8, padding: 8, marginBottom: 16, borderWidth: 1, borderColor: colors.grayLight },
+  arrowBtn: { padding: 8 },
+  arrowText: { fontSize: 16, color: colors.charcoal },
+  dateLabel: { fontWeight: '800', fontSize: 14, color: colors.charcoal }
 });

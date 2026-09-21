@@ -274,7 +274,14 @@ export default function InvoiceDetailScreen() {
             items={invoice.costs?.materials}
             kind="materials"
             onSetItems={(items) => setCostItems('materials', items)}
-            onUploadPhoto={(idx, asset) => uploadCostItemPhoto('materials', idx, asset)}
+            onUploadPhoto={async (idx, asset) => {
+              try {
+                await uploadCostItemPhoto('materials', idx, asset);
+                showToast('Material photo saved!');
+              } catch (e) {
+                Alert.alert('Upload Failed', 'Could not save the photo. Make sure your server is online.');
+              }
+            }}
           />
           <View style={styles.divider} />
           <Text style={styles.cardTitle}>Other Expenses</Text>
@@ -282,7 +289,14 @@ export default function InvoiceDetailScreen() {
             items={invoice.costs?.other}
             kind="other"
             onSetItems={(items) => setCostItems('other', items)}
-            onUploadPhoto={(idx, asset) => uploadCostItemPhoto('other', idx, asset)}
+            onUploadPhoto={async (idx, asset) => {
+              try {
+                await uploadCostItemPhoto('other', idx, asset);
+                showToast('Expense photo saved!');
+              } catch (e) {
+                Alert.alert('Upload Failed', 'Could not save the photo. Make sure your server is online.');
+              }
+            }}
           />
         </View>
 

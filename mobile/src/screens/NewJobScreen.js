@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import Button from '../components/ui/Button';
@@ -11,6 +11,7 @@ import { colors } from '../theme/colors';
 
 export default function NewJobScreen() {
   const navigation = useNavigation();
+  const { params } = useRoute();
   const { showToast } = useToast();
   const [saving, setSaving] = useState(false);
   const debounceTimer = useRef(null);
@@ -29,6 +30,21 @@ export default function NewJobScreen() {
   const [services, setServices] = useState(['General Handyman']);
   const [materials, setMaterials] = useState([]);
   const [extraFields, setExtraFields] = useState([]);
+
+  // Prefill if navigating from customer screen
+  useEffect(() => {
+    if (params?.customer) {
+      setForm(prev => ({
+        ...prev,
+        name: params.customer.name || '',
+        phone: params.customer.phone || '',
+        email: params.customer.email || '',
+        address: params.customer.address || '',
+        suburb: params.customer.suburb || '',
+        postcode: params.customer.postcode || '',
+      }));
+    }
+  }, [params?.customer]);
 
   const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -95,7 +111,6 @@ export default function NewJobScreen() {
     }
   };
 
-  // NEW: Live Google Maps Search
   const searchPlaces = async (text) => {
     updateForm('address', text);
     if (text.length < 3) { setSuggestions([]); return; }
@@ -103,7 +118,7 @@ export default function NewJobScreen() {
     debounceTimer.current = setTimeout(async () => {
       try {
         const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
-        if (!key) return; // Failsafe if key isn't set yet
+        if (!key) return;
         const res = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&components=country:au&key=${key}`);
         const data = await res.json();
         setSuggestions(data.predictions || []);
@@ -111,7 +126,6 @@ export default function NewJobScreen() {
     }, 500);
   };
 
-  // NEW: Exact Pin-Drop GPS Capture & Postcode Autofill
   const handleSelectPlace = async (placeId, description) => {
     updateForm('address', description);
     setSuggestions([]);
@@ -165,7 +179,6 @@ export default function NewJobScreen() {
           </View>
         </View>
 
-        {/* UPDATED: Google Maps Autocomplete Dropdown */}
         <View style={styles.fieldRow}>
           <Text style={styles.icon}>📍</Text>
           <View style={{ flex: 1, zIndex: 10 }}>

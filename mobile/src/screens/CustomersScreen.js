@@ -96,7 +96,15 @@ export default function CustomersScreen({ navigation }) {
                <Text style={styles.detail}>{c.address || 'No address saved'}</Text>
                {c.notes ? <Text style={styles.notes}>Notes: {c.notes}</Text> : null}
              </View>
+             
+             {/* QUICK ACTION BUTTONS */}
              <View style={styles.actions}>
+               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Enquiries', { screen: 'NewQuote', params: { customer: c } })} style={styles.actionBtn}>
+                 <Text style={styles.actionBtnText}>📝 Quote</Text>
+               </TouchableOpacity>
+               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Home', { screen: 'NewJob', params: { customer: c } })} style={styles.actionBtn}>
+                 <Text style={styles.actionBtnText}>🛠️ Job</Text>
+               </TouchableOpacity>
                <TouchableOpacity onPress={() => openModal(c)} style={styles.iconBtn}><Text style={{fontSize: 16}}>✏️</Text></TouchableOpacity>
                <TouchableOpacity onPress={() => deleteCustomer(c._id)} style={styles.iconBtn}><Text style={{fontSize: 16}}>🗑️</Text></TouchableOpacity>
              </View>
@@ -136,12 +144,14 @@ const styles = StyleSheet.create({
   searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: colors.charcoal },
   content: { padding: 16 },
   addBtn: { backgroundColor: colors.orange, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 10, padding: 14, marginBottom: 12, flexDirection: 'row', alignItems: 'center' },
+  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 10, padding: 14, marginBottom: 12 },
   name: { fontSize: 15, fontWeight: '800', color: colors.charcoal, marginBottom: 4 },
   detail: { fontSize: 11.5, color: colors.gray, marginBottom: 2 },
   notes: { fontSize: 11, color: colors.orangeDeep, marginTop: 4, fontStyle: 'italic' },
-  actions: { flexDirection: 'row', gap: 12, paddingLeft: 10 },
-  iconBtn: { backgroundColor: colors.grayLight, padding: 8, borderRadius: 8 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 12, alignItems: 'center' },
+  actionBtn: { backgroundColor: colors.blueTint, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  actionBtnText: { color: colors.blue, fontSize: 11, fontWeight: '700' },
+  iconBtn: { backgroundColor: colors.grayLight, padding: 6, borderRadius: 8 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 12, color: colors.charcoal },
   empty: { textAlign: 'center', color: colors.gray, marginTop: 40, fontSize: 13 }
 });
