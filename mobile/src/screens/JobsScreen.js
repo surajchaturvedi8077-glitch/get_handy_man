@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import JobFilterTabs from '../components/jobs/JobFilterTabs';
 import JobListItem from '../components/jobs/JobListItem';
 import SegmentedControl from '../components/ui/SegmentedControl';
 import LoadingState from '../components/ui/LoadingState';
+import ErrorState from '../components/ui/ErrorState';
 import useJobs from '../hooks/useJobs';
 import { colors } from '../theme/colors';
 
@@ -12,18 +14,19 @@ const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const safeTime = (dateStr) => {
-  if (!dateStr) return 0;
+  if (!dateStr) return Infinity; // Pushes jobs with no scheduled date to the bottom of the list
   const time = new Date(dateStr).getTime();
-  return isNaN(time) ? 0 : time;
+  return isNaN(time) ? Infinity : time;
 };
 
 export default function JobsScreen() {
   const navigation = useNavigation();
-  const { jobs, loading } = useJobs('all');
-  
   const [viewMode, setViewMode] = useState('list'); 
-  const [listFilter, setListFilter] = useState('all'); 
+  const [filter, setFilter] = useState('all'); 
   const [searchQuery, setSearchQuery] = useState('');
+
+  // useJobs automatically hits the backend API whenever 'filter' changes
+  const { jobs, loading, error } = useJobs(filter);
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const year = currentDate.getFullYear();
@@ -48,95 +51,84 @@ export default function JobsScreen() {
 
   const filteredJobs = jobs.filter(j => {
     const q = searchQuery.toLowerCase();
-    const matchesSearch = q === '' || 
+    return q === '' || 
       (j.name && j.name.toLowerCase().includes(q)) ||
       (j.address && j.address.toLowerCase().includes(q)) ||
       (Array.isArray(j.services) && j.services.some(s => s && s.toLowerCase().includes(q))) ||
       (typeof j.service === 'string' && j.service.toLowerCase().includes(q));
-
-    if (!matchesSearch) return false;
-
-    if (listFilter === 'complete') return j.status === 'complete';
-    if (listFilter === 'incomplete') return j.status !== 'complete';
-    
-    const today = new Date();
-    
-    // BULLETPROOF ANDROID DATE CHECK
-    const isJobToday = j.scheduledDate ? (
-      new Date(j.scheduledDate).getFullYear() === today.getFullYear() &&
-      new Date(j.scheduledDate).getMonth() === today.getMonth() &&
-      new Date(j.scheduledDate).getDate() === today.getDate()
-    ) : false;
-    
-    if (listFilter === 'today') return j.status !== 'complete' && isJobToday;
-    
-    if (listFilter === 'upcoming') {
-      if (!j.scheduledDate) return true;
-      const jobDate = new Date(j.scheduledDate);
-      jobDate.setHours(0, 0, 0, 0);
-      const todayZeroed = new Date();
-      todayZeroed.setHours(0, 0, 0, 0);
-      return j.status !== 'complete' && jobDate > todayZeroed;
-    }
-    
-    return true;
   }).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
 
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.header}>
-        <Text style={styles.title}>JOBS</Text>
+        <View style={styles.headerTop}>
+          <Text style={styles.title}>JOBS</Text>
+          {/* NEW: Explicit + New Job Button on the Jobs screen */}
+          <TouchableOpacity onPress={() => navigation.navigate('Home', { screen: 'NewJob' })} style={styles.addBtn}>
+            <Text style={styles.addBtnText}>+ New Job</Text>
+          </TouchableOpacity>
+        </View>
         <SegmentedControl 
           options={[{ value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]}
           value={viewMode} onChange={setViewMode} dark 
         />
       </SafeAreaView>
 
-      {loading ? ( <LoadingState /> ) : (
-        <ScrollView style={styles.content}>
-          {viewMode === 'list' ? (
-            <View style={styles.listContainer}>
-              <TextInput style={styles.searchBar} placeholder="Search jobs by client, address..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor={colors.gray} />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-                {['all', 'today', 'upcoming', 'complete', 'incomplete'].map(f => (
-                  <TouchableOpacity key={f} style={[styles.filterChip, listFilter === f && styles.filterChipActive]} onPress={() => setListFilter(f)}>
-                    <Text style={[styles.filterText, listFilter === f && styles.filterTextActive]}>{f.charAt(0).toUpperCase() + f.slice(1)}</Text>
+      <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+        {viewMode === 'list' ? (
+          <View style={styles.listContainer}>
+            {/* RESTORED: Accepted | Confirmed | Complete | All */}
+            <View style={styles.tabs}>
+              <JobFilterTabs value={filter} onChange={setFilter} />
+            </View>
+            
+            <TextInput 
+              style={styles.searchBar} 
+              placeholder="Search jobs by client, address..." 
+              value={searchQuery} 
+              onChangeText={setSearchQuery} 
+              placeholderTextColor={colors.gray} 
+            />
+            
+            {loading && <LoadingState />}
+            {error && <ErrorState>{error}</ErrorState>}
+            
+            {!loading && !error && filteredJobs.length > 0 ? ( 
+              filteredJobs.map(j => <JobListItem key={j._id} job={j} />) 
+            ) : ( 
+              !loading && <Text style={styles.emptyText}>No jobs match this filter.</Text> 
+            )}
+          </View>
+        ) : (
+          <View style={styles.calendarContainer}>
+            <View style={styles.monthNav}>
+              <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
+              <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
+              <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
+            </View>
+            <View style={styles.daysHeader}>
+              {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
+            </View>
+            <View style={styles.grid}>
+              {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
+              {daysArray.map(day => {
+                const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
+                const count = jobsPerDay[day] || 0;
+                return (
+                  <TouchableOpacity key={day} style={[styles.dayCell, isTodayCell && styles.todayCell]} onPress={() => navigation.navigate('DayDetail', { day, year, month })}>
+                    <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
+                    {count > 0 && (
+                      <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
+                        <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
+                      </View>
+                    )}
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-              {filteredJobs.length > 0 ? ( filteredJobs.map(j => <JobListItem key={j._id} job={j} />) ) : ( <Text style={styles.emptyText}>No jobs match this filter.</Text> )}
+                );
+              })}
             </View>
-          ) : (
-            <View style={styles.calendarContainer}>
-              <View style={styles.monthNav}>
-                <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
-                <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
-                <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
-              </View>
-              <View style={styles.daysHeader}>
-                {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
-              </View>
-              <View style={styles.grid}>
-                {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
-                {daysArray.map(day => {
-                  const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
-                  const count = jobsPerDay[day] || 0;
-                  return (
-                    <TouchableOpacity key={day} style={[styles.dayCell, isTodayCell && styles.todayCell]} onPress={() => navigation.navigate('DayDetail', { day, year, month })}>
-                      <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
-                      {count > 0 && (
-                        <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
-                          <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-        </ScrollView>
-      )}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -144,15 +136,14 @@ export default function JobsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.offwhite },
   header: { backgroundColor: colors.charcoal, paddingHorizontal: 16, paddingBottom: 14 },
-  title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1 },
+  addBtn: { backgroundColor: colors.orange, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
+  addBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   content: { flex: 1 },
   listContainer: { padding: 14 },
-  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 12, color: colors.charcoal },
-  filterScroll: { flexDirection: 'row', marginBottom: 14 },
-  filterChip: { paddingVertical: 6, paddingHorizontal: 13, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, marginRight: 8 },
-  filterChipActive: { backgroundColor: colors.charcoal, borderColor: colors.charcoal },
-  filterText: { fontSize: 11, fontWeight: '700', color: colors.gray },
-  filterTextActive: { color: '#fff' },
+  tabs: { marginBottom: 14 },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
   emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
   calendarContainer: { padding: 14 },
   monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.grayLight },

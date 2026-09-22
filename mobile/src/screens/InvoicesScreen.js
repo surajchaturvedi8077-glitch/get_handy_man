@@ -44,7 +44,6 @@ function ReportPane() {
   const [period, setPeriod] = useState('month'); 
   const [refDate, setRefDate] = useState(new Date());
   
-  // Custom Date Picker State
   const [customStart, setCustomStart] = useState(new Date(new Date().setDate(new Date().getDate() - 7)));
   const [customEnd, setCustomEnd] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
@@ -90,8 +89,7 @@ function ReportPane() {
             {label: 'Day', value: 'day'}, 
             {label: 'Month', value: 'month'}, 
             {label: 'Year', value: 'year'},
-            {label: 'Custom', value: 'custom'}, 
-            {label: 'All Time', value: 'all'}
+            {label: 'Custom', value: 'custom'}
           ]}
           value={period}
           onChange={setPeriod}

@@ -2,7 +2,6 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-// 1. Set handler safely so it doesn't crash if unsupported
 try {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -15,12 +14,8 @@ try {
   console.log("Notification handler initialization skipped.");
 }
 
-// 2. Safely get the push token, bypassing Expo Go restrictions
 export async function getExpoPushToken() {
-  // Expo Go on Android no longer supports remote push notifications
-  // Returning null here prevents the fatal startup crash
   if (Constants.appOwnership === 'expo' && Platform.OS === 'android') {
-    console.log("Remote push notifications are not supported in Expo Go on Android. Skipping.");
     return null;
   }
 
@@ -33,9 +28,7 @@ export async function getExpoPushToken() {
       finalStatus = status;
     }
     
-    if (finalStatus !== 'granted') {
-      return null;
-    }
+    if (finalStatus !== 'granted') return null;
 
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
@@ -43,6 +36,8 @@ export async function getExpoPushToken() {
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#F5821F',
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // WAKES UP LOCK SCREEN
+        bypassDnd: true, // BYPASSES DO NOT DISTURB
       });
     }
 
@@ -52,19 +47,13 @@ export async function getExpoPushToken() {
     
     return tokenData.data;
   } catch (error) {
-    console.log("Could not fetch push token:", error);
     return null;
   }
 }
 
-// 3. Schedule local reminders safely
 export async function scheduleLocalJobReminder(job) {
   if (!job.scheduledDate) return;
-  
-  // Trigger 1 hour before the scheduled date
   const triggerTime = new Date(job.scheduledDate).getTime() - (60 * 60 * 1000); 
-  
-  // Don't schedule if the time has already passed
   if (triggerTime <= Date.now()) return;
 
   try {
@@ -76,7 +65,5 @@ export async function scheduleLocalJobReminder(job) {
       },
       trigger: { date: new Date(triggerTime) },
     });
-  } catch (e) {
-    console.log("Could not schedule local notification:", e);
-  }
+  } catch (e) { }
 }

@@ -76,6 +76,7 @@ backend/
       reportRoutes.js
       settingsRoutes.js
     services/
+      cronService.js
       gstService.js
       numberingService.js
       reportService.js
@@ -452,206 +453,6 @@ const deleteCustomer = asyncHandler(async (req, res) => {
 module.exports = { listCustomers, createCustomer, updateCustomer, deleteCustomer };
 </file>
 
-<file path="backend/src/controllers/invoiceController.js">
-/**
- * invoiceController.js
- * ------------------------------------------------------------------
- * CRUD for invoices, plus the small focused actions the invoice
- * screen needs: line items, discount, GST toggle, payment mode/status,
- * and cost items (materials / other expenses) with receipt photos.
- * Totals are always computed on read via gstService — never stored,
- * so they can't go stale if items/discount/GST change.
- * ------------------------------------------------------------------
- */
-const asyncHandler = require('../middleware/asyncHandler');
-const Invoice = require('../models/Invoice');
-const Settings = require('../models/Settings');
-const { calcInvoiceTotals, calcCostTotals } = require('../services/gstService');
-const { ok, created } = require('../utils/apiResponse');
-
-// Attaches computed .totals and .costTotals to a plain invoice object for API responses.
-async function withTotals(invoiceDoc) {
-  const settings = await Settings.getSingleton();
-  const inv = invoiceDoc.toObject ? invoiceDoc.toObject() : invoiceDoc;
-  return {
-    ...inv,
-    totals: calcInvoiceTotals(inv.items, inv.discount, inv.gstIncluded, settings.gstRate),
-    costTotals: calcCostTotals(inv.costs),
-  };
-}
-
-// GET /api/invoices?status=unpaid
-const listInvoices = asyncHandler(async (req, res) => {
-  const { status } = req.query;
-  const filter = status && status !== 'all' ? { status } : {};
-  const invoices = await Invoice.find(filter).sort({ date: -1 });
-  const settings = await Settings.getSingleton();
-  const withCalc = invoices.map((inv) => ({
-    ...inv.toObject(),
-    totals: calcInvoiceTotals(inv.items, inv.discount, inv.gstIncluded, settings.gstRate),
-  }));
-  ok(res, withCalc);
-});
-
-// GET /api/invoices/:id
-const getInvoice = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findById(req.params.id);
-  if (!invoice) {
-    res.status(404);
-    throw new Error('Invoice not found');
-  }
-  ok(res, await withTotals(invoice));
-});
-
-// POST /api/invoices  (manual invoice creation, without a job)
-const createInvoice = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.create(req.body);
-  created(res, await withTotals(invoice));
-});
-
-// PUT /api/invoices/:id  (generic field update: items, customer, dates...)
-const updateInvoice = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true,
-  });
-  if (!invoice) {
-    res.status(404);
-    throw new Error('Invoice not found');
-  }
-  ok(res, await withTotals(invoice));
-});
-
-// DELETE /api/invoices/:id
-const deleteInvoice = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findByIdAndDelete(req.params.id);
-  if (!invoice) {
-    res.status(404);
-    throw new Error('Invoice not found');
-  }
-  ok(res, { deleted: true });
-});
-
-// PUT /api/invoices/:id/discount  { type, value }
-const setDiscount = asyncHandler(async (req, res) => {
-  const invoice = await findInvoiceOr404(res, req.params.id);
-  invoice.discount = { type: req.body.type, value: req.body.value };
-  await invoice.save();
-  ok(res, await withTotals(invoice));
-});
-
-// PUT /api/invoices/:id/gst  { gstIncluded: boolean }
-const setGstIncluded = asyncHandler(async (req, res) => {
-  const invoice = await findInvoiceOr404(res, req.params.id);
-  invoice.gstIncluded = !!req.body.gstIncluded;
-  await invoice.save();
-  ok(res, await withTotals(invoice));
-});
-
-// PUT /api/invoices/:id/payment-mode  { paymentMode: 'online'|'cash' }
-const setPaymentMode = asyncHandler(async (req, res) => {
-  const invoice = await findInvoiceOr404(res, req.params.id);
-  invoice.paymentMode = req.body.paymentMode;
-  await invoice.save();
-  ok(res, await withTotals(invoice));
-});
-
-// PUT /api/invoices/:id/status  { status: 'paid'|'unpaid' }
-const setStatus = asyncHandler(async (req, res) => {
-  const invoice = await findInvoiceOr404(res, req.params.id);
-  invoice.status = req.body.status;
-  await invoice.save();
-  ok(res, await withTotals(invoice));
-});
-
-// PUT /api/invoices/:id/cost-items/:kind  { items: [{name, cost, photoUrl}] }
-// kind is 'materials' or 'other'. Full-list replace keeps the frontend simple
-// (it edits the array locally, then saves).
-const setCostItems = asyncHandler(async (req, res) => {
-  const { kind } = req.params;
-  if (!['materials', 'other'].includes(kind)) {
-    res.status(400);
-    throw new Error('kind must be "materials" or "other"');
-  }
-  const invoice = await findInvoiceOr404(res, req.params.id);
-  invoice.costs[kind] = req.body.items || [];
-  await invoice.save();
-  ok(res, await withTotals(invoice));
-});
-
-// POST /api/invoices/:id/cost-items/:kind/:index/photo  (multipart, field "photo")
-const uploadCostItemPhoto = asyncHandler(async (req, res) => {
-  const { kind, index } = req.params;
-  if (!['materials', 'other'].includes(kind)) {
-    res.status(400);
-    throw new Error('kind must be "materials" or "other"');
-  }
-  if (!req.file) {
-    res.status(400);
-    throw new Error('No photo uploaded');
-  }
-  const invoice = await findInvoiceOr404(res, req.params.id);
-  const item = invoice.costs[kind][Number(index)];
-  if (!item) {
-    res.status(404);
-    throw new Error('Cost item not found at that index');
-  }
-  item.photoUrl = `/uploads/${req.file.filename}`;
-  await invoice.save();
-  ok(res, await withTotals(invoice));
-});
-
-// Shared lookup used by the small action endpoints above. Sets the response
-// status before throwing so errorHandler.js reports the right code (404),
-// instead of falling back to 500.
-async function findInvoiceOr404(res, id) {
-  const invoice = await Invoice.findById(id);
-  if (!invoice) {
-    res.status(404);
-    throw new Error('Invoice not found');
-  }
-  return invoice;
-}
-
-module.exports = {
-  listInvoices,
-  getInvoice,
-  createInvoice,
-  updateInvoice,
-  deleteInvoice,
-  setDiscount,
-  setGstIncluded,
-  setPaymentMode,
-  setStatus,
-  setCostItems,
-  uploadCostItemPhoto,
-};
-</file>
-
-<file path="backend/src/controllers/reportController.js">
-/**
- * reportController.js
- * ------------------------------------------------------------------
- * Serves the business Report (Reported income, Cash Bonus, GST on
- * material, Reportable GST, expenses, profit). All the maths lives in
- * services/reportService.js — this file just wires it to a route.
- * ------------------------------------------------------------------
- */
-const asyncHandler = require('../middleware/asyncHandler');
-const Settings = require('../models/Settings');
-const { buildBusinessReport } = require('../services/reportService');
-const { ok } = require('../utils/apiResponse');
-
-// GET /api/report
-const getBusinessReport = asyncHandler(async (req, res) => {
-  const settings = await Settings.getSingleton();
-  const report = await buildBusinessReport(settings.gstRate);
-  ok(res, report);
-});
-
-module.exports = { getBusinessReport };
-</file>
-
 <file path="backend/src/middleware/asyncHandler.js">
 /**
  * asyncHandler.js
@@ -841,72 +642,6 @@ const customerSchema = new mongoose.Schema(
 module.exports = mongoose.models.Customer || mongoose.model('Customer', customerSchema);
 </file>
 
-<file path="backend/src/models/Invoice.js">
-/**
- * Invoice.js
- * ------------------------------------------------------------------
- * A billable document tied to a Job. Two independent things live on
- * an invoice:
- *   1) items/discount/gstIncluded -> what the CUSTOMER is charged
- *      (see services/gstService.calcInvoiceTotals)
- *   2) costs.materials / costs.other -> what the WORKER spent doing
- *      the job, each with an optional receipt photo (internal only,
- *      never shown to the customer). See services/gstService.calcCostTotals.
- *
- * gstIncluded=true  -> "Reported income" (GST charged & owed to ATO)
- * gstIncluded=false -> "Cash Bonus"      (no GST, not reported income)
- *
- * costs.materials feeds the "GST on material" report line (10% of the
- * material total) — see services/reportService.js.
- * ------------------------------------------------------------------
- */
-const mongoose = require('mongoose');
-
-const lineItemSchema = new mongoose.Schema(
-  { name: String, qty: { type: Number, default: 1 }, amt: { type: Number, default: 0 } },
-  { _id: false }
-);
-
-const costItemSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    cost: { type: Number, default: 0 },
-    photoUrl: { type: String, default: null }, // receipt photo, uploaded via /uploads route
-  },
-  { _id: false }
-);
-
-const invoiceSchema = new mongoose.Schema(
-  {
-    number: { type: String, required: true, unique: true }, // e.g. "GH-0123"
-    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null },
-    customer: { type: String, required: true },
-    customerEmail: String,
-    customerPhone: String,
-    date: { type: Date, default: Date.now },
-    terms: { type: String, default: 'Due on receipt' },
-    dueDate: Date,
-
-    items: [lineItemSchema],
-    paymentMode: { type: String, enum: ['online', 'cash'], default: 'online' },
-    status: { type: String, enum: ['paid', 'unpaid'], default: 'unpaid' },
-    gstIncluded: { type: Boolean, default: true },
-    discount: {
-      type: { type: String, enum: ['amount', 'percent'], default: 'percent' },
-      value: { type: Number, default: 0 },
-    },
-
-    costs: {
-      materials: [costItemSchema],
-      other: [costItemSchema], // was "vehicle expenses" — generalised, same shape
-    },
-  },
-  { timestamps: true }
-);
-
-module.exports = mongoose.model('Invoice', invoiceSchema);
-</file>
-
 <file path="backend/src/models/User.js">
 /**
  * User.js
@@ -1012,53 +747,6 @@ router.delete('/:id', deleteEnquiry);
 router.post('/:id/reject', rejectEnquiry);
 router.post('/:id/send-quote', sendQuote);
 router.post('/:id/accept', acceptEnquiry);
-
-module.exports = router;
-</file>
-
-<file path="backend/src/routes/invoiceRoutes.js">
-/**
- * invoiceRoutes.js — /api/invoices
- * ------------------------------------------------------------------
- * Small, single-purpose routes for each invoice action (discount,
- * GST toggle, payment mode/status, cost items, cost item photos) so
- * the frontend can update one thing at a time without resending the
- * whole invoice document.
- * ------------------------------------------------------------------
- */
-const express = require('express');
-const {
-  listInvoices,
-  getInvoice,
-  createInvoice,
-  updateInvoice,
-  deleteInvoice,
-  setDiscount,
-  setGstIncluded,
-  setPaymentMode,
-  setStatus,
-  setCostItems,
-  uploadCostItemPhoto,
-} = require('../controllers/invoiceController');
-const { protect } = require('../middleware/auth');
-const upload = require('../middleware/upload');
-
-const router = express.Router();
-router.use(protect);
-
-router.get('/', listInvoices);
-router.get('/:id', getInvoice);
-router.post('/', createInvoice);
-router.put('/:id', updateInvoice);
-router.delete('/:id', deleteInvoice);
-
-router.put('/:id/discount', setDiscount);
-router.put('/:id/gst', setGstIncluded);
-router.put('/:id/payment-mode', setPaymentMode);
-router.put('/:id/status', setStatus);
-
-router.put('/:id/cost-items/:kind', setCostItems);
-router.post('/:id/cost-items/:kind/:index/photo', upload.single('photo'), uploadCostItemPhoto);
 
 module.exports = router;
 </file>
@@ -1192,105 +880,6 @@ function calcCostTotals(costs = { materials: [], other: [] }) {
 module.exports = { calcInvoiceTotals, calcCostTotals };
 </file>
 
-<file path="backend/src/services/numberingService.js">
-/**
- * numberingService.js
- * ------------------------------------------------------------------
- * Generates the next human-facing invoice number, e.g. "GH-0901".
- * Uses the current invoice count so numbers are sequential; fine for
- * a single-business app. For multi-tenant use, scope the count query
- * by business/workspace id.
- * ------------------------------------------------------------------
- */
-const Invoice = require('../models/Invoice');
-
-const PREFIX = 'GH-';
-const START_AT = 900;
-
-async function nextInvoiceNumber() {
-  const count = await Invoice.countDocuments();
-  return `${PREFIX}${START_AT + count + 1}`;
-}
-
-module.exports = { nextInvoiceNumber };
-</file>
-
-<file path="backend/src/services/reportService.js">
-/**
- * reportService.js
- * ------------------------------------------------------------------
- * Builds the business Report shown on the "Report" tab (was
- * "Summary" in the prototype), across ALL invoices:
- *
- *   Income
- *     - reportedIncome   sum of discSubtotal on GST-included invoices
- *     - cashBonus        sum of discSubtotal on non-GST invoices (was "NRI")
- *     - gstOnMaterial     10% of total material cost, a GST credit
- *     - reportableGst     GST collected minus gstOnMaterial
- *   Expenses & profit
- *     - materialExpenses
- *     - otherExpenses     (was "vehicle expenses")
- *     - profit            income minus material & other costs
- *
- * Pulls every invoice from the DB, so keep this off any hot path —
- * it's designed to be called once per Report tab view, not per request
- * in a loop.
- * ------------------------------------------------------------------
- */
-const Invoice = require('../models/Invoice');
-const { calcInvoiceTotals, calcCostTotals } = require('./gstService');
-const { round2 } = require('../utils/money');
-
-const MATERIAL_GST_RATE = 0.10; // 10% of total material cost, per business rule
-
-async function buildBusinessReport(gstRate) {
-  const invoices = await Invoice.find().lean();
-
-  let reportedIncome = 0;
-  let cashBonus = 0;
-  let totalGstCollected = 0;
-  let materialExpenses = 0;
-  let otherExpenses = 0;
-
-  invoices.forEach((inv) => {
-    const totals = calcInvoiceTotals(inv.items, inv.discount, inv.gstIncluded, gstRate);
-    if (inv.gstIncluded) {
-      reportedIncome += totals.discSubtotal;
-      totalGstCollected += totals.gst;
-    } else {
-      cashBonus += totals.discSubtotal;
-    }
-    const costs = calcCostTotals(inv.costs);
-    materialExpenses += costs.materials;
-    otherExpenses += costs.other;
-  });
-
-  const totalExpenses = materialExpenses + otherExpenses;
-  const profit = reportedIncome + cashBonus - totalExpenses;
-  const gstOnMaterial = materialExpenses * MATERIAL_GST_RATE;
-  const reportableGst = totalGstCollected - gstOnMaterial;
-
-  return {
-    income: {
-      reportedIncome: round2(reportedIncome),
-      cashBonus: round2(cashBonus),
-      gstOnMaterial: round2(gstOnMaterial),
-      reportableGst: round2(reportableGst),
-    },
-    expenses: {
-      materialExpenses: round2(materialExpenses),
-      otherExpenses: round2(otherExpenses),
-      totalExpenses: round2(totalExpenses),
-    },
-    profit: round2(profit),
-    invoiceCount: invoices.length,
-    generatedAt: new Date().toISOString(),
-  };
-}
-
-module.exports = { buildBusinessReport, MATERIAL_GST_RATE };
-</file>
-
 <file path="backend/src/utils/apiResponse.js">
 /**
  * apiResponse.js
@@ -1384,46 +973,6 @@ seed().catch((err) => {
   console.error('[seed] Failed:', err);
   process.exit(1);
 });
-</file>
-
-<file path="backend/src/app.js">
-/**
- * app.js
- * ------------------------------------------------------------------
- * Builds and configures the Express app (middleware + routes) but
- * does NOT start listening — that's server.js's job. Splitting these
- * two lets tests import the app without opening a real port.
- * ------------------------------------------------------------------
- */
-const path = require('path');
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-
-const { nodeEnv, clientOrigins, uploadDir } = require('./config/env');
-const apiRoutes = require('./routes');
-const notFound = require('./middleware/notFound');
-const errorHandler = require('./middleware/errorHandler');
-
-const app = express();
-
-app.use(helmet({ crossOriginResourcePolicy: false })); // allow serving /uploads images cross-origin
-app.use(cors({ origin: clientOrigins, credentials: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-if (nodeEnv !== 'test') app.use(morgan(nodeEnv === 'development' ? 'dev' : 'combined'));
-
-// Serves uploaded receipt/logo photos, e.g. GET /uploads/16999-abc.jpg
-app.use('/uploads', express.static(path.join(__dirname, '..', uploadDir)));
-
-app.get('/api/health', (req, res) => res.json({ success: true, status: 'ok' }));
-app.use('/api', apiRoutes);
-
-app.use(notFound);
-app.use(errorHandler);
-
-module.exports = app;
 </file>
 
 <file path="backend/uploads/.gitkeep">
@@ -2400,36 +1949,6 @@ export default function IncomeSection({ income }) {
 }
 </file>
 
-<file path="mobile/src/components/report/ReportScreen.js">
-/**
- * ReportScreen.js
- * ------------------------------------------------------------------
- * Composes IncomeSection + ExpensesSection into the full Report tab.
- * Purely presentational — InvoicesScreen owns the useReport() hook.
- * Named "ReportScreen" (matching the web app's component) even
- * though it's rendered inline inside InvoicesScreen, not as its own
- * navigator screen.
- * ------------------------------------------------------------------
- */
-import { View, Text, StyleSheet } from 'react-native';
-import IncomeSection from './IncomeSection';
-import ExpensesSection from './ExpensesSection';
-
-export default function ReportScreen({ report }) {
-  return (
-    <View>
-      <IncomeSection income={report.income} />
-      <ExpensesSection expenses={report.expenses} profit={report.profit} />
-      <Text style={styles.footnote}>Based on all invoices raised to date.</Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  footnote: { fontSize: 10, color: '#9CA3AF', marginTop: 8, fontStyle: 'italic', lineHeight: 15 },
-});
-</file>
-
 <file path="mobile/src/components/settings/BusinessDetailsForm.js">
 /**
  * BusinessDetailsForm.js
@@ -3324,39 +2843,6 @@ export default function useJob(id) {
 }
 </file>
 
-<file path="mobile/src/hooks/useReport.js">
-/**
- * useReport.js
- * ------------------------------------------------------------------
- */
-import { useCallback, useEffect, useState } from 'react';
-import * as reportService from '../services/reportService';
-
-export default function useReport() {
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setReport(await reportService.getBusinessReport());
-    } catch (err) {
-      setError(err.response?.data?.message || err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { report, loading, error, refresh };
-}
-</file>
-
 <file path="mobile/src/hooks/useSettings.js">
 /**
  * useSettings.js
@@ -3423,156 +2909,6 @@ export default function RootNavigator() {
     </Stack.Navigator>
   );
 }
-</file>
-
-<file path="mobile/src/screens/CustomersScreen.js">
-import React, { useState, useCallback } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import ScreenHeader from '../components/layout/ScreenHeader';
-import Button from '../components/ui/Button';
-import FieldLabel from '../components/ui/FieldLabel';
-import { apiClient, unwrap } from '../services/apiClient';
-import useToast from '../hooks/useToast';
-import { colors } from '../theme/colors';
-
-export default function CustomersScreen({ navigation }) {
-  const [customers, setCustomers] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const { showToast } = useToast();
-
-  const [form, setForm] = useState({ name: '', phone: '', email: '', address: '', notes: '' });
-
-  const loadCustomers = async () => {
-    try {
-       const data = await unwrap(apiClient.get('/api/customers'));
-       setCustomers(data);
-    } catch(e) {}
-  };
-
-  useFocusEffect(useCallback(() => { loadCustomers(); }, []));
-
-  const openModal = (customer = null) => {
-    if (customer) {
-      setEditingId(customer._id);
-      setForm(customer);
-    } else {
-      setEditingId(null);
-      setForm({ name: '', phone: '', email: '', address: '', notes: '' });
-    }
-    setModalVisible(true);
-  };
-
-  const saveCustomer = async () => {
-    if (!form.name) return Alert.alert("Required", "Customer Name is required.");
-    try {
-      if (editingId) {
-        await unwrap(apiClient.put(`/api/customers/${editingId}`, form));
-        showToast('Customer Profile Updated');
-      } else {
-        await unwrap(apiClient.post('/api/customers', form));
-        showToast('New Customer Saved');
-      }
-      setModalVisible(false);
-      loadCustomers();
-    } catch (e) { Alert.alert('Error', 'Could not save customer'); }
-  };
-
-  const deleteCustomer = (id) => {
-    Alert.alert("Delete Customer", "Are you sure? This cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => {
-          await unwrap(apiClient.delete(`/api/customers/${id}`));
-          showToast('Customer deleted');
-          loadCustomers();
-      }}
-    ]);
-  };
-
-  const filtered = customers.filter(c => 
-    searchQuery === '' ||
-    c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.phone?.includes(searchQuery) ||
-    c.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  return (
-    <View style={styles.screen}>
-      <ScreenHeader 
-        title="REGULAR CUSTOMERS" 
-        onBack={() => navigation.goBack()} 
-        rightAction={
-          <TouchableOpacity onPress={() => openModal()} style={styles.addBtn}>
-            <Text style={{color: '#fff', fontSize: 13, fontWeight: 'bold'}}>+ Add</Text>
-          </TouchableOpacity>
-        } 
-      />
-      
-      <View style={{ padding: 16, paddingBottom: 0 }}>
-         <TextInput style={styles.searchBar} placeholder="Search customers..." value={searchQuery} onChangeText={setSearchQuery} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
-         {filtered.length === 0 && <Text style={styles.empty}>No customers found.</Text>}
-         {filtered.map(c => (
-           <View key={c._id} style={styles.card}>
-             <View style={{ flex: 1 }}>
-               <Text style={styles.name}>{c.name}</Text>
-               <Text style={styles.detail}>{c.phone || 'No phone'}  •  {c.email || 'No email'}</Text>
-               <Text style={styles.detail}>{c.address || 'No address saved'}</Text>
-               {c.notes ? <Text style={styles.notes}>Notes: {c.notes}</Text> : null}
-             </View>
-             <View style={styles.actions}>
-               <TouchableOpacity onPress={() => openModal(c)} style={styles.iconBtn}><Text style={{fontSize: 16}}>✏️</Text></TouchableOpacity>
-               <TouchableOpacity onPress={() => deleteCustomer(c._id)} style={styles.iconBtn}><Text style={{fontSize: 16}}>🗑️</Text></TouchableOpacity>
-             </View>
-           </View>
-         ))}
-      </ScrollView>
-
-      {/* CUSTOMER EDITING MODAL */}
-      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.screen}>
-           <ScreenHeader title={editingId ? "EDIT CUSTOMER" : "NEW CUSTOMER"} onBack={() => setModalVisible(false)} />
-           <ScrollView contentContainerStyle={{ padding: 16 }}>
-             <FieldLabel>Name *</FieldLabel>
-             <TextInput style={styles.input} value={form.name} onChangeText={v => setForm({...form, name: v})} />
-             <FieldLabel>Phone</FieldLabel>
-             <TextInput style={styles.input} value={form.phone} onChangeText={v => setForm({...form, phone: v})} keyboardType="phone-pad" />
-             <FieldLabel>Email</FieldLabel>
-             <TextInput style={styles.input} value={form.email} onChangeText={v => setForm({...form, email: v})} keyboardType="email-address" autoCapitalize="none" />
-             <FieldLabel>Address</FieldLabel>
-             <TextInput style={styles.input} value={form.address} onChangeText={v => setForm({...form, address: v})} />
-             <FieldLabel>Internal Notes</FieldLabel>
-             <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline value={form.notes} onChangeText={v => setForm({...form, notes: v})} />
-             
-             <Button variant="primary" onPress={saveCustomer} style={{ marginTop: 10 }}>Save Customer Profile</Button>
-             <Button variant="outline" onPress={() => setModalVisible(false)} style={{marginTop: 10, borderColor: colors.red}}>
-               <Text style={{color: colors.red, fontWeight: 'bold'}}>Cancel</Text>
-             </Button>
-           </ScrollView>
-        </View>
-      </Modal>
-    </View>
-  )
-}
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.offwhite },
-  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: colors.charcoal },
-  content: { padding: 16 },
-  addBtn: { backgroundColor: colors.orange, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 10, padding: 14, marginBottom: 12, flexDirection: 'row', alignItems: 'center' },
-  name: { fontSize: 15, fontWeight: '800', color: colors.charcoal, marginBottom: 4 },
-  detail: { fontSize: 11.5, color: colors.gray, marginBottom: 2 },
-  notes: { fontSize: 11, color: colors.orangeDeep, marginTop: 4, fontStyle: 'italic' },
-  actions: { flexDirection: 'row', gap: 12, paddingLeft: 10 },
-  iconBtn: { backgroundColor: colors.grayLight, padding: 8, borderRadius: 8 },
-  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 12, color: colors.charcoal },
-  empty: { textAlign: 'center', color: colors.gray, marginTop: 40, fontSize: 13 }
-});
 </file>
 
 <file path="mobile/src/screens/DayDetailScreen.js">
@@ -3888,19 +3224,6 @@ export * as jobService from './jobService';
 export * as invoiceService from './invoiceService';
 export * as reportService from './reportService';
 export { apiClient, BASE_URL } from './apiClient';
-</file>
-
-<file path="mobile/src/services/reportService.js">
-/**
- * reportService.js
- * ------------------------------------------------------------------
- * Fetches the business Report (Reported income, Cash Bonus, GST on
- * material, Reportable GST, expenses, profit) from the backend.
- * ------------------------------------------------------------------
- */
-import { apiClient, unwrap } from './apiClient';
-
-export const getBusinessReport = () => unwrap(apiClient.get('/api/report'));
 </file>
 
 <file path="mobile/src/services/settingsService.js">
@@ -10919,6 +10242,211 @@ All of this lives in `backend/src/services/gstService.js` and
   and can be deployed anywhere that runs those
 </file>
 
+<file path="backend/src/controllers/invoiceController.js">
+/**
+ * invoiceController.js
+ * ------------------------------------------------------------------
+ * CRUD for invoices, plus the small focused actions the invoice
+ * screen needs: line items, discount, GST toggle, payment mode/status,
+ * and cost items (materials / other expenses) with receipt photos.
+ * Totals are always computed on read via gstService — never stored,
+ * so they can't go stale if items/discount/GST change.
+ * ------------------------------------------------------------------
+ */
+const asyncHandler = require('../middleware/asyncHandler');
+const Invoice = require('../models/Invoice');
+const Settings = require('../models/Settings');
+const { calcInvoiceTotals, calcCostTotals } = require('../services/gstService');
+const { ok, created } = require('../utils/apiResponse');
+
+// Attaches computed .totals and .costTotals to a plain invoice object for API responses.
+async function withTotals(invoiceDoc) {
+  const settings = await Settings.getSingleton();
+  const inv = invoiceDoc.toObject ? invoiceDoc.toObject() : invoiceDoc;
+  return {
+    ...inv,
+    totals: calcInvoiceTotals(inv.items, inv.discount, inv.gstIncluded, settings.gstRate),
+    costTotals: calcCostTotals(inv.costs),
+  };
+}
+
+// GET /api/invoices?status=unpaid
+const listInvoices = asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const filter = status && status !== 'all' ? { status } : {};
+  const invoices = await Invoice.find(filter).sort({ date: -1 });
+  const settings = await Settings.getSingleton();
+  const withCalc = invoices.map((inv) => ({
+    ...inv.toObject(),
+    totals: calcInvoiceTotals(inv.items, inv.discount, inv.gstIncluded, settings.gstRate),
+  }));
+  ok(res, withCalc);
+});
+
+// GET /api/invoices/:id
+const getInvoice = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.id);
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+  ok(res, await withTotals(invoice));
+});
+
+// POST /api/invoices  (manual invoice creation, without a job)
+const createInvoice = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.create(req.body);
+  created(res, await withTotals(invoice));
+});
+
+// PUT /api/invoices/:id  (generic field update: items, customer, dates...)
+const updateInvoice = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+    runValidators: true,
+  });
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+  ok(res, await withTotals(invoice));
+});
+
+// DELETE /api/invoices/:id
+const deleteInvoice = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findByIdAndDelete(req.params.id);
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+  ok(res, { deleted: true });
+});
+
+// PUT /api/invoices/:id/discount  { type, value }
+const setDiscount = asyncHandler(async (req, res) => {
+  const invoice = await findInvoiceOr404(res, req.params.id);
+  invoice.discount = { type: req.body.type, value: req.body.value };
+  await invoice.save();
+  ok(res, await withTotals(invoice));
+});
+
+// PUT /api/invoices/:id/gst  { gstIncluded: boolean }
+const setGstIncluded = asyncHandler(async (req, res) => {
+  const invoice = await findInvoiceOr404(res, req.params.id);
+  invoice.gstIncluded = !!req.body.gstIncluded;
+  await invoice.save();
+  ok(res, await withTotals(invoice));
+});
+
+// PUT /api/invoices/:id/payment-mode  { paymentMode: 'online'|'cash' }
+const setPaymentMode = asyncHandler(async (req, res) => {
+  const invoice = await findInvoiceOr404(res, req.params.id);
+  invoice.paymentMode = req.body.paymentMode;
+  await invoice.save();
+  ok(res, await withTotals(invoice));
+});
+
+// PUT /api/invoices/:id/status  { status: 'paid'|'unpaid' }
+const setStatus = asyncHandler(async (req, res) => {
+  const invoice = await findInvoiceOr404(res, req.params.id);
+  invoice.status = req.body.status;
+  await invoice.save();
+  ok(res, await withTotals(invoice));
+});
+
+// PUT /api/invoices/:id/cost-items/:kind  { items: [{name, cost, photoUrl}] }
+// kind is 'materials' or 'other'. Full-list replace keeps the frontend simple
+// (it edits the array locally, then saves).
+const setCostItems = asyncHandler(async (req, res) => {
+  const { kind } = req.params;
+  if (!['materials', 'other'].includes(kind)) {
+    res.status(400);
+    throw new Error('kind must be "materials" or "other"');
+  }
+  const invoice = await findInvoiceOr404(res, req.params.id);
+  invoice.costs[kind] = req.body.items || [];
+  await invoice.save();
+  ok(res, await withTotals(invoice));
+});
+
+// POST /api/invoices/:id/cost-items/:kind/:index/photo  (multipart, field "photo")
+const uploadCostItemPhoto = asyncHandler(async (req, res) => {
+  const { kind, index } = req.params;
+  if (!['materials', 'other'].includes(kind)) {
+    res.status(400);
+    throw new Error('kind must be "materials" or "other"');
+  }
+  if (!req.file) {
+    res.status(400);
+    throw new Error('No photo uploaded');
+  }
+  const invoice = await findInvoiceOr404(res, req.params.id);
+  const item = invoice.costs[kind][Number(index)];
+  if (!item) {
+    res.status(404);
+    throw new Error('Cost item not found at that index');
+  }
+  item.photoUrl = `/uploads/${req.file.filename}`;
+  await invoice.save();
+  ok(res, await withTotals(invoice));
+});
+
+// Shared lookup used by the small action endpoints above. Sets the response
+// status before throwing so errorHandler.js reports the right code (404),
+// instead of falling back to 500.
+async function findInvoiceOr404(res, id) {
+  const invoice = await Invoice.findById(id);
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+  return invoice;
+}
+
+// POST /api/invoices/:id/completion-photo
+const uploadCompletionPhoto = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    res.status(400);
+    throw new Error('No photo uploaded');
+  }
+  const invoice = await findInvoiceOr404(res, req.params.id);
+  invoice.completionPhotoUrl = `/uploads/${req.file.filename}`;
+  await invoice.save();
+  ok(res, await withTotals(invoice));
+});
+
+module.exports = {
+  listInvoices,
+  getInvoice,
+  createInvoice,
+  updateInvoice,
+  deleteInvoice,
+  setDiscount,
+  setGstIncluded,
+  setPaymentMode,
+  setStatus,
+  setCostItems,
+  uploadCostItemPhoto,
+  uploadCompletionPhoto
+};
+</file>
+
+<file path="backend/src/controllers/reportController.js">
+const asyncHandler = require('../middleware/asyncHandler');
+const Settings = require('../models/Settings');
+const { buildBusinessReport } = require('../services/reportService');
+const { ok } = require('../utils/apiResponse');
+
+const getBusinessReport = asyncHandler(async (req, res) => {
+  const { start, end } = req.query;
+  const settings = await Settings.getSingleton();
+  const report = await buildBusinessReport(settings.gstRate, start, end);
+  ok(res, report);
+});
+
+module.exports = { getBusinessReport };
+</file>
+
 <file path="backend/src/controllers/settingsController.js">
 const asyncHandler = require('../middleware/asyncHandler');
 const Settings = require('../models/Settings');
@@ -10957,6 +10485,73 @@ const uploadLogo = asyncHandler(async (req, res) => {
 module.exports = { getSettings, updateSettings, uploadLogo };
 </file>
 
+<file path="backend/src/models/Invoice.js">
+/**
+ * Invoice.js
+ * ------------------------------------------------------------------
+ * A billable document tied to a Job. Two independent things live on
+ * an invoice:
+ *   1) items/discount/gstIncluded -> what the CUSTOMER is charged
+ *      (see services/gstService.calcInvoiceTotals)
+ *   2) costs.materials / costs.other -> what the WORKER spent doing
+ *      the job, each with an optional receipt photo (internal only,
+ *      never shown to the customer). See services/gstService.calcCostTotals.
+ *
+ * gstIncluded=true  -> "Reported income" (GST charged & owed to ATO)
+ * gstIncluded=false -> "Cash Bonus"      (no GST, not reported income)
+ *
+ * costs.materials feeds the "GST on material" report line (10% of the
+ * material total) — see services/reportService.js.
+ * ------------------------------------------------------------------
+ */
+const mongoose = require('mongoose');
+
+const lineItemSchema = new mongoose.Schema(
+  { name: String, qty: { type: Number, default: 1 }, amt: { type: Number, default: 0 } },
+  { _id: false }
+);
+
+const costItemSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    cost: { type: Number, default: 0 },
+    photoUrl: { type: String, default: null }, // receipt photo, uploaded via /uploads route
+  },
+  { _id: false }
+);
+
+const invoiceSchema = new mongoose.Schema(
+  {
+    number: { type: String, required: true, unique: true }, // e.g. "GH-0123"
+    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null },
+    customer: { type: String, required: true },
+    customerEmail: String,
+    customerPhone: String,
+    date: { type: Date, default: Date.now },
+    terms: { type: String, default: 'Due on receipt' },
+    dueDate: Date,
+
+    items: [lineItemSchema],
+    paymentMode: { type: String, enum: ['online', 'cash'], default: 'online' },
+    status: { type: String, enum: ['paid', 'unpaid'], default: 'unpaid' },
+    gstIncluded: { type: Boolean, default: true },
+    discount: {
+      type: { type: String, enum: ['amount', 'percent'], default: 'percent' },
+      value: { type: Number, default: 0 },
+    },
+
+    completionPhotoUrl: { type: String, default: null }, // NEW FIELD FOR JOB COMPLETION PHOTO
+    costs: {
+      materials: [costItemSchema],
+      other: [costItemSchema], // was "vehicle expenses" — generalised, same shape
+    },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model('Invoice', invoiceSchema);
+</file>
+
 <file path="backend/src/routes/index.js">
 /**
  * routes/index.js
@@ -10980,58 +10575,35 @@ router.use('/customers', require('./customerRoutes'));
 module.exports = router;
 </file>
 
-<file path="backend/package.json">
-{
-  "name": "get-handyman-backend",
-  "version": "1.0.0",
-  "description": "Get Handyman worker app API (Express + MongoDB) - enquiries, jobs, invoices, GST report",
-  "main": "server.js",
-  "type": "commonjs",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "seed": "node src/utils/seed.js"
-  },
-  "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "expo-server-sdk": "^7.2.0",
-    "express": "^4.19.2",
-    "express-async-handler": "^1.2.0",
-    "helmet": "^7.1.0",
-    "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.5.0",
-    "morgan": "^1.10.0",
-    "multer": "^1.4.5-lts.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.4"
-  }
-}
-</file>
-
-<file path="backend/server.js">
+<file path="backend/src/services/numberingService.js">
 /**
- * server.js
+ * numberingService.js
  * ------------------------------------------------------------------
- * Entry point: start HTTP server immediately, then connect to MongoDB.
+ * Generates the next human-facing invoice number, e.g. "GH-0901".
+ * FIXED: Now finds the absolute highest existing number instead of 
+ * relying on total document count, preventing duplicate crashes 
+ * when older invoices are deleted.
  * ------------------------------------------------------------------
  */
-const app = require('./src/app');
-const connectDB = require('./src/config/db');
-const { port } = require('./src/config/env');
+const Invoice = require('../models/Invoice');
 
-// 1. Connect to DB in the background
-connectDB().catch(err => {
-  console.error('[server] MongoDB connection error:', err);
-});
+const PREFIX = 'GH-';
+const START_AT = 900;
 
-// 2. Start listening IMMEDIATELY so Hostinger is happy
-app.listen(port, () => {
-  // eslint-disable-next-line no-console
-  console.log(`[server] Get Handyman API listening on port ${port}`);
-});
+async function nextInvoiceNumber() {
+  const lastInvoice = await Invoice.findOne().sort({ createdAt: -1 });
+  
+  if (!lastInvoice || !lastInvoice.number) {
+    return `${PREFIX}${START_AT + 1}`;
+  }
+
+  const numPart = parseInt(lastInvoice.number.replace(PREFIX, ''), 10);
+  const nextNum = isNaN(numPart) ? START_AT + 1 : numPart + 1;
+  
+  return `${PREFIX}${nextNum}`;
+}
+
+module.exports = { nextInvoiceNumber };
 </file>
 
 <file path="mobile/android/app/src/main/java/au/com/gethandyman/worker/MainApplication.kt">
@@ -12235,6 +11807,35 @@ export default function useJobs(status) {
 }
 </file>
 
+<file path="mobile/src/hooks/useReport.js">
+import { useCallback, useEffect, useState } from 'react';
+import * as reportService from '../services/reportService';
+
+export default function useReport(start, end) {
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setReport(await reportService.getBusinessReport(start, end));
+    } catch (err) {
+      setError(err.response?.data?.message || err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [start, end]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { report, loading, error, refresh };
+}
+</file>
+
 <file path="mobile/src/navigation/EnquiriesStack.js">
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import EnquiriesScreen from '../screens/EnquiriesScreen';
@@ -12274,385 +11875,164 @@ export default function JobsStack() {
 }
 </file>
 
-<file path="mobile/src/screens/EnquiryDetailScreen.js">
-import React from 'react';
-import { View, ScrollView, StyleSheet, Alert, Text } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+<file path="mobile/src/screens/CustomersScreen.js">
+import React, { useState, useCallback } from 'react';
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import ScreenHeader from '../components/layout/ScreenHeader';
-import EnquiryDetail from '../components/enquiries/EnquiryDetail';
-import LoadingState from '../components/ui/LoadingState';
-import ErrorState from '../components/ui/ErrorState';
 import Button from '../components/ui/Button';
-import useEnquiry from '../hooks/useEnquiry';
-import useToast from '../hooks/useToast';
+import FieldLabel from '../components/ui/FieldLabel';
 import { apiClient, unwrap } from '../services/apiClient';
+import useToast from '../hooks/useToast';
 import { colors } from '../theme/colors';
 
-export default function EnquiryDetailScreen() {
-  const { params } = useRoute();
-  const navigation = useNavigation();
+export default function CustomersScreen({ navigation }) {
+  const [customers, setCustomers] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const { showToast } = useToast();
-  
-  // Notice we pull 'refresh' from useEnquiry so we can instantly reload the screen after restoring
-  const { enquiry, loading, error, reject, sendQuote, accept, refresh } = useEnquiry(params.id);
 
-  async function handleReject() {
-    await reject();
-    showToast('Enquiry rejected');
-  }
+  const [form, setForm] = useState({ name: '', phone: '', email: '', address: '', notes: '' });
 
-  // FIXED: The Restore/Reactivate handler
-  async function handleReactivate() {
+  const loadCustomers = async () => {
     try {
-      // Force the database status back to 'new'
-      await unwrap(apiClient.put(`/api/enquiries/${params.id}`, { status: 'new' }));
-      showToast('Enquiry Restored!');
-      refresh(); // Reload the data so the UI updates instantly
-    } catch (e) {
-      Alert.alert("Error", "Could not restore the enquiry.");
-    }
-  }
+       const data = await unwrap(apiClient.get('/api/customers'));
+       setCustomers(data);
+    } catch(e) {}
+  };
 
-  async function handleDelete() {
-    Alert.alert("Delete Enquiry", "Are you sure you want to permanently delete this enquiry?", [
+  useFocusEffect(useCallback(() => { loadCustomers(); }, []));
+
+  const openModal = (customer = null) => {
+    if (customer) {
+      setEditingId(customer._id);
+      setForm(customer);
+    } else {
+      setEditingId(null);
+      setForm({ name: '', phone: '', email: '', address: '', notes: '' });
+    }
+    setModalVisible(true);
+  };
+
+  const saveCustomer = async () => {
+    if (!form.name) return Alert.alert("Required", "Customer Name is required.");
+    try {
+      if (editingId) {
+        await unwrap(apiClient.put(`/api/customers/${editingId}`, form));
+        showToast('Customer Profile Updated');
+      } else {
+        await unwrap(apiClient.post('/api/customers', form));
+        showToast('New Customer Saved');
+      }
+      setModalVisible(false);
+      loadCustomers();
+    } catch (e) { Alert.alert('Error', 'Could not save customer'); }
+  };
+
+  const deleteCustomer = (id) => {
+    Alert.alert("Delete Customer", "Are you sure? This cannot be undone.", [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
-          try {
-            await unwrap(apiClient.delete(`/api/enquiries/${params.id}`));
-            showToast('Enquiry deleted');
-            navigation.goBack();
-          } catch (e) {
-            Alert.alert("Error", "Could not delete enquiry.");
-          }
+          await unwrap(apiClient.delete(`/api/customers/${id}`));
+          showToast('Customer deleted');
+          loadCustomers();
       }}
     ]);
-  }
+  };
 
-  async function handleSendQuote(items) {
-    await sendQuote(items);
-    showToast('Quote sent');
-  }
-
-  async function handleAccept() {
-    try {
-      const { job } = await accept();
-      showToast('Job created from enquiry');
-      navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: job._id } });
-    } catch (e) {
-      Alert.alert("Error", "Could not accept enquiry.");
-    }
-  }
-
-  return (
-    <View style={styles.screen}>
-      <ScreenHeader title="ENQUIRY" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.content}>
-        {loading && <LoadingState />}
-        {error && <ErrorState>{error}</ErrorState>}
-        
-        {enquiry && (
-          <EnquiryDetail
-            enquiry={enquiry}
-            onReject={handleReject}
-            onSendQuote={handleSendQuote}
-            onAccept={handleAccept}
-            onReactivate={handleReactivate} // Passed the function down to the button here
-          />
-        )}
-
-        {enquiry && (
-          <Button variant="outline" style={{ borderColor: colors.red, marginTop: 20 }} onPress={handleDelete}>
-            <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Enquiry</Text>
-          </Button>
-        )}
-      </ScrollView>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
-});
-</file>
-
-<file path="mobile/src/screens/InvoicesScreen.js">
-import { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import InvoiceTabs from '../components/invoices/InvoiceTabs';
-import InvoiceList from '../components/invoices/InvoiceList';
-import ReportScreen from '../components/report/ReportScreen';
-import LoadingState from '../components/ui/LoadingState';
-import ErrorState from '../components/ui/ErrorState';
-import useInvoices from '../hooks/useInvoices';
-import { colors } from '../theme/colors';
-
-function InvoiceListPane({ tab }) {
-  const { invoices, loading, error } = useInvoices(tab);
-  const [searchQuery, setSearchQuery] = useState(''); // NEW: Search state
-
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState>{error}</ErrorState>;
-
-  // NEW: Filter logic for the search bar
-  const filteredInvoices = invoices.filter(i => 
+  const filtered = customers.filter(c => 
     searchQuery === '' ||
-    i.customer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    i.number?.toLowerCase().includes(searchQuery.toLowerCase())
+    c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.phone?.includes(searchQuery) ||
+    c.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  return (
-    <View style={{ flex: 1 }}>
-      {/* NEW: Global Search Bar */}
-      <TextInput 
-        style={styles.searchBar} 
-        placeholder="Search by customer name or invoice #..." 
-        value={searchQuery} 
-        onChangeText={setSearchQuery} 
-        placeholderTextColor={colors.gray}
-      />
-      <InvoiceList invoices={filteredInvoices} showUnpaidTotal={tab === 'unpaid'} />
-    </View>
-  );
-}
-
-function ReportPane() {
-  const useReport = require('../hooks/useReport').default;
-  const { report, loading, error } = useReport();
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState>{error}</ErrorState>;
-  return <ReportScreen report={report} />;
-}
-
-export default function InvoicesScreen() {
-  const [tab, setTab] = useState('unpaid');
 
   return (
     <View style={styles.screen}>
-      <SafeAreaView edges={['top']} style={styles.header}>
-        <Text style={styles.title}>INVOICES</Text>
-        <InvoiceTabs value={tab} onChange={setTab} />
-      </SafeAreaView>
-      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} keyboardShouldPersistTaps="handled">
-        {tab === 'report' ? <ReportPane /> : <InvoiceListPane tab={tab} />}
+      <ScreenHeader 
+        title="REGULAR CUSTOMERS" 
+        onBack={() => navigation.goBack()} 
+        rightAction={
+          <TouchableOpacity onPress={() => openModal()} style={styles.addBtn}>
+            <Text style={{color: '#fff', fontSize: 13, fontWeight: 'bold'}}>+ Add</Text>
+          </TouchableOpacity>
+        } 
+      />
+      
+      <View style={{ padding: 16, paddingBottom: 0 }}>
+         <TextInput style={styles.searchBar} placeholder="Search customers..." value={searchQuery} onChangeText={setSearchQuery} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content}>
+         {filtered.length === 0 && <Text style={styles.empty}>No customers found.</Text>}
+         {filtered.map(c => (
+           <View key={c._id} style={styles.card}>
+             <View style={{ flex: 1 }}>
+               <Text style={styles.name}>{c.name}</Text>
+               <Text style={styles.detail}>{c.phone || 'No phone'}  •  {c.email || 'No email'}</Text>
+               <Text style={styles.detail}>{c.address || 'No address saved'}</Text>
+               {c.notes ? <Text style={styles.notes}>Notes: {c.notes}</Text> : null}
+             </View>
+             
+             {/* QUICK ACTION BUTTONS */}
+             <View style={styles.actions}>
+               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Enquiries', { screen: 'NewQuote', params: { customer: c } })} style={styles.actionBtn}>
+                 <Text style={styles.actionBtnText}>📝 Quote</Text>
+               </TouchableOpacity>
+               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Home', { screen: 'NewJob', params: { customer: c } })} style={styles.actionBtn}>
+                 <Text style={styles.actionBtnText}>🛠️ Job</Text>
+               </TouchableOpacity>
+               <TouchableOpacity onPress={() => openModal(c)} style={styles.iconBtn}><Text style={{fontSize: 16}}>✏️</Text></TouchableOpacity>
+               <TouchableOpacity onPress={() => deleteCustomer(c._id)} style={styles.iconBtn}><Text style={{fontSize: 16}}>🗑️</Text></TouchableOpacity>
+             </View>
+           </View>
+         ))}
       </ScrollView>
+
+      {/* CUSTOMER EDITING MODAL */}
+      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.screen}>
+           <ScreenHeader title={editingId ? "EDIT CUSTOMER" : "NEW CUSTOMER"} onBack={() => setModalVisible(false)} />
+           <ScrollView contentContainerStyle={{ padding: 16 }}>
+             <FieldLabel>Name *</FieldLabel>
+             <TextInput style={styles.input} value={form.name} onChangeText={v => setForm({...form, name: v})} />
+             <FieldLabel>Phone</FieldLabel>
+             <TextInput style={styles.input} value={form.phone} onChangeText={v => setForm({...form, phone: v})} keyboardType="phone-pad" />
+             <FieldLabel>Email</FieldLabel>
+             <TextInput style={styles.input} value={form.email} onChangeText={v => setForm({...form, email: v})} keyboardType="email-address" autoCapitalize="none" />
+             <FieldLabel>Address</FieldLabel>
+             <TextInput style={styles.input} value={form.address} onChangeText={v => setForm({...form, address: v})} />
+             <FieldLabel>Internal Notes</FieldLabel>
+             <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline value={form.notes} onChangeText={v => setForm({...form, notes: v})} />
+             
+             <Button variant="primary" onPress={saveCustomer} style={{ marginTop: 10 }}>Save Customer Profile</Button>
+             <Button variant="outline" onPress={() => setModalVisible(false)} style={{marginTop: 10, borderColor: colors.red}}>
+               <Text style={{color: colors.red, fontWeight: 'bold'}}>Cancel</Text>
+             </Button>
+           </ScrollView>
+        </View>
+      </Modal>
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.offwhite },
-  header: { backgroundColor: colors.charcoal, paddingHorizontal: 16, paddingBottom: 14 },
-  title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
-  body: { flex: 1 },
-  bodyContent: { padding: 14 },
-  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal }
-});
-</file>
-
-<file path="mobile/src/screens/NewQuoteScreen.js">
-import React, { useState } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
-import ScreenHeader from '../components/layout/ScreenHeader';
-import Button from '../components/ui/Button';
-import FieldLabel from '../components/ui/FieldLabel';
-import useSettings from '../hooks/useSettings';
-import useToast from '../hooks/useToast';
-import { colors } from '../theme/colors';
-
-const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
-
-export default function NewQuoteScreen() {
-  const navigation = useNavigation();
-  const { showToast } = useToast();
-  const { settings } = useSettings();
-  const [generating, setGenerating] = useState(false);
-
-  const [form, setForm] = useState({
-    name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt'
-  });
-  const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150.00' }]);
-
-  const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
-
-  const generateQuotePDF = async () => {
-    if (!form.name || !form.phone || !form.email) {
-      return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
-    }
-    
-    setGenerating(true);
-    try {
-      showToast('Generating Quote PDF...');
-      
-      const itemsHtml = items.map(i => `
-        <tr>
-          <td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td>
-          <td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td>
-        </tr>
-      `).join('');
-      
-      const total = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
-
-      const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
-      const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${settings?.businessName || 'Get Handyman'}</h2>`;
-      const quoteDate = new Date().toLocaleDateString('en-GB');
-
-      const html = `
-        <html>
-          <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <style>
-              @page { margin: 0; }
-              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
-              .header { display: flex; justify-content: space-between; align-items: flex-start; }
-              .logo { max-height: 100px; max-width: 200px; object-fit: contain; }
-              .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.5; }
-              .title-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; }
-              .biz-name { font-size: 24px; font-weight: 800; color: #1F2937; margin: 0; }
-              .doc-type { font-size: 22px; font-weight: 800; color: #1D4ED8; margin: 0; }
-              .divider { border-top: 2px solid #111827; margin: 15px 0 25px 0; }
-              .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #374151; }
-              .bill-to-details { line-height: 1.5; }
-              .items-table { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 11px; }
-              .items-table th { background-color: #111827; color: #ffffff; padding: 10px; font-weight: 700; text-align: left; }
-              .text-right { text-align: right; }
-              .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
-              .balance-due { background-color: #1D4ED8; color: #ffffff; font-size: 14px; font-weight: 700; padding: 10px 15px; display: flex; justify-content: space-between; width: 220px; border-radius: 4px; }
-            </style>
-          </head>
-          <body>
-            <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${settings?.abn ? `ABN: ${settings.abn}` : ''}</div><div>${settings?.bizPhone || ''}</div><div>${settings?.bizEmail || ''}</div><div>${settings?.website || ''}</div></div></div>
-            <div class="title-row"><h1 class="biz-name">${settings?.businessName || 'Get Handyman'}</h1><h2 class="doc-type">QUOTE</h2></div>
-            <div class="divider"></div>
-            <div class="meta-row">
-              <div>
-                <div style="color: #9CA3AF; font-weight: 700; margin-bottom: 4px;">BILL TO:</div>
-                <div class="bill-to-details">
-                  <div style="font-weight: 700;">${form.name}</div>
-                  <div>${form.email}</div>
-                  <div>${form.phone}</div>
-                  ${form.address ? `<div>${form.address}</div>` : ''}
-                </div>
-              </div>
-              <div style="text-align: right;">
-                <div><span style="color: #9CA3AF;">Quote Date:</span> ${quoteDate}</div>
-                <div><span style="color: #9CA3AF;">Currency:</span> ${form.currency}</div>
-                <div><span style="color: #9CA3AF;">Terms:</span> ${form.terms}</div>
-              </div>
-            </div>
-            <table class="items-table">
-              <tr><th>DESCRIPTION</th><th class="text-right">AMOUNT</th></tr>
-              ${itemsHtml}
-            </table>
-            <div class="totals-container">
-              <div class="balance-due"><span>TOTAL</span><span>$${total.toFixed(2)}</span></div>
-            </div>
-            ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #4B5563; line-height: 1.5;">${settings.quoteMessage}</div>` : ''}
-          </body>
-        </html>
-      `;
-
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
-      
-      // Forces native sharing dialog to work across all apps (WhatsApp, Gmail, Drive, etc.)
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { 
-          mimeType: 'application/pdf', 
-          dialogTitle: `Share Quote for ${form.name}`,
-          UTI: '.pdf' 
-        });
-      } else {
-        Alert.alert("Sharing not available", "Sharing is not available on this device");
-      }
-    } catch (err) {
-      Alert.alert("Error", "Failed to generate quote PDF: " + err.message);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  return (
-    <View style={styles.screen}>
-      <ScreenHeader title="NEW QUOTE" onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        
-        <FieldLabel>Customer Details (Mandatory)</FieldLabel>
-        <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} placeholderTextColor={colors.gray} />
-        <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
-        <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
-        <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} placeholderTextColor={colors.gray} />
-
-        <FieldLabel style={{ marginTop: 10 }}>Quote Configuration</FieldLabel>
-        <View style={styles.row}>
-          <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} placeholder="Currency" value={form.currency} onChangeText={v => updateForm('currency', v)} />
-          <TextInput style={[styles.input, { flex: 2, marginTop: 0 }]} placeholder="Terms" value={form.terms} onChangeText={v => updateForm('terms', v)} />
-        </View>
-
-        <FieldLabel style={{ marginTop: 14 }}>Line Items (Fully Editable)</FieldLabel>
-        {items.map((it, idx) => (
-          <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-            <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={it.name} onChangeText={v => { const n = [...items]; n[idx].name = v; setItems(n); }} placeholder="Description" />
-            <TextInput style={[styles.input, { width: 90, marginTop: 0 }]} value={it.amt} onChangeText={v => { const n = [...items]; n[idx].amt = v; setItems(n); }} placeholder="Amount" keyboardType="numeric" />
-            <TouchableOpacity onPress={() => setItems(items.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
-          </View>
-        ))}
-        <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add line item</Button>
-
-        <Button variant="primary" style={{ marginTop: 12, backgroundColor: colors.orange }} onPress={generateQuotePDF} disabled={generating}>
-          {generating ? <ActivityIndicator color="#fff" /> : <Text style={{fontWeight: 'bold', color: '#fff'}}>✓ Preview & Share Quote PDF</Text>}
-        </Button>
-      </ScrollView>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: colors.charcoal },
   content: { padding: 16 },
-  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 10, color: colors.charcoal },
-  row: { flexDirection: 'row', gap: 10, marginBottom: 10 }
+  addBtn: { backgroundColor: colors.orange, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 10, padding: 14, marginBottom: 12 },
+  name: { fontSize: 15, fontWeight: '800', color: colors.charcoal, marginBottom: 4 },
+  detail: { fontSize: 11.5, color: colors.gray, marginBottom: 2 },
+  notes: { fontSize: 11, color: colors.orangeDeep, marginTop: 4, fontStyle: 'italic' },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 12, alignItems: 'center' },
+  actionBtn: { backgroundColor: colors.blueTint, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  actionBtnText: { color: colors.blue, fontSize: 11, fontWeight: '700' },
+  iconBtn: { backgroundColor: colors.grayLight, padding: 6, borderRadius: 8 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 12, color: colors.charcoal },
+  empty: { textAlign: 'center', color: colors.gray, marginTop: 40, fontSize: 13 }
 });
-</file>
-
-<file path="mobile/src/services/invoiceService.js">
-import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { apiClient, unwrap, BASE_URL } from './apiClient';
-
-export const listInvoices = (status) => unwrap(apiClient.get('/api/invoices', { params: { status } }));
-export const getInvoice = (id) => unwrap(apiClient.get(`/api/invoices/${id}`));
-export const updateInvoice = (id, payload) => unwrap(apiClient.put(`/api/invoices/${id}`, payload));
-export const deleteInvoice = (id) => unwrap(apiClient.delete(`/api/invoices/${id}`));
-export const setDiscount = (id, discount) => unwrap(apiClient.put(`/api/invoices/${id}/discount`, discount));
-export const setGstIncluded = (id, gstIncluded) => unwrap(apiClient.put(`/api/invoices/${id}/gst`, { gstIncluded }));
-export const setPaymentMode = (id, paymentMode) => unwrap(apiClient.put(`/api/invoices/${id}/payment-mode`, { paymentMode }));
-export const setInvoiceStatus = (id, status) => unwrap(apiClient.put(`/api/invoices/${id}/status`, { status }));
-export const setCostItems = (id, kind, items) => unwrap(apiClient.put(`/api/invoices/${id}/cost-items/${kind}`, { items }));
-
-// FIXED: Uses native fetch to ensure Android/iOS multipart boundaries aren't stripped
-export const uploadCostItemPhoto = async (id, kind, index, asset) => {
-  const form = new FormData();
-  form.append('photo', {
-    uri: Platform.OS === 'android' ? asset.uri : asset.uri.replace('file://', ''),
-    name: asset.fileName || `receipt-${index}.jpg`,
-    type: asset.mimeType || 'image/jpeg',
-  });
-  
-  const token = await AsyncStorage.getItem('gh_token');
-  const res = await fetch(`${BASE_URL}/api/invoices/${id}/cost-items/${kind}/${index}/photo`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` }, // Do NOT set Content-Type; fetch sets it automatically
-    body: form
-  });
-  
-  const data = await res.json();
-  if (!data.success) throw new Error(data.message);
-  return data.data;
-};
 </file>
 
 <file path="mobile/src/services/jobService.js">
@@ -12678,6 +12058,16 @@ export const updateMaterials = (id, materials) =>
   unwrap(apiClient.put(`/api/jobs/${id}/materials`, { materials }));
 
 export const markJobComplete = (id) => unwrap(apiClient.post(`/api/jobs/${id}/complete`));
+</file>
+
+<file path="mobile/src/services/reportService.js">
+import { apiClient, unwrap } from './apiClient';
+
+export const getBusinessReport = (start, end) => {
+  let url = '/api/report';
+  if (start && end) url += `?start=${start}&end=${end}`;
+  return unwrap(apiClient.get(url));
+};
 </file>
 
 <file path="mobile/src/utils/linking.js">
@@ -12882,6 +12272,245 @@ const markComplete = asyncHandler(async (req, res) => {
 });
 
 module.exports = { listJobs, getJob, createJob, updateJob, deleteJob, saveJobDetails, updateMaterials, markComplete };
+</file>
+
+<file path="backend/src/routes/invoiceRoutes.js">
+/**
+ * invoiceRoutes.js — /api/invoices
+ * ------------------------------------------------------------------
+ * Small, single-purpose routes for each invoice action (discount,
+ * GST toggle, payment mode/status, cost items, cost item photos) so
+ * the frontend can update one thing at a time without resending the
+ * whole invoice document.
+ * ------------------------------------------------------------------
+ */
+const express = require('express');
+const {
+  listInvoices,
+  getInvoice,
+  createInvoice,
+  updateInvoice,
+  deleteInvoice,
+  setDiscount,
+  setGstIncluded,
+  setPaymentMode,
+  setStatus,
+  setCostItems,
+  uploadCostItemPhoto,
+  uploadCompletionPhoto
+} = require('../controllers/invoiceController');
+const { protect } = require('../middleware/auth');
+const upload = require('../middleware/upload');
+
+const router = express.Router();
+router.use(protect);
+
+router.get('/', listInvoices);
+router.get('/:id', getInvoice);
+router.post('/', createInvoice);
+router.put('/:id', updateInvoice);
+router.delete('/:id', deleteInvoice);
+
+router.put('/:id/discount', setDiscount);
+router.put('/:id/gst', setGstIncluded);
+router.put('/:id/payment-mode', setPaymentMode);
+router.put('/:id/status', setStatus);
+
+router.put('/:id/cost-items/:kind', setCostItems);
+router.post('/:id/cost-items/:kind/:index/photo', upload.single('photo'), uploadCostItemPhoto);
+
+// NEW ROUTE: Job Completion Photo
+router.post('/:id/completion-photo', upload.single('photo'), uploadCompletionPhoto);
+
+module.exports = router;
+</file>
+
+<file path="backend/src/services/cronService.js">
+/**
+ * cronService.js
+ * ------------------------------------------------------------------
+ * Automated background tasks. Runs to check for unpaid invoices
+ * and pushes a lock-screen notification to the worker's device.
+ * ------------------------------------------------------------------
+ */
+const cron = require('node-cron');
+const { Expo } = require('expo-server-sdk');
+const Invoice = require('../models/Invoice');
+const Settings = require('../models/Settings');
+
+function startCronJobs() {
+  cron.schedule('0 8-18 * * *', async () => {
+    try {
+      const settings = await Settings.getSingleton();
+      
+      if (!settings.expoPushToken || !Expo.isExpoPushToken(settings.expoPushToken)) {
+        return;
+      }
+
+      const unpaidInvoices = await Invoice.find({ status: 'unpaid' });
+      if (unpaidInvoices.length === 0) return;
+
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      const overdueCount = unpaidInvoices.filter(inv => new Date(inv.date) < oneWeekAgo).length;
+
+      let message = `You have ${unpaidInvoices.length} unpaid invoice(s) awaiting collection.`;
+      if (overdueCount > 0) {
+        message = `⚠️ ${overdueCount} invoice(s) are severely overdue! ` + message;
+      }
+
+      const expo = new Expo();
+      await expo.sendPushNotificationsAsync([{
+        to: settings.expoPushToken,
+        sound: 'default',
+        title: 'Invoice Reminder 💰',
+        body: message,
+        priority: 'high',      // REQUIRED FOR ANDROID LOCK SCREEN
+        channelId: 'default'   // REQUIRED FOR ANDROID LOCK SCREEN
+      }]);
+      
+      console.log(`[cron] Sent unpaid invoice reminder for ${unpaidInvoices.length} invoices.`);
+    } catch (err) {
+      console.error('[cron] Failed to send daily invoice reminders:', err);
+    }
+  });
+  
+  console.log('[cron] Automated hourly invoice reminders (8 AM - 6 PM) initialized.');
+}
+
+module.exports = { startCronJobs };
+</file>
+
+<file path="backend/src/services/reportService.js">
+const Invoice = require('../models/Invoice');
+const { calcInvoiceTotals, calcCostTotals } = require('./gstService');
+const { round2 } = require('../utils/money');
+
+const MATERIAL_GST_RATE = 0.10; 
+
+async function buildBusinessReport(gstRate, startDate, endDate) {
+  // Apply Date Filter if requested
+  const query = {};
+  if (startDate && endDate) {
+    query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+  }
+
+  const invoices = await Invoice.find(query).lean();
+
+  let reportedIncome = 0;
+  let cashBonus = 0;
+  let totalGstCollected = 0;
+  let materialExpenses = 0;
+  let otherExpenses = 0;
+
+  invoices.forEach((inv) => {
+    const totals = calcInvoiceTotals(inv.items, inv.discount, inv.gstIncluded, gstRate);
+    if (inv.gstIncluded) {
+      reportedIncome += totals.discSubtotal;
+      totalGstCollected += totals.gst;
+    } else {
+      cashBonus += totals.discSubtotal;
+    }
+    const costs = calcCostTotals(inv.costs);
+    materialExpenses += costs.materials;
+    otherExpenses += costs.other;
+  });
+
+  const totalExpenses = materialExpenses + otherExpenses;
+  const profit = reportedIncome + cashBonus - totalExpenses;
+  const gstOnMaterial = materialExpenses * MATERIAL_GST_RATE;
+  const reportableGst = totalGstCollected - gstOnMaterial;
+
+  return {
+    income: {
+      reportedIncome: round2(reportedIncome),
+      cashBonus: round2(cashBonus),
+      gstOnMaterial: round2(gstOnMaterial),
+      reportableGst: round2(reportableGst),
+    },
+    expenses: {
+      materialExpenses: round2(materialExpenses),
+      otherExpenses: round2(otherExpenses),
+      totalExpenses: round2(totalExpenses),
+    },
+    profit: round2(profit),
+    invoiceCount: invoices.length,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+module.exports = { buildBusinessReport, MATERIAL_GST_RATE };
+</file>
+
+<file path="backend/src/app.js">
+/**
+ * app.js
+ * ------------------------------------------------------------------
+ * Builds and configures the Express app (middleware + routes) but
+ * does NOT start listening — that's server.js's job. Splitting these
+ * two lets tests import the app without opening a real port.
+ * ------------------------------------------------------------------
+ */
+const path = require('path');
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+
+const { nodeEnv, clientOrigins, uploadDir } = require('./config/env');
+const apiRoutes = require('./routes');
+const notFound = require('./middleware/notFound');
+const errorHandler = require('./middleware/errorHandler');
+const app = express();
+
+app.use(helmet({ crossOriginResourcePolicy: false })); // allow serving /uploads images cross-origin
+app.use(cors({ origin: clientOrigins, credentials: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+if (nodeEnv !== 'test') app.use(morgan(nodeEnv === 'development' ? 'dev' : 'combined'));
+
+// Serves uploaded receipt/logo photos, e.g. GET /uploads/16999-abc.jpg
+app.use('/uploads', express.static(path.join(__dirname, '..', uploadDir)));
+
+app.get('/api/health', (req, res) => res.json({ success: true, status: 'ok' }));
+app.use('/api', apiRoutes);
+
+app.use(notFound);
+app.use(errorHandler);
+
+module.exports = app;
+</file>
+
+<file path="backend/package.json">
+{
+  "name": "get-handyman-backend",
+  "version": "1.0.0",
+  "description": "Get Handyman worker app API (Express + MongoDB) - enquiries, jobs, invoices, GST report",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "seed": "node src/utils/seed.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "expo-server-sdk": "^7.2.0",
+    "express": "^4.19.2",
+    "express-async-handler": "^1.2.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.5.0",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^4.6.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
 </file>
 
 <file path="mobile/src/components/enquiries/EnquiryDetail.js">
@@ -13121,6 +12750,21 @@ const styles = StyleSheet.create({
 });
 </file>
 
+<file path="mobile/src/components/report/ReportScreen.js">
+import { View } from 'react-native';
+import IncomeSection from './IncomeSection';
+import ExpensesSection from './ExpensesSection';
+
+export default function ReportScreen({ report }) {
+  return (
+    <View style={{ paddingBottom: 40 }}>
+      <IncomeSection income={report.income} />
+      <ExpensesSection expenses={report.expenses} profit={report.profit} />
+    </View>
+  );
+}
+</file>
+
 <file path="mobile/src/navigation/DashboardStack.js">
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -13208,6 +12852,454 @@ export default function MainTabNavigator() {
 
 const styles = StyleSheet.create({
   tabBar: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: colors.grayLight, height: 64, paddingTop: 8 }
+});
+</file>
+
+<file path="mobile/src/screens/EnquiryDetailScreen.js">
+import React, { useState, useEffect } from 'react';
+import { View, ScrollView, StyleSheet, Alert, Text, TextInput } from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import ScreenHeader from '../components/layout/ScreenHeader';
+import QuoteComposer from '../components/enquiries/QuoteComposer';
+import EnquiryActions from '../components/enquiries/EnquiryActions';
+import LoadingState from '../components/ui/LoadingState';
+import ErrorState from '../components/ui/ErrorState';
+import Button from '../components/ui/Button';
+import FieldLabel from '../components/ui/FieldLabel';
+import Chip from '../components/ui/Chip';
+import useEnquiry from '../hooks/useEnquiry';
+import useSettings from '../hooks/useSettings';
+import useToast from '../hooks/useToast';
+import { apiClient, unwrap } from '../services/apiClient';
+import { colors } from '../theme/colors';
+
+const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
+const CHIP_TONE = { new: 'orange', quoted: 'blue', accepted: 'green', rejected: 'red' };
+
+export default function EnquiryDetailScreen() {
+  const { params } = useRoute();
+  const navigation = useNavigation();
+  const { showToast } = useToast();
+  const { settings } = useSettings();
+  
+  const { enquiry, loading, error, reject, sendQuote, accept, refresh } = useEnquiry(params.id);
+
+  const [localName, setLocalName] = useState('');
+  const [localPhone, setLocalPhone] = useState('');
+  const [localEmail, setLocalEmail] = useState('');
+  const [localAddress, setLocalAddress] = useState('');
+
+  useEffect(() => {
+    if (enquiry) {
+      setLocalName(enquiry.name || '');
+      setLocalPhone(enquiry.phone || '');
+      setLocalEmail(enquiry.email || '');
+      setLocalAddress(enquiry.address || '');
+    }
+  }, [enquiry]);
+
+  const handleUpdateEnquiry = async () => {
+    try {
+      await unwrap(apiClient.put(`/api/enquiries/${params.id}`, {
+        name: localName,
+        phone: localPhone,
+        email: localEmail,
+        address: localAddress
+      }));
+      refresh();
+      showToast('Enquiry details saved');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save changes');
+    }
+  };
+
+  const handleReject = async () => {
+    await reject();
+    showToast('Enquiry rejected');
+  };
+
+  const handleReactivate = async () => {
+    try {
+      await unwrap(apiClient.put(`/api/enquiries/${params.id}`, { status: 'new' }));
+      showToast('Enquiry Restored!');
+      refresh();
+    } catch (e) {
+      Alert.alert("Error", "Could not restore the enquiry.");
+    }
+  };
+
+  const handleDelete = () => {
+    Alert.alert("Delete Enquiry", "Permanently delete this enquiry?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+          try {
+            await unwrap(apiClient.delete(`/api/enquiries/${params.id}`));
+            showToast('Enquiry deleted');
+            navigation.goBack();
+          } catch (e) {
+            Alert.alert("Error", "Could not delete enquiry.");
+          }
+      }}
+    ]);
+  };
+
+  const handleSendQuote = async (items) => {
+    try {
+      showToast('Generating Quote PDF...');
+      
+      const itemsHtml = items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`).join('');
+      const total = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
+
+      const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
+      const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${settings?.businessName || 'Get Handyman'}</h2>`;
+      const quoteDate = new Date().toLocaleDateString('en-GB');
+
+      const html = `
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <style>
+              @page { margin: 0; }
+              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
+              .header { display: flex; justify-content: space-between; align-items: flex-start; }
+              .logo { max-height: 100px; max-width: 200px; object-fit: contain; }
+              .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.5; }
+              .title-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; }
+              .biz-name { font-size: 24px; font-weight: 800; color: #1F2937; margin: 0; }
+              .doc-type { font-size: 22px; font-weight: 800; color: #1D4ED8; margin: 0; }
+              .divider { border-top: 2px solid #111827; margin: 15px 0 25px 0; }
+              .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #374151; }
+              .bill-to-details { line-height: 1.5; }
+              .items-table { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 11px; }
+              .items-table th { background-color: #111827; color: #ffffff; padding: 10px; font-weight: 700; text-align: left; }
+              .text-right { text-align: right; }
+              .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+              .balance-due { background-color: #1D4ED8; color: #ffffff; font-size: 14px; font-weight: 700; padding: 10px 15px; display: flex; justify-content: space-between; width: 220px; border-radius: 4px; }
+            </style>
+          </head>
+          <body>
+            <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${settings?.abn ? `ABN: ${settings.abn}` : ''}</div><div>${settings?.bizPhone || ''}</div><div>${settings?.bizEmail || ''}</div><div>${settings?.website || ''}</div></div></div>
+            <div class="title-row"><h1 class="biz-name">${settings?.businessName || 'Get Handyman'}</h1><h2 class="doc-type">QUOTE</h2></div>
+            <div class="divider"></div>
+            <div class="meta-row">
+              <div>
+                <div style="color: #9CA3AF; font-weight: 700; margin-bottom: 4px;">BILL TO:</div>
+                <div class="bill-to-details">
+                  <div style="font-weight: 700;">${localName}</div>
+                  <div>${localEmail}</div>
+                  <div>${localPhone}</div>
+                  ${localAddress ? `<div>${localAddress}</div>` : ''}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div><span style="color: #9CA3AF;">Quote Date:</span> ${quoteDate}</div>
+                <div><span style="color: #9CA3AF;">Currency:</span> AUD</div>
+                <div><span style="color: #9CA3AF;">Terms:</span> Due on receipt</div>
+              </div>
+            </div>
+            <table class="items-table">
+              <tr><th>DESCRIPTION</th><th class="text-right">AMOUNT</th></tr>
+              ${itemsHtml}
+            </table>
+            <div class="totals-container">
+              <div class="balance-due"><span>TOTAL</span><span>$${total.toFixed(2)}</span></div>
+            </div>
+            ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #4B5563; line-height: 1.5;">${settings.quoteMessage}</div>` : ''}
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { 
+          mimeType: 'application/pdf', 
+          dialogTitle: `Share Quote for ${localName}`,
+          UTI: '.pdf' 
+        });
+      }
+      
+      // Update Database Status
+      await sendQuote(items);
+      showToast('Quote sent successfully');
+    } catch (err) {
+      Alert.alert("Error", "Failed to generate or share quote.");
+    }
+  };
+
+  const handleAccept = async () => {
+    try {
+      const { job } = await accept();
+      showToast('Job created from enquiry');
+      navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: job._id } });
+    } catch (e) {
+      Alert.alert("Error", "Could not accept enquiry.");
+    }
+  };
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader title="ENQUIRY" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {loading && <LoadingState />}
+        {error && <ErrorState>{error}</ErrorState>}
+        
+        {enquiry && (
+          <>
+            <View style={styles.top}>
+              <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>
+                {enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}
+              </Chip>
+              {enquiry.when ? <Text style={styles.detail}>Preferred: {enquiry.when}</Text> : null}
+            </View>
+
+            {enquiry.message ? <Text style={styles.message}>{enquiry.message}</Text> : null}
+
+            {/* Editable Customer Fields */}
+            <FieldLabel style={{ marginTop: 14 }}>Customer Details</FieldLabel>
+            <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
+            <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+            <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+            <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Address" />
+            
+            <Button variant="primary" style={{ marginBottom: 20 }} onPress={handleUpdateEnquiry}>
+              💾 Save Customer Details
+            </Button>
+
+            {enquiry.status === 'new' && (
+              <>
+                <QuoteComposer initialItems={enquiry.quoteItems} onSend={handleSendQuote} />
+                <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>
+                  ✅ Accept Instantly (Confirmed on Phone)
+                </Button>
+                <Button variant="outline" onPress={handleReject} style={{ marginTop: 10 }}>
+                  Reject enquiry
+                </Button>
+              </>
+            )}
+
+            {enquiry.status === 'quoted' && (
+              <>
+                <Text style={styles.quoted}>Quote Sent</Text>
+                <EnquiryActions onReject={handleReject} onAccept={handleAccept} acceptLabel="Mark accepted & create job" />
+              </>
+            )}
+
+            {enquiry.status === 'accepted' && (
+              <Text style={styles.note}>This enquiry is accepted and linked to a job.</Text>
+            )}
+
+            {enquiry.status === 'rejected' && (
+              <>
+                <Text style={styles.noteError}>This enquiry was previously rejected.</Text>
+                <Button variant="primary" style={{ backgroundColor: colors.green, marginTop: 12 }} onPress={handleReactivate}>
+                  🔄 Reactivate & Edit Details
+                </Button>
+              </>
+            )}
+
+            <Button variant="outline" style={{ borderColor: colors.red, marginTop: 20 }} onPress={handleDelete}>
+              <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Enquiry</Text>
+            </Button>
+          </>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16 },
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  detail: { fontSize: 12, color: colors.gray },
+  message: { padding: 12, backgroundColor: colors.offwhite, borderRadius: 8, fontSize: 12.5, color: colors.charcoal2, marginBottom: 10 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 8, color: colors.charcoal },
+  quoted: { fontWeight: '800', fontSize: 15, marginVertical: 10 },
+  note: { fontSize: 12.5, color: colors.green, fontWeight: '700', marginTop: 10 },
+  noteError: { fontSize: 12.5, color: colors.red, fontWeight: '700', marginTop: 10 },
+});
+</file>
+
+<file path="mobile/src/screens/NewQuoteScreen.js">
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import ScreenHeader from '../components/layout/ScreenHeader';
+import Button from '../components/ui/Button';
+import FieldLabel from '../components/ui/FieldLabel';
+import useSettings from '../hooks/useSettings';
+import useToast from '../hooks/useToast';
+import { colors } from '../theme/colors';
+
+const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
+
+export default function NewQuoteScreen() {
+  const navigation = useNavigation();
+  const { params } = useRoute();
+  const { showToast } = useToast();
+  const { settings } = useSettings();
+  const [generating, setGenerating] = useState(false);
+
+  const [form, setForm] = useState({
+    name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt'
+  });
+  const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150.00' }]);
+
+  // Prefill if navigating from customer screen
+  useEffect(() => {
+    if (params?.customer) {
+      setForm(prev => ({
+        ...prev,
+        name: params.customer.name || '',
+        phone: params.customer.phone || '',
+        email: params.customer.email || '',
+        address: params.customer.address || '',
+      }));
+    }
+  }, [params?.customer]);
+
+  const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+
+  const generateQuotePDF = async () => {
+    if (!form.name || !form.phone || !form.email) {
+      return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
+    }
+    
+    setGenerating(true);
+    try {
+      showToast('Generating Quote PDF...');
+      
+      const itemsHtml = items.map(i => `
+        <tr>
+          <td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td>
+          <td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td>
+        </tr>
+      `).join('');
+      
+      const total = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
+
+      const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
+      const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${settings?.businessName || 'Get Handyman'}</h2>`;
+      const quoteDate = new Date().toLocaleDateString('en-GB');
+
+      const html = `
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <style>
+              @page { margin: 0; }
+              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
+              .header { display: flex; justify-content: space-between; align-items: flex-start; }
+              .logo { max-height: 100px; max-width: 200px; object-fit: contain; }
+              .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.5; }
+              .title-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; }
+              .biz-name { font-size: 24px; font-weight: 800; color: #1F2937; margin: 0; }
+              .doc-type { font-size: 22px; font-weight: 800; color: #1D4ED8; margin: 0; }
+              .divider { border-top: 2px solid #111827; margin: 15px 0 25px 0; }
+              .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #374151; }
+              .bill-to-details { line-height: 1.5; }
+              .items-table { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 11px; }
+              .items-table th { background-color: #111827; color: #ffffff; padding: 10px; font-weight: 700; text-align: left; }
+              .text-right { text-align: right; }
+              .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+              .balance-due { background-color: #1D4ED8; color: #ffffff; font-size: 14px; font-weight: 700; padding: 10px 15px; display: flex; justify-content: space-between; width: 220px; border-radius: 4px; }
+            </style>
+          </head>
+          <body>
+            <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${settings?.abn ? `ABN: ${settings.abn}` : ''}</div><div>${settings?.bizPhone || ''}</div><div>${settings?.bizEmail || ''}</div><div>${settings?.website || ''}</div></div></div>
+            <div class="title-row"><h1 class="biz-name">${settings?.businessName || 'Get Handyman'}</h1><h2 class="doc-type">QUOTE</h2></div>
+            <div class="divider"></div>
+            <div class="meta-row">
+              <div>
+                <div style="color: #9CA3AF; font-weight: 700; margin-bottom: 4px;">BILL TO:</div>
+                <div class="bill-to-details">
+                  <div style="font-weight: 700;">${form.name}</div>
+                  <div>${form.email}</div>
+                  <div>${form.phone}</div>
+                  ${form.address ? `<div>${form.address}</div>` : ''}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div><span style="color: #9CA3AF;">Quote Date:</span> ${quoteDate}</div>
+                <div><span style="color: #9CA3AF;">Currency:</span> ${form.currency}</div>
+                <div><span style="color: #9CA3AF;">Terms:</span> ${form.terms}</div>
+              </div>
+            </div>
+            <table class="items-table">
+              <tr><th>DESCRIPTION</th><th class="text-right">AMOUNT</th></tr>
+              ${itemsHtml}
+            </table>
+            <div class="totals-container">
+              <div class="balance-due"><span>TOTAL</span><span>$${total.toFixed(2)}</span></div>
+            </div>
+            ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #4B5563; line-height: 1.5;">${settings.quoteMessage}</div>` : ''}
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { 
+          mimeType: 'application/pdf', 
+          dialogTitle: `Share Quote for ${form.name}`,
+          UTI: '.pdf' 
+        });
+      } else {
+        Alert.alert("Sharing not available", "Sharing is not available on this device");
+      }
+    } catch (err) {
+      Alert.alert("Error", "Failed to generate quote PDF: " + err.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader title="NEW QUOTE" onBack={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        
+        <FieldLabel>Customer Details (Mandatory)</FieldLabel>
+        <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} placeholderTextColor={colors.gray} />
+        <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
+        <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
+        <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} placeholderTextColor={colors.gray} />
+
+        <FieldLabel style={{ marginTop: 10 }}>Quote Configuration</FieldLabel>
+        <View style={styles.row}>
+          <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} placeholder="Currency" value={form.currency} onChangeText={v => updateForm('currency', v)} />
+          <TextInput style={[styles.input, { flex: 2, marginTop: 0 }]} placeholder="Terms" value={form.terms} onChangeText={v => updateForm('terms', v)} />
+        </View>
+
+        <FieldLabel style={{ marginTop: 14 }}>Line Items (Fully Editable)</FieldLabel>
+        {items.map((it, idx) => (
+          <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+            <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={it.name} onChangeText={v => { const n = [...items]; n[idx].name = v; setItems(n); }} placeholder="Description" />
+            <TextInput style={[styles.input, { width: 90, marginTop: 0 }]} value={it.amt} onChangeText={v => { const n = [...items]; n[idx].amt = v; setItems(n); }} placeholder="Amount" keyboardType="numeric" />
+            <TouchableOpacity onPress={() => setItems(items.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+          </View>
+        ))}
+        <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add line item</Button>
+
+        <Button variant="primary" style={{ marginTop: 12, backgroundColor: colors.orange }} onPress={generateQuotePDF} disabled={generating}>
+          {generating ? <ActivityIndicator color="#fff" /> : <Text style={{fontWeight: 'bold', color: '#fff'}}>✓ Preview & Share Quote PDF</Text>}
+        </Button>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 10, color: colors.charcoal },
+  row: { flexDirection: 'row', gap: 10, marginBottom: 10 }
 });
 </file>
 
@@ -13591,6 +13683,31 @@ settingsSchema.statics.getSingleton = async function getSingleton() {
 module.exports = mongoose.models.Settings || mongoose.model('Settings', settingsSchema);
 </file>
 
+<file path="backend/server.js">
+/**
+ * server.js
+ * ------------------------------------------------------------------
+ * Entry point: start HTTP server immediately, then connect to MongoDB.
+ * ------------------------------------------------------------------
+ */
+const app = require('./src/app');
+const connectDB = require('./src/config/db');
+const { port } = require('./src/config/env');
+const { startCronJobs } = require('./src/services/cronService');
+
+// 1. Connect to DB in the background
+connectDB().catch(err => {
+  console.error('[server] MongoDB connection error:', err);
+});
+
+startCronJobs();
+// 2. Start listening IMMEDIATELY so Hostinger is happy
+app.listen(port, () => {
+  // eslint-disable-next-line no-console
+  console.log(`[server] Get Handyman API listening on port ${port}`);
+});
+</file>
+
 <file path="mobile/src/components/invoices/CostItemRow.js">
 import React from 'react';
 import { View, TextInput, Text, Pressable, StyleSheet } from 'react-native';
@@ -13820,6 +13937,57 @@ const styles = StyleSheet.create({
 });
 </file>
 
+<file path="mobile/src/services/invoiceService.js">
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { apiClient, unwrap, BASE_URL } from './apiClient';
+
+export const listInvoices = (status) => unwrap(apiClient.get('/api/invoices', { params: { status } }));
+export const getInvoice = (id) => unwrap(apiClient.get(`/api/invoices/${id}`));
+export const updateInvoice = (id, payload) => unwrap(apiClient.put(`/api/invoices/${id}`, payload));
+export const deleteInvoice = (id) => unwrap(apiClient.delete(`/api/invoices/${id}`));
+export const setDiscount = (id, discount) => unwrap(apiClient.put(`/api/invoices/${id}/discount`, discount));
+export const setGstIncluded = (id, gstIncluded) => unwrap(apiClient.put(`/api/invoices/${id}/gst`, { gstIncluded }));
+export const setPaymentMode = (id, paymentMode) => unwrap(apiClient.put(`/api/invoices/${id}/payment-mode`, { paymentMode }));
+export const setInvoiceStatus = (id, status) => unwrap(apiClient.put(`/api/invoices/${id}/status`, { status }));
+export const setCostItems = (id, kind, items) => unwrap(apiClient.put(`/api/invoices/${id}/cost-items/${kind}`, { items }));
+
+// FIXED: Uses native fetch to ensure Android/iOS multipart boundaries aren't stripped
+export const uploadCostItemPhoto = async (id, kind, index, asset) => {
+  const form = new FormData();
+  form.append('photo', {
+    uri: Platform.OS === 'android' ? asset.uri : asset.uri.replace('file://', ''),
+    name: asset.fileName || `receipt-${index}.jpg`,
+    type: asset.mimeType || 'image/jpeg',
+  });
+  
+  const token = await AsyncStorage.getItem('gh_token');
+  const res = await fetch(`${BASE_URL}/api/invoices/${id}/cost-items/${kind}/${index}/photo`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` }, // Do NOT set Content-Type; fetch sets it automatically
+    body: form
+  });
+  
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message);
+  return data.data;
+};
+
+export const uploadCompletionPhoto = async (id, asset) => {
+  const form = new FormData();
+  form.append('photo', {
+    uri: Platform.OS === 'android' ? asset.uri : asset.uri.replace('file://', ''),
+    name: asset.fileName || `completion-${Date.now()}.jpg`,
+    type: asset.mimeType || 'image/jpeg',
+  });
+  return unwrap(
+    apiClient.post(`/api/invoices/${id}/completion-photo`, form, { 
+      headers: { 'Content-Type': 'multipart/form-data' } 
+    })
+  );
+};
+</file>
+
 <file path="mobile/package.json">
 {
   "name": "get-handyman-mobile",
@@ -13897,10 +14065,182 @@ const jobSchema = new mongoose.Schema(
 module.exports = mongoose.models.Job || mongoose.model('Job', jobSchema);
 </file>
 
+<file path="mobile/src/screens/InvoicesScreen.js">
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import InvoiceTabs from '../components/invoices/InvoiceTabs';
+import InvoiceList from '../components/invoices/InvoiceList';
+import ReportScreen from '../components/report/ReportScreen';
+import SegmentedControl from '../components/ui/SegmentedControl';
+import LoadingState from '../components/ui/LoadingState';
+import ErrorState from '../components/ui/ErrorState';
+import Button from '../components/ui/Button';
+import useInvoices from '../hooks/useInvoices';
+import useReport from '../hooks/useReport';
+import { colors } from '../theme/colors';
+
+function InvoiceListPane({ tab }) {
+  const { invoices, loading, error } = useInvoices(tab);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState>{error}</ErrorState>;
+
+  const filteredInvoices = invoices.filter(i => 
+    searchQuery === '' ||
+    i.customer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    i.number?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <View style={{ flex: 1 }}>
+      <TextInput 
+        style={styles.searchBar} 
+        placeholder="Search by customer name or invoice #..." 
+        value={searchQuery} 
+        onChangeText={setSearchQuery} 
+        placeholderTextColor={colors.gray}
+      />
+      <InvoiceList invoices={filteredInvoices} showUnpaidTotal={tab === 'unpaid'} />
+    </View>
+  );
+}
+
+function ReportPane() {
+  const [period, setPeriod] = useState('month'); 
+  const [refDate, setRefDate] = useState(new Date());
+  
+  // Custom Date Picker State
+  const [customStart, setCustomStart] = useState(new Date(new Date().setDate(new Date().getDate() - 7)));
+  const [customEnd, setCustomEnd] = useState(new Date());
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState('start');
+
+  const shiftDate = (dir) => {
+    const next = new Date(refDate);
+    if (period === 'day') next.setDate(next.getDate() + dir);
+    if (period === 'month') next.setMonth(next.getMonth() + dir);
+    if (period === 'year') next.setFullYear(next.getFullYear() + dir);
+    setRefDate(next);
+  };
+
+  let start = null, end = null, label = "All Time";
+  const d = new Date(refDate);
+
+  if (period === 'day') {
+    start = new Date(d.setHours(0,0,0,0));
+    end = new Date(d.setHours(23,59,59,999));
+    label = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  } else if (period === 'month') {
+    start = new Date(d.getFullYear(), d.getMonth(), 1);
+    end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23,59,59,999);
+    label = start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  } else if (period === 'year') {
+    start = new Date(d.getFullYear(), 0, 1);
+    end = new Date(d.getFullYear(), 11, 31, 23,59,59,999);
+    label = start.getFullYear().toString();
+  } else if (period === 'custom') {
+    start = new Date(customStart);
+    start.setHours(0,0,0,0);
+    end = new Date(customEnd);
+    end.setHours(23,59,59,999);
+  }
+
+  const { report, loading, error } = useReport(start?.toISOString(), end?.toISOString());
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.filterControlRow}>
+        <SegmentedControl
+          options={[
+            {label: 'Day', value: 'day'}, 
+            {label: 'Month', value: 'month'}, 
+            {label: 'Year', value: 'year'},
+            {label: 'Custom', value: 'custom'}, 
+            {label: 'All Time', value: 'all'}
+          ]}
+          value={period}
+          onChange={setPeriod}
+        />
+      </View>
+
+      {period === 'custom' && (
+        <View style={styles.customDateRow}>
+          <Button variant="outline" style={{flex: 1, paddingVertical: 8}} onPress={() => { setPickerTarget('start'); setShowPicker(true); }}>
+            Start: {customStart.toLocaleDateString('en-GB')}
+          </Button>
+          <Button variant="outline" style={{flex: 1, paddingVertical: 8}} onPress={() => { setPickerTarget('end'); setShowPicker(true); }}>
+            End: {customEnd.toLocaleDateString('en-GB')}
+          </Button>
+        </View>
+      )}
+
+      {(period !== 'all' && period !== 'custom') && (
+        <View style={styles.dateNavRow}>
+          <TouchableOpacity onPress={() => shiftDate(-1)} style={styles.arrowBtn}><Text style={styles.arrowText}>◀</Text></TouchableOpacity>
+          <Text style={styles.dateLabel}>{label}</Text>
+          <TouchableOpacity onPress={() => shiftDate(1)} style={styles.arrowBtn}><Text style={styles.arrowText}>▶</Text></TouchableOpacity>
+        </View>
+      )}
+
+      {showPicker && (
+        <DateTimePicker
+          value={pickerTarget === 'start' ? customStart : customEnd}
+          mode="date"
+          display="default"
+          onChange={(event, date) => {
+            setShowPicker(false);
+            if (date) {
+              if (pickerTarget === 'start') setCustomStart(date);
+              else setCustomEnd(date);
+            }
+          }}
+        />
+      )}
+
+      {loading ? <LoadingState /> : error ? <ErrorState>{error}</ErrorState> : <ReportScreen report={report} />}
+    </View>
+  );
+}
+
+export default function InvoicesScreen() {
+  const [tab, setTab] = useState('unpaid');
+
+  return (
+    <View style={styles.screen}>
+      <SafeAreaView edges={['top']} style={styles.header}>
+        <Text style={styles.title}>INVOICES</Text>
+        <InvoiceTabs value={tab} onChange={setTab} />
+      </SafeAreaView>
+      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} keyboardShouldPersistTaps="handled">
+        {tab === 'report' ? <ReportPane /> : <InvoiceListPane tab={tab} />}
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.offwhite },
+  header: { backgroundColor: colors.charcoal, paddingHorizontal: 16, paddingBottom: 14 },
+  title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
+  body: { flex: 1 },
+  bodyContent: { padding: 14 },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
+  filterControlRow: { marginBottom: 16 },
+  customDateRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  dateNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 8, padding: 8, marginBottom: 16, borderWidth: 1, borderColor: colors.grayLight },
+  arrowBtn: { padding: 8 },
+  arrowText: { fontSize: 16, color: colors.charcoal },
+  dateLabel: { fontWeight: '800', fontSize: 14, color: colors.charcoal }
+});
+</file>
+
 <file path="mobile/src/screens/NewJobScreen.js">
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import Button from '../components/ui/Button';
@@ -13911,6 +14251,7 @@ import { colors } from '../theme/colors';
 
 export default function NewJobScreen() {
   const navigation = useNavigation();
+  const { params } = useRoute();
   const { showToast } = useToast();
   const [saving, setSaving] = useState(false);
   const debounceTimer = useRef(null);
@@ -13929,6 +14270,21 @@ export default function NewJobScreen() {
   const [services, setServices] = useState(['General Handyman']);
   const [materials, setMaterials] = useState([]);
   const [extraFields, setExtraFields] = useState([]);
+
+  // Prefill if navigating from customer screen
+  useEffect(() => {
+    if (params?.customer) {
+      setForm(prev => ({
+        ...prev,
+        name: params.customer.name || '',
+        phone: params.customer.phone || '',
+        email: params.customer.email || '',
+        address: params.customer.address || '',
+        suburb: params.customer.suburb || '',
+        postcode: params.customer.postcode || '',
+      }));
+    }
+  }, [params?.customer]);
 
   const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -13995,7 +14351,6 @@ export default function NewJobScreen() {
     }
   };
 
-  // NEW: Live Google Maps Search
   const searchPlaces = async (text) => {
     updateForm('address', text);
     if (text.length < 3) { setSuggestions([]); return; }
@@ -14003,7 +14358,7 @@ export default function NewJobScreen() {
     debounceTimer.current = setTimeout(async () => {
       try {
         const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
-        if (!key) return; // Failsafe if key isn't set yet
+        if (!key) return;
         const res = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&components=country:au&key=${key}`);
         const data = await res.json();
         setSuggestions(data.predictions || []);
@@ -14011,7 +14366,6 @@ export default function NewJobScreen() {
     }, 500);
   };
 
-  // NEW: Exact Pin-Drop GPS Capture & Postcode Autofill
   const handleSelectPlace = async (placeId, description) => {
     updateForm('address', description);
     setSuggestions([]);
@@ -14065,7 +14419,6 @@ export default function NewJobScreen() {
           </View>
         </View>
 
-        {/* UPDATED: Google Maps Autocomplete Dropdown */}
         <View style={styles.fieldRow}>
           <Text style={styles.icon}>📍</Text>
           <View style={{ flex: 1, zIndex: 10 }}>
@@ -14146,335 +14499,6 @@ const styles = StyleSheet.create({
   detailsCard: { backgroundColor: colors.orangeTint, borderRadius: 10, padding: 14, marginTop: 20 },
   cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.orangeDeep, marginBottom: 10 },
 });
-</file>
-
-<file path="mobile/src/screens/JobDetailScreen.js">
-import React, { useState } from 'react';
-import { View, ScrollView, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import ScreenHeader from '../components/layout/ScreenHeader';
-import JobStatusBadge from '../components/jobs/JobStatusBadge';
-import JobDetailForm from '../components/jobs/JobDetailForm';
-import Button from '../components/ui/Button';
-import LoadingState from '../components/ui/LoadingState';
-import useJob from '../hooks/useJob';
-import useToast from '../hooks/useToast';
-import { openPhone, openEmail, openMaps } from '../utils/linking';
-import { money } from '../utils/money';
-import { colors } from '../theme/colors';
-
-export default function JobDetailScreen() {
-  const { params } = useRoute();
-  const navigation = useNavigation();
-  const { showToast } = useToast();
-  const { job, loading, saveDetails, complete, remove } = useJob(params.id);
-  
-  const [editingPrice, setEditingPrice] = useState(false);
-  const [isEditingJob, setIsEditingJob] = useState(false); 
-  const [priceInput, setPriceInput] = useState('0');
-  const [optionsOpen, setOptionsOpen] = useState(false); 
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  if (loading || !job) return <View style={styles.screen}><LoadingState /></View>;
-
-  const handleSaveDetails = async (payload) => {
-    try {
-      await saveDetails(payload);
-      setIsEditingJob(false);
-      showToast('Job details saved');
-    } catch (err) {
-      let errorText = 'An unknown error occurred.';
-      if (err.response?.data?.errors) errorText = err.response.data.errors.join('\n');
-      else if (err.response?.data?.message) errorText = err.response.data.message;
-      else if (err.message) errorText = err.message;
-      Alert.alert("Backend Error", errorText);
-    }
-  };
-
-  const handleComplete = async () => {
-    try {
-      const { invoice } = await complete();
-      showToast('Job marked complete');
-      navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: invoice._id } });
-    } catch (err) {
-      let errorText = 'An unknown error occurred.';
-      if (err.response?.data?.errors) errorText = err.response.data.errors.join('\n');
-      else if (err.response?.data?.message) errorText = err.response.data.message;
-      else if (err.message) errorText = err.message;
-      Alert.alert("Backend Error", errorText);
-    }
-  };
-
-  const handleDelete = async () => {
-    setOptionsOpen(false);
-    setConfirmDelete(false);
-    await remove();
-    showToast('Job deleted');
-    navigation.navigate('JobsList');
-  };
-
-  return (
-    <View style={styles.screen}>
-      <ScreenHeader 
-        title="JOB DETAILS" 
-        onBack={() => navigation.navigate('JobsList')} 
-        rightAction={
-          <TouchableOpacity onPress={() => setOptionsOpen(true)} style={{ padding: 4 }}><Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>⋮</Text></TouchableOpacity>
-        } 
-      />
-      <ScrollView contentContainerStyle={styles.content}>
-        
-        <View style={styles.customerStrip}>
-          <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.customerName}>{job.name}</Text>
-            <JobStatusBadge job={job} />
-          </View>
-          <TouchableOpacity style={styles.actionIcon} onPress={() => openPhone(job.phone)}><Text>📞</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.actionIcon} onPress={() => openEmail(job.email)}><Text>✉️</Text></TouchableOpacity>
-        </View>
-
-        <View style={styles.divider} />
-
-        {job.needsDetails || isEditingJob ? (
-          <JobDetailForm job={job} onSave={handleSaveDetails} />
-        ) : (
-          <>
-            <View style={styles.fieldRow}>
-              <Text style={styles.icon}>📅</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Date & time</Text>
-                <Text style={styles.value}>{job.when || 'Not set'} {job.exactTime ? ` at ${job.exactTime}` : ''}</Text>
-              </View>
-            </View>
-
-            <View style={styles.fieldRow}>
-              <Text style={styles.icon}>📍</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Location</Text>
-                <Text style={styles.value}>{job.address}</Text>
-              </View>
-              <Button variant="outline" style={{ paddingVertical: 6, paddingHorizontal: 12 }} onPress={() => openMaps(job.address)}>Locate</Button>
-            </View>
-
-            <View style={styles.fieldRow}>
-              <Text style={styles.icon}>📝</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Services</Text>
-                <Text style={styles.value}>
-                  {/* FIXED: Array Validation before joining */}
-                  {(Array.isArray(job.services) && job.services.length > 0) ? job.services.join(', ') : (job.service || 'None')}
-                </Text>
-              </View>
-            </View>
-
-            {(job.extraFields && job.extraFields.length > 0) && (
-              <View style={styles.fieldRow}>
-                <Text style={styles.icon}>📋</Text>
-                <View style={{ flex: 1 }}>
-                  {job.extraFields.map((f, idx) => (
-                    <View key={idx} style={{ marginBottom: 4 }}>
-                      <Text style={styles.label}>{f.label}</Text>
-                      <Text style={styles.value}>{f.value}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            <View style={styles.priceCard}>
-              {editingPrice ? (
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <TextInput style={styles.priceInput} value={priceInput} onChangeText={setPriceInput} keyboardType="numeric" autoFocus />
-                  <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={async () => { await handleSaveDetails({ labour: Number(priceInput) }); setEditingPrice(false); }}>Save</Button>
-                </View>
-              ) : (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View><Text style={styles.labelOrange}>Labour Price</Text><Text style={styles.priceText}>{money(job.labour)}</Text></View>
-                  <TouchableOpacity style={styles.editBtn} onPress={() => { setPriceInput(String(job.labour)); setEditingPrice(true); }}><Text>✏️</Text></TouchableOpacity>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.buttonRow}>
-              <Button variant="outline" style={{ flex: 1 }} onPress={() => setIsEditingJob(true)}>Edit Details</Button>
-              {job.status === 'complete' ? (
-                <Button variant="dark" style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: job.invoiceId } })}>View Invoice</Button>
-              ) : (
-                <Button variant="green" style={{ flex: 1 }} onPress={handleComplete}>Mark complete</Button>
-              )}
-            </View>
-          </>
-        )}
-      </ScrollView>
-
-      {optionsOpen && (
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOptionsOpen(false)}>
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-            <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setIsEditingJob(true); }}>
-              <View style={[styles.sheetIconBox, { backgroundColor: colors.blueTint }]}><Text>✏️</Text></View>
-              <Text style={[styles.sheetText, { color: colors.blue }]}>Edit job details</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setConfirmDelete(true); }}>
-              <View style={[styles.sheetIconBox, { backgroundColor: colors.redTint }]}><Text>🗑️</Text></View>
-              <Text style={[styles.sheetText, { color: colors.red }]}>Delete job</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      )}
-
-      {confirmDelete && (
-        <View style={styles.overlay}>
-          <View style={styles.confirmBox}>
-            <Text style={styles.confirmTitle}>Delete this job?</Text>
-            <Text style={styles.confirmSub}>Are you sure you want to delete it? This can't be undone.</Text>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Button variant="outline" style={{ flex: 1 }} onPress={() => setConfirmDelete(false)}>Cancel</Button>
-              <Button variant="primary" style={{ flex: 1, backgroundColor: colors.red }} onPress={handleDelete}>Delete</Button>
-            </View>
-          </View>
-        </View>
-      )}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
-  customerStrip: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.charcoal, alignItems: 'center', justifyContent: 'center' },
-  customerName: { fontWeight: '800', fontSize: 14, marginBottom: 4 },
-  actionIcon: { width: 34, height: 34, borderRadius: 8, backgroundColor: colors.orangeTint, alignItems: 'center', justifyContent: 'center' },
-  divider: { height: 1, backgroundColor: colors.grayLight, marginVertical: 14 },
-  fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.grayLight, alignItems: 'center' },
-  icon: { width: 34, textAlign: 'center', fontSize: 17 },
-  label: { fontSize: 10, fontWeight: '700', color: colors.gray, textTransform: 'uppercase', marginBottom: 2 },
-  labelOrange: { fontSize: 10, fontWeight: '700', color: colors.orangeDeep, textTransform: 'uppercase', marginBottom: 2 },
-  value: { fontSize: 13, color: colors.charcoal },
-  priceCard: { backgroundColor: colors.orangeTint, borderRadius: 10, padding: 12, marginTop: 12 },
-  priceText: { fontSize: 18, fontWeight: '800', color: colors.charcoal },
-  editBtn: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  priceInput: { flex: 1, borderWidth: 1.5, borderColor: colors.orange, borderRadius: 8, padding: 8, backgroundColor: '#fff', fontSize: 14, fontWeight: '700' },
-  buttonRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
-  overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(17,24,39,0.4)', justifyContent: 'flex-end', zIndex: 50 },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 30, paddingTop: 10 },
-  handle: { width: 36, height: 4, backgroundColor: colors.grayLight, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  sheetRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
-  sheetIconBox: { width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  sheetText: { fontSize: 14, fontWeight: '600' },
-  confirmBox: { backgroundColor: '#fff', margin: 20, borderRadius: 14, padding: 20, alignSelf: 'center', top: '30%', position: 'absolute', width: '90%' },
-  confirmTitle: { fontWeight: '800', fontSize: 15, marginBottom: 6 },
-  confirmSub: { fontSize: 12.5, color: colors.gray, marginBottom: 18, lineHeight: 18 }
-});
-</file>
-
-<file path="backend/src/controllers/enquiryController.js">
-const asyncHandler = require('../middleware/asyncHandler');
-const Enquiry = require('../models/Enquiry');
-const Job = require('../models/Job');
-const Settings = require('../models/Settings');
-const { ok, created } = require('../utils/apiResponse');
-const { Expo } = require('expo-server-sdk');
-
-const listEnquiries = asyncHandler(async (req, res) => {
-  const { status } = req.query;
-  const filter = status && status !== 'all' ? { status } : {};
-  const enquiries = await Enquiry.find(filter).sort({ received: -1 });
-  ok(res, enquiries);
-});
-
-const getEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findById(req.params.id);
-  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
-  ok(res, enquiry);
-});
-
-const createEnquiry = asyncHandler(async (req, res) => {
-  // 1. Existing code: create the enquiry in the database
-  const enquiry = await Enquiry.create(req.body);
-
-  // 2. NEW CODE: Fetch the worker's saved push token from Settings
-  try {
-    const settings = await Settings.getSingleton();
-    
-    // 3. NEW CODE: If a token exists, send the push notification
-    if (settings.expoPushToken && Expo.isExpoPushToken(settings.expoPushToken)) {
-      const expo = new Expo();
-      await expo.sendPushNotificationsAsync([{
-        to: settings.expoPushToken,
-        sound: 'default',
-        title: 'New Enquiry! 🛠️',
-        body: `${enquiry.name} requested a quote for ${req.body.service || 'a job'}.`,
-        data: { enquiryId: enquiry._id },
-      }]);
-    }
-  } catch (err) {
-    console.error("Push notification failed to send:", err);
-    // We catch the error so the enquiry still successfully saves even if the notification fails
-  }
-
-  // 4. Existing code: send response to website
-  res.status(201).json({ success: true, data: enquiry });
-});
-
-const updateEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
-  ok(res, enquiry);
-});
-
-const deleteEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findByIdAndDelete(req.params.id);
-  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
-  ok(res, { deleted: true });
-});
-
-const rejectEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, { status: 'rejected' }, { new: true });
-  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
-  ok(res, enquiry);
-});
-
-const sendQuote = asyncHandler(async (req, res) => {
-  const { items = [] } = req.body;
-  const price = items.reduce((sum, it) => sum + (Number(it.qty) || 1) * (Number(it.amt) || 0), 0);
-  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, { quoteItems: items, price, status: 'quoted' }, { new: true });
-  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
-  ok(res, enquiry);
-});
-
-const acceptEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findById(req.params.id);
-  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
-
-  const job = await Job.create({
-    enquiryId: enquiry._id,
-    name: enquiry.name,
-    phone: enquiry.phone,
-    email: enquiry.email,
-    services: enquiry.services && enquiry.services.length > 0 ? enquiry.services : (enquiry.service ? [enquiry.service] : []),
-    service: enquiry.service, 
-    when: enquiry.when,
-    exactTime: enquiry.exactTime,
-    address: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', '),
-    suburb: enquiry.suburb,
-    postcode: enquiry.postcode,
-    attachmentUrl: enquiry.attachmentUrl, 
-    status: 'accepted',
-    needsDetails: true,
-    labour: enquiry.price || 0,
-    notes: enquiry.message,
-  });
-
-  enquiry.status = 'accepted';
-  enquiry.jobId = job._id;
-  await enquiry.save();
-  created(res, { enquiry, job });
-});
-
-module.exports = { listEnquiries, getEnquiry, createEnquiry, updateEnquiry, deleteEnquiry, rejectEnquiry, sendQuote, acceptEnquiry };
 </file>
 
 <file path="mobile/src/screens/DashboardScreen.js">
@@ -14658,6 +14682,244 @@ const styles = StyleSheet.create({
 });
 </file>
 
+<file path="mobile/src/screens/JobDetailScreen.js">
+import React, { useState } from 'react';
+import { View, ScrollView, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import ScreenHeader from '../components/layout/ScreenHeader';
+import JobStatusBadge from '../components/jobs/JobStatusBadge';
+import JobDetailForm from '../components/jobs/JobDetailForm';
+import Button from '../components/ui/Button';
+import LoadingState from '../components/ui/LoadingState';
+import useJob from '../hooks/useJob';
+import useToast from '../hooks/useToast';
+import { openPhone, openEmail, openMaps } from '../utils/linking';
+import { money } from '../utils/money';
+import { colors } from '../theme/colors';
+import * as invoiceService from '../services/invoiceService';
+
+export default function JobDetailScreen() {
+  const { params } = useRoute();
+  const navigation = useNavigation();
+  const { showToast } = useToast();
+  const { job, loading, saveDetails, complete, remove } = useJob(params.id);
+  
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [isEditingJob, setIsEditingJob] = useState(false); 
+  const [priceInput, setPriceInput] = useState('0');
+  const [optionsOpen, setOptionsOpen] = useState(false); 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  if (loading || !job) return <View style={styles.screen}><LoadingState /></View>;
+
+  const handleSaveDetails = async (payload) => {
+    try {
+      await saveDetails(payload);
+
+      // SYNCHRONIZE JOB COST DIRECTLY TO LINKED INVOICE
+      if (payload.labour !== undefined && job.invoiceId) {
+        try {
+          const inv = await invoiceService.getInvoice(job.invoiceId);
+          if (inv && inv.items && inv.items.length > 0) {
+            const updatedItems = [...inv.items];
+            updatedItems[0].amt = payload.labour; // Syncs the new price to the first line item
+            await invoiceService.updateInvoice(job.invoiceId, { items: updatedItems });
+          }
+        } catch (invErr) {
+          console.log("Invoice sync failed silently", invErr);
+        }
+      }
+
+      setIsEditingJob(false);
+      setEditingPrice(false); 
+      showToast('Job details saved');
+    } catch (err) {
+      let errorText = 'An unknown error occurred.';
+      if (err.response?.data?.errors) errorText = err.response.data.errors.join('\n');
+      else if (err.response?.data?.message) errorText = err.response.data.message;
+      else if (err.message) errorText = err.message;
+      Alert.alert("Backend Error", errorText);
+    }
+  };
+
+  const handleComplete = async () => {
+    try {
+      const { invoice } = await complete();
+      showToast('Job marked complete');
+      navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: invoice._id } });
+    } catch (err) {
+      let errorText = 'An unknown error occurred.';
+      if (err.response?.data?.errors) errorText = err.response.data.errors.join('\n');
+      else if (err.response?.data?.message) errorText = err.response.data.message;
+      else if (err.message) errorText = err.message;
+      Alert.alert("Backend Error", errorText);
+    }
+  };
+
+  const handleDelete = async () => {
+    setOptionsOpen(false);
+    setConfirmDelete(false);
+    await remove();
+    showToast('Job deleted');
+    navigation.navigate('JobsList');
+  };
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader 
+        title="JOB DETAILS" 
+        onBack={() => navigation.navigate('JobsList')} 
+        rightAction={
+          <TouchableOpacity onPress={() => setOptionsOpen(true)} style={{ padding: 4 }}><Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>⋮</Text></TouchableOpacity>
+        } 
+      />
+      <ScrollView contentContainerStyle={styles.content}>
+        
+        <View style={styles.customerStrip}>
+          <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.customerName}>{job.name}</Text>
+            <JobStatusBadge job={job} />
+          </View>
+          <TouchableOpacity style={styles.actionIcon} onPress={() => openPhone(job.phone)}><Text>📞</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.actionIcon} onPress={() => openEmail(job.email)}><Text>✉️</Text></TouchableOpacity>
+        </View>
+
+        <View style={styles.divider} />
+
+        {job.needsDetails || isEditingJob ? (
+          <JobDetailForm job={job} onSave={handleSaveDetails} />
+        ) : (
+          <>
+            <View style={styles.fieldRow}>
+              <Text style={styles.icon}>📅</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Date & time</Text>
+                <Text style={styles.value}>{job.when || 'Not set'} {job.exactTime ? ` at ${job.exactTime}` : ''}</Text>
+              </View>
+            </View>
+
+            <View style={styles.fieldRow}>
+              <Text style={styles.icon}>📍</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Location</Text>
+                <Text style={styles.value}>{job.address}</Text>
+              </View>
+              <Button variant="outline" style={{ paddingVertical: 6, paddingHorizontal: 12 }} onPress={() => openMaps(job.address)}>Locate</Button>
+            </View>
+
+            <View style={styles.fieldRow}>
+              <Text style={styles.icon}>📝</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Services</Text>
+                <Text style={styles.value}>
+                  {(Array.isArray(job.services) && job.services.length > 0) ? job.services.join(', ') : (job.service || 'None')}
+                </Text>
+              </View>
+            </View>
+
+            {(job.extraFields && job.extraFields.length > 0) && (
+              <View style={styles.fieldRow}>
+                <Text style={styles.icon}>📋</Text>
+                <View style={{ flex: 1 }}>
+                  {job.extraFields.map((f, idx) => (
+                    <View key={idx} style={{ marginBottom: 4 }}>
+                      <Text style={styles.label}>{f.label}</Text>
+                      <Text style={styles.value}>{f.value}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            <View style={styles.priceCard}>
+              {editingPrice ? (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TextInput style={styles.priceInput} value={priceInput} onChangeText={setPriceInput} keyboardType="numeric" autoFocus />
+                  <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={() => handleSaveDetails({ labour: Number(priceInput) })}>Save</Button>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View><Text style={styles.labelOrange}>Labour Price</Text><Text style={styles.priceText}>{money(job.labour)}</Text></View>
+                  <TouchableOpacity style={styles.editBtn} onPress={() => { setPriceInput(String(job.labour)); setEditingPrice(true); }}><Text>✏️</Text></TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.buttonRow}>
+              <Button variant="outline" style={{ flex: 1 }} onPress={() => setIsEditingJob(true)}>Edit Details</Button>
+              {job.status === 'complete' ? (
+                <Button variant="dark" style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: job.invoiceId } })}>View Invoice</Button>
+              ) : (
+                <Button variant="green" style={{ flex: 1 }} onPress={handleComplete}>Mark complete</Button>
+              )}
+            </View>
+          </>
+        )}
+      </ScrollView>
+
+      {optionsOpen && (
+        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOptionsOpen(false)}>
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setIsEditingJob(true); }}>
+              <View style={[styles.sheetIconBox, { backgroundColor: colors.blueTint }]}><Text>✏️</Text></View>
+              <Text style={[styles.sheetText, { color: colors.blue }]}>Edit job details</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setConfirmDelete(true); }}>
+              <View style={[styles.sheetIconBox, { backgroundColor: colors.redTint }]}><Text>🗑️</Text></View>
+              <Text style={[styles.sheetText, { color: colors.red }]}>Delete job</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {confirmDelete && (
+        <View style={styles.overlay}>
+          <View style={styles.confirmBox}>
+            <Text style={styles.confirmTitle}>Delete this job?</Text>
+            <Text style={styles.confirmSub}>Are you sure you want to delete it? This can't be undone.</Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Button variant="outline" style={{ flex: 1 }} onPress={() => setConfirmDelete(false)}>Cancel</Button>
+              <Button variant="primary" style={{ flex: 1, backgroundColor: colors.red }} onPress={handleDelete}>Delete</Button>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16 },
+  customerStrip: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.charcoal, alignItems: 'center', justifyContent: 'center' },
+  customerName: { fontWeight: '800', fontSize: 14, marginBottom: 4 },
+  actionIcon: { width: 34, height: 34, borderRadius: 8, backgroundColor: colors.orangeTint, alignItems: 'center', justifyContent: 'center' },
+  divider: { height: 1, backgroundColor: colors.grayLight, marginVertical: 14 },
+  fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.grayLight, alignItems: 'center' },
+  icon: { width: 34, textAlign: 'center', fontSize: 17 },
+  label: { fontSize: 10, fontWeight: '700', color: colors.gray, textTransform: 'uppercase', marginBottom: 2 },
+  labelOrange: { fontSize: 10, fontWeight: '700', color: colors.orangeDeep, textTransform: 'uppercase', marginBottom: 2 },
+  value: { fontSize: 13, color: colors.charcoal },
+  priceCard: { backgroundColor: colors.orangeTint, borderRadius: 10, padding: 12, marginTop: 12 },
+  priceText: { fontSize: 18, fontWeight: '800', color: colors.charcoal },
+  editBtn: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  priceInput: { flex: 1, borderWidth: 1.5, borderColor: colors.orange, borderRadius: 8, padding: 8, backgroundColor: '#fff', fontSize: 14, fontWeight: '700' },
+  buttonRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(17,24,39,0.4)', justifyContent: 'flex-end', zIndex: 50 },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 30, paddingTop: 10 },
+  handle: { width: 36, height: 4, backgroundColor: colors.grayLight, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  sheetRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
+  sheetIconBox: { width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  sheetText: { fontSize: 14, fontWeight: '600' },
+  confirmBox: { backgroundColor: '#fff', margin: 20, borderRadius: 14, padding: 20, alignSelf: 'center', top: '30%', position: 'absolute', width: '90%' },
+  confirmTitle: { fontWeight: '800', fontSize: 15, marginBottom: 6 },
+  confirmSub: { fontSize: 12.5, color: colors.gray, marginBottom: 18, lineHeight: 18 }
+});
+</file>
+
 <file path="mobile/src/screens/JobsScreen.js">
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
@@ -14831,9 +15093,165 @@ const styles = StyleSheet.create({
 });
 </file>
 
+<file path="backend/src/controllers/enquiryController.js">
+/**
+ * enquiryController.js
+ * ------------------------------------------------------------------
+ * Handles all website enquiries, PDF quote sending, push notifications,
+ * and auto-syncing customer details to linked Jobs and Invoices.
+ * ------------------------------------------------------------------
+ */
+const asyncHandler = require('../middleware/asyncHandler');
+const Enquiry = require('../models/Enquiry');
+const Job = require('../models/Job');
+const Invoice = require('../models/Invoice');
+const Settings = require('../models/Settings');
+const { Expo } = require('expo-server-sdk');
+const { ok, created } = require('../utils/apiResponse');
+
+// GET /api/enquiries
+const listEnquiries = asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const filter = status && status !== 'all' ? { status } : {};
+  const enquiries = await Enquiry.find(filter).sort({ createdAt: -1 });
+  ok(res, enquiries);
+});
+
+// GET /api/enquiries/:id
+const getEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.findById(req.params.id);
+  if (!enquiry) {
+    res.status(404);
+    throw new Error('Enquiry not found');
+  }
+  ok(res, enquiry);
+});
+
+// POST /api/enquiries (Website Contact Form)
+const createEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.create(req.body);
+
+  // Send Push Notification to Worker Phone
+  try {
+    const settings = await Settings.getSingleton();
+    if (settings.expoPushToken && Expo.isExpoPushToken(settings.expoPushToken)) {
+      const expo = new Expo();
+      await expo.sendPushNotificationsAsync([{
+        to: settings.expoPushToken,
+        sound: 'default',
+        title: 'New Enquiry! 🛠️',
+        body: `${enquiry.name} requested a quote for ${req.body.service || 'a job'}.`,
+        data: { enquiryId: enquiry._id },
+        priority: 'high',      // REQUIRED FOR ANDROID LOCK SCREEN
+        channelId: 'default'   // REQUIRED FOR ANDROID LOCK SCREEN
+      }]);
+    }
+  } catch (err) {
+    console.error("Push notification failed to send:", err);
+  }
+
+  created(res, enquiry);
+});
+
+// PUT /api/enquiries/:id (Update Enquiry Details)
+const updateEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  if (!enquiry) {
+    res.status(404);
+    throw new Error('Enquiry not found');
+  }
+
+  // AUTO-SYNC: Cascade name/phone/email/address updates to connected Jobs and Invoices
+  try {
+    const linkedJobs = await Job.find({ 
+      $or: [ { email: enquiry.email }, { phone: enquiry.phone } ] 
+    });
+
+    for (let job of linkedJobs) {
+      job.name = enquiry.name;
+      job.phone = enquiry.phone;
+      job.email = enquiry.email;
+      job.address = enquiry.address;
+      await job.save();
+
+      if (job.invoiceId) {
+        await Invoice.findByIdAndUpdate(job.invoiceId, {
+          customer: enquiry.name,
+          customerPhone: enquiry.phone,
+          customerEmail: enquiry.email
+        });
+      }
+    }
+  } catch (err) {
+    console.log("Silent sync error:", err);
+  }
+
+  ok(res, enquiry);
+});
+
+// DELETE /api/enquiries/:id
+const deleteEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.findByIdAndDelete(req.params.id);
+  if (!enquiry) {
+    res.status(404);
+    throw new Error('Enquiry not found');
+  }
+  ok(res, { deleted: true });
+});
+
+// POST /api/enquiries/:id/reject
+const rejectEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, { status: 'rejected' }, { new: true });
+  ok(res, enquiry);
+});
+
+// POST /api/enquiries/:id/send-quote
+const sendQuote = asyncHandler(async (req, res) => {
+  const { items } = req.body;
+  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, { status: 'quoted', quoteItems: items }, { new: true });
+  ok(res, enquiry);
+});
+
+// POST /api/enquiries/:id/accept
+const acceptEnquiry = asyncHandler(async (req, res) => {
+  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, { status: 'accepted' }, { new: true });
+  if (!enquiry) {
+    res.status(404);
+    throw new Error('Enquiry not found');
+  }
+
+  // Convert Enquiry into a Pending Job
+  const job = await Job.create({
+    name: enquiry.name,
+    phone: enquiry.phone,
+    email: enquiry.email,
+    address: enquiry.address || enquiry.suburb || 'Address not provided',
+    service: enquiry.service || (enquiry.services && enquiry.services[0]) || 'General Handyman',
+    services: enquiry.services || [],
+    when: enquiry.when || 'Not scheduled',
+    status: 'pending',
+    needsDetails: true,
+    enquiryId: enquiry._id
+  });
+
+  ok(res, { enquiry, job });
+});
+
+module.exports = {
+  listEnquiries,
+  getEnquiry,
+  createEnquiry,
+  updateEnquiry,
+  deleteEnquiry,
+  rejectEnquiry,
+  sendQuote,
+  acceptEnquiry
+};
+</file>
+
 <file path="mobile/src/screens/InvoiceDetailScreen.js">
-import React, { useState } from 'react';
-import { View, ScrollView, Text, StyleSheet, Alert, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard, TouchableOpacity } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -14845,6 +15263,7 @@ import DiscountEditor from '../components/invoices/DiscountEditor';
 import InvoiceTotals from '../components/invoices/InvoiceTotals';
 import InvoiceActions from '../components/invoices/InvoiceActions';
 import CostItemsEditor from '../components/invoices/CostItemsEditor';
+import PhotoUploadButton from '../components/invoices/PhotoUploadButton';
 import FieldLabel from '../components/ui/FieldLabel';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
@@ -14854,20 +15273,9 @@ import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { money } from '../utils/money';
 import { colors } from '../theme/colors';
-import * as invoiceService from '../services/invoiceService'; // FIXED MISSING IMPORT
+import * as invoiceService from '../services/invoiceService';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
-  divider: { borderTopWidth: 1, borderTopColor: colors.grayLight, marginVertical: 12 },
-  hintText: { fontSize: 10, color: '#9CA3AF', marginBottom: 10 },
-  expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 12 },
-  expenseTotal: { fontSize: 17, fontWeight: '800', color: colors.charcoal },
-  gstBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.grayLight, marginBottom: 14 },
-  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' }
-});
 
 export default function InvoiceDetailScreen() {
   const { params } = useRoute();
@@ -14875,11 +15283,25 @@ export default function InvoiceDetailScreen() {
   const { showToast } = useToast();
   const { settings, update: updateSettings } = useSettings();
   const {
-    invoice, loading, error, updateItems, setDiscount, toggleGstIncluded,
+    invoice, loading, error, refresh, updateItems, setDiscount, toggleGstIncluded,
     setPaymentMode, togglePaidStatus, setCostItems, uploadCostItemPhoto,
   } = useInvoice(params.id);
 
-  const [localGstRate, setLocalGstRate] = useState(settings?.gstRate ? String(settings.gstRate) : '10');
+  const [localGstRate, setLocalGstRate] = useState('10');
+  const [localCustomer, setLocalCustomer] = useState('');
+  const [localPhone, setLocalPhone] = useState('');
+  const [localEmail, setLocalEmail] = useState('');
+  const [savingInvoice, setSavingInvoice] = useState(false);
+
+  // Sync state when invoice loads
+  useEffect(() => {
+    if (settings?.gstRate) setLocalGstRate(String(settings.gstRate));
+    if (invoice) {
+      setLocalCustomer(invoice.customer || '');
+      setLocalPhone(invoice.customerPhone || '');
+      setLocalEmail(invoice.customerEmail || '');
+    }
+  }, [invoice, settings]);
 
   if (loading || !invoice) return <View style={styles.screen}><LoadingState /></View>;
   if (error) return <View style={styles.screen}><ErrorState>{error}</ErrorState></View>;
@@ -14891,9 +15313,22 @@ export default function InvoiceDetailScreen() {
     showToast('GST Rate Updated');
   };
 
-  // EXPLICIT UPDATE BUTTON - gives visual confirmation since fields auto-save
-  const handleUpdateInvoice = () => {
-    showToast('✅ All invoice changes saved securely');
+  const handleUpdateInvoice = async () => {
+    Keyboard.dismiss();
+    setSavingInvoice(true);
+    try {
+      await invoiceService.updateInvoice(invoice._id, {
+        customer: localCustomer,
+        customerPhone: localPhone,
+        customerEmail: localEmail
+      });
+      refresh();
+      showToast('✅ Invoice details updated successfully');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save changes');
+    } finally {
+      setSavingInvoice(false);
+    }
   };
 
   const handleDeleteInvoice = () => {
@@ -14917,7 +15352,7 @@ export default function InvoiceDetailScreen() {
 
   const generateHTMLString = () => {
     const itemsHtml = invoice.items && invoice.items.length 
-      ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB;">${i.name ? i.name : ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB;">${i.qty ? i.qty : 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${parseFloat(i.amt ? i.amt : 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${(parseFloat(i.amt ? i.amt : 0) * parseInt(i.qty ? i.qty : 1)).toFixed(2)}</td></tr>`).join('')
+      ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name ? i.name : ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.qty ? i.qty : 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt ? i.amt : 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${(parseFloat(i.amt ? i.amt : 0) * parseInt(i.qty ? i.qty : 1)).toFixed(2)}</td></tr>`).join('')
       : '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
 
     const bsbStr = settings?.bsb || '';
@@ -14937,9 +15372,9 @@ export default function InvoiceDetailScreen() {
     const invDate = new Date(invoice.date).toLocaleDateString('en-GB');
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-GB') : invDate;
     
-    const customerName = invoice.customer || 'Customer Name';
-    const customerEmailHtml = invoice.customerEmail ? `<div>${invoice.customerEmail}</div>` : '';
-    const customerPhoneHtml = invoice.customerPhone ? `<div>${invoice.customerPhone}</div>` : '';
+    const customerName = localCustomer || 'Customer Name';
+    const customerEmailHtml = localEmail ? `<div>${localEmail}</div>` : '';
+    const customerPhoneHtml = localPhone ? `<div>${localPhone}</div>` : '';
     
     const invoiceNum = invoice.number ? invoice.number.replace('GH-', '') : '0';
     const termsStr = invoice.terms === 'Due on receipt' ? 'NET 0' : invoice.terms;
@@ -14954,7 +15389,7 @@ export default function InvoiceDetailScreen() {
     const balanceAmt = invoice.status === 'paid' ? '0.00' : totalDue;
 
     const paymentDetailsHtml = bankNameStr ? `
-      <div style="margin-top: 40px; font-size: 10px; color: #6B7280; line-height: 1.6;">
+      <div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;">
         <strong>Payment Details</strong><br/>
         Bank: ${bankNameStr}<br/>
         BSB: ${bsbStr}<br/>
@@ -14965,6 +15400,13 @@ export default function InvoiceDetailScreen() {
     ` : '';
 
     const discountHtml = invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${discAmt}</span></div>` : '';
+
+    const completionPhotoHtml = invoice.completionPhotoUrl ? `
+      <div style="margin-top: 30px; page-break-inside: avoid;">
+        <h3 style="color: #374151; font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px;">Job Completion Proof</h3>
+        <img src="${invoice.completionPhotoUrl.startsWith('http') ? invoice.completionPhotoUrl : `${BASE_URL}${invoice.completionPhotoUrl}`}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1px solid #E5E7EB;" />
+      </div>
+    ` : '';
 
     return `
       <html>
@@ -14987,7 +15429,7 @@ export default function InvoiceDetailScreen() {
             .items-table td { padding: 12px 10px; color: #374151; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
-            .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+            .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid; }
             .totals { width: 260px; font-size: 11px; color: #374151; }
             .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; }
             .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
@@ -15024,6 +15466,7 @@ export default function InvoiceDetailScreen() {
             </div>
           </div>
           ${paymentDetailsHtml}
+          ${completionPhotoHtml}
         </body>
       </html>
     `;
@@ -15051,6 +15494,16 @@ export default function InvoiceDetailScreen() {
     <View style={styles.screen}>
       <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => navigation.navigate('InvoicesList')} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        
+        <FieldLabel>Customer Details</FieldLabel>
+        <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
+        <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+        <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+
+        <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
+          {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
+        </Button>
+
         <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
         <View style={{ marginBottom: 12 }}>
           <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
@@ -15082,6 +15535,67 @@ export default function InvoiceDetailScreen() {
         <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
         <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
         
+        <FieldLabel style={{ marginTop: 24 }}>Job Completion Photo (Sent with PDF Invoice)</FieldLabel>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <PhotoUploadButton 
+            photoUrl={invoice.completionPhotoUrl} 
+            onUpload={async (asset) => {
+              try {
+                await invoiceService.uploadCompletionPhoto(invoice._id, asset);
+                showToast('Completion photo attached to invoice!');
+                refresh();
+              } catch (e) { Alert.alert('Error', 'Upload failed'); }
+            }} 
+          />
+          {invoice.completionPhotoUrl ? (
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Photo attached. It will appear on PDF.</Text>
+              <TouchableOpacity onPress={async () => {
+                try {
+                  await invoiceService.updateInvoice(invoice._id, { completionPhotoUrl: null });
+                  showToast('Photo removed');
+                  refresh();
+                } catch(e) { Alert.alert('Error', 'Could not remove photo'); }
+              }}>
+                <Text style={{ color: colors.red, fontSize: 24, fontWeight: 'bold', paddingHorizontal: 10 }}>×</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Tap the icon to attach a completion photo.</Text>
+          )}
+        </View>
+
+        <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
+        <View style={styles.expenseCard}>
+          <Text style={styles.cardTitle}>Materials</Text>
+          <CostItemsEditor
+            items={invoice.costs?.materials}
+            kind="materials"
+            onSetItems={(items) => setCostItems('materials', items)}
+            onUploadPhoto={async (idx, asset) => {
+              try {
+                await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset);
+                showToast('Material photo saved!');
+                refresh();
+              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
+            }}
+          />
+          <View style={styles.divider} />
+          <Text style={styles.cardTitle}>Other Expenses</Text>
+          <CostItemsEditor
+            items={invoice.costs?.other}
+            kind="other"
+            onSetItems={(items) => setCostItems('other', items)}
+            onUploadPhoto={async (idx, asset) => {
+              try {
+                await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset);
+                showToast('Expense photo saved!');
+                refresh();
+              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
+            }}
+          />
+        </View>
+
         <InvoiceActions
           isPaid={isPaid}
           customerEmail={invoice.customerEmail}
@@ -15091,7 +15605,6 @@ export default function InvoiceDetailScreen() {
           onShare={handleSharePdf}
         />
 
-        {/* Delete Invoice Button */}
         <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={handleDeleteInvoice}>
           <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
         </Button>
@@ -15099,6 +15612,17 @@ export default function InvoiceDetailScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 8, color: colors.charcoal },
+  divider: { borderTopWidth: 1, borderTopColor: colors.grayLight, marginVertical: 12 },
+  expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 6 },
+  cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.blue, marginBottom: 10 },
+  gstBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.grayLight, marginBottom: 14 },
+  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' }
+});
 </file>
 
 </files>

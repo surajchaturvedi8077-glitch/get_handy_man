@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard, TouchableOpacity } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -41,7 +41,6 @@ export default function InvoiceDetailScreen() {
   const [localEmail, setLocalEmail] = useState('');
   const [savingInvoice, setSavingInvoice] = useState(false);
 
-  // Sync state when invoice loads
   useEffect(() => {
     if (settings?.gstRate) setLocalGstRate(String(settings.gstRate));
     if (invoice) {
@@ -283,35 +282,38 @@ export default function InvoiceDetailScreen() {
         <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
         <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
         
+        {/* COMPLETION PHOTO UI */}
         <FieldLabel style={{ marginTop: 24 }}>Job Completion Photo (Sent with PDF Invoice)</FieldLabel>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <PhotoUploadButton 
-            photoUrl={invoice.completionPhotoUrl} 
-            onUpload={async (asset) => {
-              try {
-                await invoiceService.uploadCompletionPhoto(invoice._id, asset);
-                showToast('Completion photo attached to invoice!');
-                refresh();
-              } catch (e) { Alert.alert('Error', 'Upload failed'); }
-            }} 
-          />
-          {invoice.completionPhotoUrl ? (
-            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Photo attached. It will appear on PDF.</Text>
-              <TouchableOpacity onPress={async () => {
+        {invoice.completionPhotoUrl ? (
+          <View style={styles.photoAttachedBox}>
+            <PhotoUploadButton photoUrl={invoice.completionPhotoUrl} onUpload={() => {}} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={{ fontSize: 11, color: colors.gray, marginBottom: 6 }}>Photo attached to PDF.</Text>
+              <Button variant="outline" style={{ borderColor: colors.red, paddingVertical: 6 }} onPress={async () => {
                 try {
                   await invoiceService.updateInvoice(invoice._id, { completionPhotoUrl: null });
                   showToast('Photo removed');
                   refresh();
                 } catch(e) { Alert.alert('Error', 'Could not remove photo'); }
               }}>
-                <Text style={{ color: colors.red, fontSize: 24, fontWeight: 'bold', paddingHorizontal: 10 }}>×</Text>
-              </TouchableOpacity>
+                <Text style={{ color: colors.red, fontWeight: '700', fontSize: 12 }}>🗑️ Remove Photo</Text>
+              </Button>
             </View>
-          ) : (
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <PhotoUploadButton 
+              onUpload={async (asset) => {
+                try {
+                  await invoiceService.uploadCompletionPhoto(invoice._id, asset);
+                  showToast('Completion photo attached!');
+                  refresh();
+                } catch (e) { Alert.alert('Error', 'Upload failed'); }
+              }} 
+            />
             <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Tap the icon to attach a completion photo.</Text>
-          )}
-        </View>
+          </View>
+        )}
 
         <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
         <View style={styles.expenseCard}>
@@ -369,5 +371,6 @@ const styles = StyleSheet.create({
   expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 6 },
   cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.blue, marginBottom: 10 },
   gstBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.grayLight, marginBottom: 14 },
-  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' }
+  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' },
+  photoAttachedBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.offwhite, padding: 12, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: colors.grayLight }
 });

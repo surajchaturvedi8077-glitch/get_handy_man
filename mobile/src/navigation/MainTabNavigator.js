@@ -12,13 +12,6 @@ const Tab = createBottomTabNavigator();
 
 const ICONS = { Home: '🏠', Enquiries: '📩', Jobs: '📅', Invoices: '💰' };
 
-const resetTab = (navigation, tabName, rootScreen) => ({
-  tabPress: (e) => {
-    e.preventDefault();
-    navigation.navigate(tabName, { screen: rootScreen });
-  },
-});
-
 export default function MainTabNavigator() {
   return (
     <Tab.Navigator
@@ -28,32 +21,15 @@ export default function MainTabNavigator() {
         tabBarInactiveTintColor: colors.gray,
         tabBarLabelStyle: { fontSize: 10, fontWeight: '700', paddingBottom: 5 },
         tabBarIcon: ({ color }) => (
-          // FIXED: Increased the font size of the tab icons drastically so they pop
           <Text style={{ fontSize: 24, color, marginBottom: -4 }}>{ICONS[route.name]}</Text>
         ),
         tabBarStyle: styles.tabBar,
       })}
     >
-      <Tab.Screen 
-        name="Home" 
-        component={DashboardStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Home', 'Dashboard')} 
-      />
-      <Tab.Screen 
-        name="Enquiries" 
-        component={EnquiriesStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Enquiries', 'EnquiriesList')} 
-      />
-      <Tab.Screen 
-        name="Jobs" 
-        component={JobsStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Jobs', 'JobsList')} 
-      />
-      <Tab.Screen 
-        name="Invoices" 
-        component={InvoicesStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Invoices', 'InvoicesList')} 
-      />
+      <Tab.Screen name="Home" component={DashboardStack} />
+      <Tab.Screen name="Enquiries" component={EnquiriesStack} />
+      <Tab.Screen name="Jobs" component={JobsStack} />
+      <Tab.Screen name="Invoices" component={InvoicesStack} />
     </Tab.Navigator>
   );
 }
