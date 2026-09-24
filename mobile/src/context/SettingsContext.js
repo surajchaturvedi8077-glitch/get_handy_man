@@ -21,6 +21,9 @@ export function SettingsProvider({ children }) {
     setLoading(true);
     try {
       setSettings(await settingsService.getSettings());
+    } catch (error) {
+      // Fixed: Catch block prevents unhandled promise rejection crashes
+      console.log("Settings fetch failed gracefully:", error);
     } finally {
       setLoading(false);
     }

@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
+// IMPORT KeyboardAvoidingView
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert, KeyboardAvoidingView } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+// IMPORT useSafeAreaInsets
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import Button from '../components/ui/Button';
 import FieldLabel from '../components/ui/FieldLabel';
@@ -13,6 +16,8 @@ export default function NewJobScreen() {
   const navigation = useNavigation();
   const { params } = useRoute();
   const { showToast } = useToast();
+  const insets = useSafeAreaInsets(); // GRABS THE EXACT NOTCH/HOME BAR HEIGHT
+  
   const [saving, setSaving] = useState(false);
   const debounceTimer = useRef(null);
 
@@ -31,7 +36,6 @@ export default function NewJobScreen() {
   const [materials, setMaterials] = useState([]);
   const [extraFields, setExtraFields] = useState([]);
 
-  // Prefill if navigating from customer screen
   useEffect(() => {
     if (params?.customer) {
       setForm(prev => ({
@@ -142,99 +146,102 @@ export default function NewJobScreen() {
     } catch (e) { }
   };
 
+  // WRAPPED ENTIRE FORM IN KEYBOARD AVOIDING VIEW
   return (
     <View style={styles.screen}>
       <ScreenHeader title="NEW JOB" onBack={() => navigation.navigate('Dashboard')} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        
-        <View style={styles.customerStrip}>
-          <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
-          <View style={{ flex: 1 }}>
-            <TextInput style={styles.nameInput} placeholder="Customer name" placeholderTextColor={colors.gray} value={form.name} onChangeText={(val) => updateForm('name', val)} />
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📞</Text>
-          <View style={{ flex: 1 }}>
-            <FieldLabel>Phone & Email</FieldLabel>
-            <TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholder="Phone Number" />
-            <TextInput style={[styles.input, { marginTop: 8 }]} value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="Email Address" />
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📅</Text>
-          <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
+          
+          <View style={styles.customerStrip}>
+            <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
             <View style={{ flex: 1 }}>
-              <FieldLabel>Date</FieldLabel>
-              <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
-                <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Select"}</Text></View>
-              </TouchableOpacity>
-            </View>
-            <View style={{ flex: 1 }}>
-              <FieldLabel>Exact Time</FieldLabel>
-              <TextInput style={styles.input} value={form.exactTime} onChangeText={v => updateForm('exactTime', v)} placeholder="e.g. 10:30 AM" />
+              <TextInput style={styles.nameInput} placeholder="Customer name" placeholderTextColor={colors.gray} value={form.name} onChangeText={(val) => updateForm('name', val)} />
             </View>
           </View>
-        </View>
 
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📍</Text>
-          <View style={{ flex: 1, zIndex: 10 }}>
-            <FieldLabel>Street Address</FieldLabel>
-            <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
-            {suggestions.length > 0 && (
-              <View style={styles.dropdown}>
-                {suggestions.map((item) => (
-                  <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
-                    <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
-                  </TouchableOpacity>
-                ))}
+          <View style={styles.fieldRow}>
+            <Text style={styles.icon}>📞</Text>
+            <View style={{ flex: 1 }}>
+              <FieldLabel>Phone & Email</FieldLabel>
+              <TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholder="Phone Number" />
+              <TextInput style={[styles.input, { marginTop: 8 }]} value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="Email Address" />
+            </View>
+          </View>
+
+          <View style={styles.fieldRow}>
+            <Text style={styles.icon}>📅</Text>
+            <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <FieldLabel>Date</FieldLabel>
+                <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
+                  <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Select"}</Text></View>
+                </TouchableOpacity>
               </View>
-            )}
-          </View>
-        </View>
-        
-        <View style={styles.rowSplit}>
-          <View style={{ flex: 1, marginLeft: 46 }}>
-            <FieldLabel>Suburb</FieldLabel>
-            <TextInput style={styles.input} value={form.suburb} onChangeText={v => updateForm('suburb', v)} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <FieldLabel>Postcode</FieldLabel>
-            <TextInput style={styles.input} value={form.postcode} onChangeText={v => updateForm('postcode', v)} keyboardType="numeric" />
-          </View>
-        </View>
-
-        <View style={[styles.detailsCard, { zIndex: -1 }]}>
-          <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
-          
-          <FieldLabel>Services</FieldLabel>
-          {services.map((srv, idx) => (
-            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv} onChangeText={v => { const s = [...services]; s[idx] = v; setServices(s); }} placeholder="e.g. Plumbing Repair" />
-              <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <FieldLabel>Exact Time</FieldLabel>
+                <TextInput style={styles.input} value={form.exactTime} onChangeText={v => updateForm('exactTime', v)} placeholder="e.g. 10:30 AM" />
+              </View>
             </View>
-          ))}
-          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, ''])}>+ Add another service</Button>
+          </View>
 
-          <FieldLabel>Labour Cost (A$)</FieldLabel>
-          <TextInput style={[styles.input, { marginBottom: 14 }]} value={form.labour} onChangeText={v => updateForm('labour', v)} keyboardType="numeric" />
-          
-          <FieldLabel>Other Details / Fields</FieldLabel>
-          {extraFields.map((f, idx) => (
-            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.label} onChangeText={v => { const e = [...extraFields]; e[idx].label = v; setExtraFields(e); }} placeholder="Label" />
-              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.value} onChangeText={v => { const e = [...extraFields]; e[idx].value = v; setExtraFields(e); }} placeholder="Value" />
-              <TouchableOpacity onPress={() => setExtraFields(extraFields.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+          <View style={styles.fieldRow}>
+            <Text style={styles.icon}>📍</Text>
+            <View style={{ flex: 1, zIndex: 10 }}>
+              <FieldLabel>Street Address</FieldLabel>
+              <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
+              {suggestions.length > 0 && (
+                <View style={styles.dropdown}>
+                  {suggestions.map((item) => (
+                    <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
+                      <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
-          ))}
-          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setExtraFields([...extraFields, {label: '', value: ''}])}>+ Add other field</Button>
+          </View>
+          
+          <View style={styles.rowSplit}>
+            <View style={{ flex: 1, marginLeft: 46 }}>
+              <FieldLabel>Suburb</FieldLabel>
+              <TextInput style={styles.input} value={form.suburb} onChangeText={v => updateForm('suburb', v)} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <FieldLabel>Postcode</FieldLabel>
+              <TextInput style={styles.input} value={form.postcode} onChangeText={v => updateForm('postcode', v)} keyboardType="numeric" />
+            </View>
+          </View>
 
-          <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
-        </View>
-      </ScrollView>
+          <View style={[styles.detailsCard, { zIndex: -1 }]}>
+            <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
+            
+            <FieldLabel>Services</FieldLabel>
+            {services.map((srv, idx) => (
+              <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv} onChangeText={v => { const s = [...services]; s[idx] = v; setServices(s); }} placeholder="e.g. Plumbing Repair" />
+                <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+              </View>
+            ))}
+            <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, ''])}>+ Add another service</Button>
+
+            <FieldLabel>Labour Cost (A$)</FieldLabel>
+            <TextInput style={[styles.input, { marginBottom: 14 }]} value={form.labour} onChangeText={v => updateForm('labour', v)} keyboardType="numeric" />
+            
+            <FieldLabel>Other Details / Fields</FieldLabel>
+            {extraFields.map((f, idx) => (
+              <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.label} onChangeText={v => { const e = [...extraFields]; e[idx].label = v; setExtraFields(e); }} placeholder="Label" />
+                <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.value} onChangeText={v => { const e = [...extraFields]; e[idx].value = v; setExtraFields(e); }} placeholder="Value" />
+                <TouchableOpacity onPress={() => setExtraFields(extraFields.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+              </View>
+            ))}
+            <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setExtraFields([...extraFields, {label: '', value: ''}])}>+ Add other field</Button>
+
+            <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {showPicker && (
         <DateTimePicker value={pickerMode === 'time' ? tempDate : dateObj} mode={pickerMode} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />

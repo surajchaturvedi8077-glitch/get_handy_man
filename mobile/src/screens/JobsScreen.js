@@ -13,19 +13,12 @@ import { colors } from '../theme/colors';
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-const safeTime = (dateStr) => {
-  if (!dateStr) return Infinity; // Pushes jobs with no scheduled date to the bottom of the list
-  const time = new Date(dateStr).getTime();
-  return isNaN(time) ? Infinity : time;
-};
-
 export default function JobsScreen() {
   const navigation = useNavigation();
   const [viewMode, setViewMode] = useState('list'); 
   const [filter, setFilter] = useState('all'); 
   const [searchQuery, setSearchQuery] = useState('');
 
-  // useJobs automatically hits the backend API whenever 'filter' changes
   const { jobs, loading, error } = useJobs(filter);
 
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -49,6 +42,7 @@ export default function JobsScreen() {
     }
   });
 
+  // FIXED: Backend handles sorting now. Just filter out search queries.
   const filteredJobs = jobs.filter(j => {
     const q = searchQuery.toLowerCase();
     return q === '' || 
@@ -56,14 +50,13 @@ export default function JobsScreen() {
       (j.address && j.address.toLowerCase().includes(q)) ||
       (Array.isArray(j.services) && j.services.some(s => s && s.toLowerCase().includes(q))) ||
       (typeof j.service === 'string' && j.service.toLowerCase().includes(q));
-  }).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
+  });
 
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.title}>JOBS</Text>
-          {/* NEW: Explicit + New Job Button on the Jobs screen */}
           <TouchableOpacity onPress={() => navigation.navigate('Home', { screen: 'NewJob' })} style={styles.addBtn}>
             <Text style={styles.addBtnText}>+ New Job</Text>
           </TouchableOpacity>
@@ -77,7 +70,6 @@ export default function JobsScreen() {
       <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
         {viewMode === 'list' ? (
           <View style={styles.listContainer}>
-            {/* RESTORED: Accepted | Confirmed | Complete | All */}
             <View style={styles.tabs}>
               <JobFilterTabs value={filter} onChange={setFilter} />
             </View>
@@ -93,10 +85,12 @@ export default function JobsScreen() {
             {loading && <LoadingState />}
             {error && <ErrorState>{error}</ErrorState>}
             
-            {!loading && !error && filteredJobs.length > 0 ? ( 
-              filteredJobs.map(j => <JobListItem key={j._id} job={j} />) 
-            ) : ( 
-              !loading && <Text style={styles.emptyText}>No jobs match this filter.</Text> 
+            {!loading && !error && filteredJobs.length > 0 && (
+              filteredJobs.map(j => <JobListItem key={j._id} job={j} />)
+            )}
+            
+            {!loading && !error && filteredJobs.length === 0 && (
+              <Text style={styles.emptyText}>No jobs match this filter.</Text>
             )}
           </View>
         ) : (

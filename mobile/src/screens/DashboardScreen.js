@@ -8,14 +8,10 @@ import useJobs from '../hooks/useJobs';
 import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
-import { getExpoPushToken, scheduleLocalJobReminder } from '../services/notificationService';
-import { colors } from '../theme/colors';
 
-const safeTime = (dateStr) => {
-  if (!dateStr) return 0;
-  const time = new Date(dateStr).getTime();
-  return isNaN(time) ? 0 : time;
-};
+// IMPORTING THE NEW SYNC FUNCTION
+import { getExpoPushToken, syncLocalNotifications } from '../services/notificationService';
+import { colors } from '../theme/colors';
 
 function SummaryCard({ big, label, sub, bg, fg, onPress }) {
   return (
@@ -42,32 +38,27 @@ export default function DashboardScreen() {
     async function syncPushToken() {
       if (settings && !settings.expoPushToken) {
         const token = await getExpoPushToken();
-        if (token) {
-          update({ expoPushToken: token });
-        }
+        if (token) update({ expoPushToken: token });
       }
     }
     syncPushToken();
   }, [settings]);
 
-  // BULLETPROOF ANDROID DATE CHECK
   const isToday = (dateString) => {
     if (!dateString) return false;
     const d = new Date(dateString);
     const today = new Date();
-    
     return d.getFullYear() === today.getFullYear() &&
            d.getMonth() === today.getMonth() &&
            d.getDate() === today.getDate();
   };
 
-  const todaysJobs = jobs
-    .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
-    .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
+  const todaysJobs = jobs.filter(j => j.status !== 'complete' && (j.needsDetails || isToday(j.scheduledDate)));
 
+  // SYNC ALL BELL ITEMS TO THE ANDROID OS NOTIFICATION SYSTEM
   useEffect(() => {
-    todaysJobs.forEach(job => scheduleLocalJobReminder(job));
-  }, [todaysJobs]);
+    syncLocalNotifications(todaysJobs, unpaidInvoices);
+  }, [todaysJobs, unpaidInvoices]);
 
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
   const confirmedCount = todaysJobs.filter(j => j.status === 'confirmed').length;

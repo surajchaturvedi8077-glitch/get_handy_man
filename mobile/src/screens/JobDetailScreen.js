@@ -205,6 +205,7 @@ export default function JobDetailScreen() {
   );
 }
 
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16 },

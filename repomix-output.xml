@@ -148,6 +148,8 @@ mobile/
               colors.xml
               strings.xml
               styles.xml
+            values-night/
+              colors.xml
           AndroidManifest.xml
       build.gradle
       debug.keystore
@@ -1743,24 +1745,6 @@ export default function JobMaterialsSection({ materials, onSave }) {
 }
 </file>
 
-<file path="mobile/src/components/jobs/JobStatusBadge.js">
-/**
- * JobStatusBadge.js
- * ------------------------------------------------------------------
- * Status chip for a job: "Needs details" (overrides status),
- * "Complete"/"Confirmed" (green), or "Pending" (orange).
- * ------------------------------------------------------------------
- */
-import Chip from '../ui/Chip';
-
-export default function JobStatusBadge({ job }) {
-  if (job.needsDetails) return <Chip tone="orange">Needs details</Chip>;
-  if (job.status === 'complete') return <Chip tone="green">Complete</Chip>;
-  if (job.status === 'confirmed') return <Chip tone="green">Confirmed</Chip>;
-  return <Chip tone="orange">Pending</Chip>;
-}
-</file>
-
 <file path="mobile/src/components/jobs/MaterialsEditor.js">
 /**
  * MaterialsEditor.js
@@ -2514,15 +2498,16 @@ export function SettingsProvider({ children }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setSettings(await settingsService.getSettings());
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+const refresh = useCallback(async () => {
+  setLoading(true);
+  try {
+    setSettings(await settingsService.getSettings());
+  } catch (err) {
+    console.log("Settings fetch failed, but caught safely:", err);
+  } finally {
+    setLoading(false);
+  }
+}, []);
   useEffect(() => {
     if (isAuthenticated) refresh();
   }, [isAuthenticated, refresh]);
@@ -3314,15 +3299,6 @@ export function money(value) {
 }
 </file>
 
-<file path="mobile/.gitignore">
-node_modules/
-.expo/
-dist/
-.env
-*.apk
-*.aab
-</file>
-
 <file path="mobile/babel.config.js">
 module.exports = function (api) {
   api.cache(true);
@@ -3550,6 +3526,8 @@ android/
             colors.xml
             strings.xml
             styles.xml
+          values-night/
+            colors.xml
         AndroidManifest.xml
     build.gradle
     debug.keystore
@@ -3918,6 +3896,10 @@ class MainApplication : Application(), ReactApplication {
     <item name="android:windowBackground">@drawable/splashscreen_logo</item>
   </style>
 </resources>
+</file>
+
+<file path="android/app/src/main/res/values-night/colors.xml">
+<resources/>
 </file>
 
 <file path="android/app/src/main/AndroidManifest.xml">
@@ -5929,20 +5911,13 @@ export default function JobMaterialsSection({ materials, onSave }) {
 </file>
 
 <file path="src/components/jobs/JobStatusBadge.js">
-/**
- * JobStatusBadge.js
- * ------------------------------------------------------------------
- * Status chip for a job: "Needs details" (overrides status),
- * "Complete"/"Confirmed" (green), or "Pending" (orange).
- * ------------------------------------------------------------------
- */
 import Chip from '../ui/Chip';
 
 export default function JobStatusBadge({ job }) {
   if (job.needsDetails) return <Chip tone="orange">Needs details</Chip>;
   if (job.status === 'complete') return <Chip tone="green">Complete</Chip>;
-  if (job.status === 'confirmed') return <Chip tone="green">Confirmed</Chip>;
-  return <Chip tone="orange">Pending</Chip>;
+  if (job.status === 'confirmed') return <Chip tone="yellow">Confirmed</Chip>; // CHANGED TO BLUE
+  return <Chip tone="red">Pending</Chip>;
 }
 </file>
 
@@ -6205,33 +6180,18 @@ export default function IncomeSection({ income }) {
 </file>
 
 <file path="src/components/report/ReportScreen.js">
-/**
- * ReportScreen.js
- * ------------------------------------------------------------------
- * Composes IncomeSection + ExpensesSection into the full Report tab.
- * Purely presentational — InvoicesScreen owns the useReport() hook.
- * Named "ReportScreen" (matching the web app's component) even
- * though it's rendered inline inside InvoicesScreen, not as its own
- * navigator screen.
- * ------------------------------------------------------------------
- */
-import { View, Text, StyleSheet } from 'react-native';
+import { View } from 'react-native';
 import IncomeSection from './IncomeSection';
 import ExpensesSection from './ExpensesSection';
 
 export default function ReportScreen({ report }) {
   return (
-    <View>
+    <View style={{ paddingBottom: 40 }}>
       <IncomeSection income={report.income} />
       <ExpensesSection expenses={report.expenses} profit={report.profit} />
-      <Text style={styles.footnote}>Based on all invoices raised to date.</Text>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  footnote: { fontSize: 10, color: '#9CA3AF', marginTop: 8, fontStyle: 'italic', lineHeight: 15 },
-});
 </file>
 
 <file path="src/components/settings/BusinessDetailsForm.js">
@@ -7158,14 +7118,10 @@ export default function useJobs(status) {
 </file>
 
 <file path="src/hooks/useReport.js">
-/**
- * useReport.js
- * ------------------------------------------------------------------
- */
 import { useCallback, useEffect, useState } from 'react';
 import * as reportService from '../services/reportService';
 
-export default function useReport() {
+export default function useReport(start, end) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -7174,13 +7130,13 @@ export default function useReport() {
     setLoading(true);
     setError(null);
     try {
-      setReport(await reportService.getBusinessReport());
+      setReport(await reportService.getBusinessReport(start, end));
     } catch (err) {
       setError(err.response?.data?.message || err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [start, end]);
 
   useEffect(() => {
     refresh();
@@ -7313,13 +7269,6 @@ const Tab = createBottomTabNavigator();
 
 const ICONS = { Home: '🏠', Enquiries: '📩', Jobs: '📅', Invoices: '💰' };
 
-const resetTab = (navigation, tabName, rootScreen) => ({
-  tabPress: (e) => {
-    e.preventDefault();
-    navigation.navigate(tabName, { screen: rootScreen });
-  },
-});
-
 export default function MainTabNavigator() {
   return (
     <Tab.Navigator
@@ -7329,32 +7278,15 @@ export default function MainTabNavigator() {
         tabBarInactiveTintColor: colors.gray,
         tabBarLabelStyle: { fontSize: 10, fontWeight: '700', paddingBottom: 5 },
         tabBarIcon: ({ color }) => (
-          // FIXED: Increased the font size of the tab icons drastically so they pop
           <Text style={{ fontSize: 24, color, marginBottom: -4 }}>{ICONS[route.name]}</Text>
         ),
         tabBarStyle: styles.tabBar,
       })}
     >
-      <Tab.Screen 
-        name="Home" 
-        component={DashboardStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Home', 'Dashboard')} 
-      />
-      <Tab.Screen 
-        name="Enquiries" 
-        component={EnquiriesStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Enquiries', 'EnquiriesList')} 
-      />
-      <Tab.Screen 
-        name="Jobs" 
-        component={JobsStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Jobs', 'JobsList')} 
-      />
-      <Tab.Screen 
-        name="Invoices" 
-        component={InvoicesStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Invoices', 'InvoicesList')} 
-      />
+      <Tab.Screen name="Home" component={DashboardStack} />
+      <Tab.Screen name="Enquiries" component={EnquiriesStack} />
+      <Tab.Screen name="Jobs" component={JobsStack} />
+      <Tab.Screen name="Invoices" component={InvoicesStack} />
     </Tab.Navigator>
   );
 }
@@ -7505,7 +7437,15 @@ export default function CustomersScreen({ navigation }) {
                <Text style={styles.detail}>{c.address || 'No address saved'}</Text>
                {c.notes ? <Text style={styles.notes}>Notes: {c.notes}</Text> : null}
              </View>
+             
+             {/* QUICK ACTION BUTTONS */}
              <View style={styles.actions}>
+               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Enquiries', { screen: 'NewQuote', params: { customer: c } })} style={styles.actionBtn}>
+                 <Text style={styles.actionBtnText}>📝 Quote</Text>
+               </TouchableOpacity>
+               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Home', { screen: 'NewJob', params: { customer: c } })} style={styles.actionBtn}>
+                 <Text style={styles.actionBtnText}>🛠️ Job</Text>
+               </TouchableOpacity>
                <TouchableOpacity onPress={() => openModal(c)} style={styles.iconBtn}><Text style={{fontSize: 16}}>✏️</Text></TouchableOpacity>
                <TouchableOpacity onPress={() => deleteCustomer(c._id)} style={styles.iconBtn}><Text style={{fontSize: 16}}>🗑️</Text></TouchableOpacity>
              </View>
@@ -7545,12 +7485,14 @@ const styles = StyleSheet.create({
   searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: colors.charcoal },
   content: { padding: 16 },
   addBtn: { backgroundColor: colors.orange, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 10, padding: 14, marginBottom: 12, flexDirection: 'row', alignItems: 'center' },
+  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 10, padding: 14, marginBottom: 12 },
   name: { fontSize: 15, fontWeight: '800', color: colors.charcoal, marginBottom: 4 },
   detail: { fontSize: 11.5, color: colors.gray, marginBottom: 2 },
   notes: { fontSize: 11, color: colors.orangeDeep, marginTop: 4, fontStyle: 'italic' },
-  actions: { flexDirection: 'row', gap: 12, paddingLeft: 10 },
-  iconBtn: { backgroundColor: colors.grayLight, padding: 8, borderRadius: 8 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 12, alignItems: 'center' },
+  actionBtn: { backgroundColor: colors.blueTint, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  actionBtnText: { color: colors.blue, fontSize: 11, fontWeight: '700' },
+  iconBtn: { backgroundColor: colors.grayLight, padding: 6, borderRadius: 8 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 12, color: colors.charcoal },
   empty: { textAlign: 'center', color: colors.gray, marginTop: 40, fontSize: 13 }
 });
@@ -7609,16 +7551,20 @@ export default function DashboardScreen() {
     syncPushToken();
   }, [settings]);
 
-  const today = new Date();
+  // BULLETPROOF ANDROID DATE CHECK
   const isToday = (dateString) => {
     if (!dateString) return false;
     const d = new Date(dateString);
-    return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+    const today = new Date();
+    
+    return d.getFullYear() === today.getFullYear() &&
+           d.getMonth() === today.getMonth() &&
+           d.getDate() === today.getDate();
   };
 
   const todaysJobs = jobs
     .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
-    .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); // CRASH PREVENTED HERE
+    .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
 
   useEffect(() => {
     todaysJobs.forEach(job => scheduleLocalJobReminder(job));
@@ -7848,46 +7794,82 @@ const styles = StyleSheet.create({
 </file>
 
 <file path="src/screens/EnquiryDetailScreen.js">
-import React from 'react';
-import { View, ScrollView, StyleSheet, Alert, Text } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, ScrollView, StyleSheet, Alert, Text, TextInput } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import ScreenHeader from '../components/layout/ScreenHeader';
-import EnquiryDetail from '../components/enquiries/EnquiryDetail';
+import QuoteComposer from '../components/enquiries/QuoteComposer';
+import EnquiryActions from '../components/enquiries/EnquiryActions';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import Button from '../components/ui/Button';
+import FieldLabel from '../components/ui/FieldLabel';
+import Chip from '../components/ui/Chip';
 import useEnquiry from '../hooks/useEnquiry';
+import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { apiClient, unwrap } from '../services/apiClient';
 import { colors } from '../theme/colors';
+
+const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
+const CHIP_TONE = { new: 'orange', quoted: 'blue', accepted: 'green', rejected: 'red' };
 
 export default function EnquiryDetailScreen() {
   const { params } = useRoute();
   const navigation = useNavigation();
   const { showToast } = useToast();
+  const { settings } = useSettings();
   
-  // Notice we pull 'refresh' from useEnquiry so we can instantly reload the screen after restoring
   const { enquiry, loading, error, reject, sendQuote, accept, refresh } = useEnquiry(params.id);
 
-  async function handleReject() {
+  const [localName, setLocalName] = useState('');
+  const [localPhone, setLocalPhone] = useState('');
+  const [localEmail, setLocalEmail] = useState('');
+  const [localAddress, setLocalAddress] = useState('');
+
+  useEffect(() => {
+    if (enquiry) {
+      setLocalName(enquiry.name || '');
+      setLocalPhone(enquiry.phone || '');
+      setLocalEmail(enquiry.email || '');
+      setLocalAddress(enquiry.address || '');
+    }
+  }, [enquiry]);
+
+  const handleUpdateEnquiry = async () => {
+    try {
+      await unwrap(apiClient.put(`/api/enquiries/${params.id}`, {
+        name: localName,
+        phone: localPhone,
+        email: localEmail,
+        address: localAddress
+      }));
+      refresh();
+      showToast('Enquiry details saved');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save changes');
+    }
+  };
+
+  const handleReject = async () => {
     await reject();
     showToast('Enquiry rejected');
-  }
+  };
 
-  // FIXED: The Restore/Reactivate handler
-  async function handleReactivate() {
+  const handleReactivate = async () => {
     try {
-      // Force the database status back to 'new'
       await unwrap(apiClient.put(`/api/enquiries/${params.id}`, { status: 'new' }));
       showToast('Enquiry Restored!');
-      refresh(); // Reload the data so the UI updates instantly
+      refresh();
     } catch (e) {
       Alert.alert("Error", "Could not restore the enquiry.");
     }
-  }
+  };
 
-  async function handleDelete() {
-    Alert.alert("Delete Enquiry", "Are you sure you want to permanently delete this enquiry?", [
+  const handleDelete = () => {
+    Alert.alert("Delete Enquiry", "Permanently delete this enquiry?", [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
           try {
@@ -7899,14 +7881,93 @@ export default function EnquiryDetailScreen() {
           }
       }}
     ]);
-  }
+  };
 
-  async function handleSendQuote(items) {
-    await sendQuote(items);
-    showToast('Quote sent');
-  }
+  const handleSendQuote = async (items) => {
+    try {
+      showToast('Generating Quote PDF...');
+      
+      const itemsHtml = items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`).join('');
+      const total = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
 
-  async function handleAccept() {
+      const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
+      const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${settings?.businessName || 'Get Handyman'}</h2>`;
+      const quoteDate = new Date().toLocaleDateString('en-GB');
+
+      const html = `
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <style>
+              @page { margin: 0; }
+              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
+              .header { display: flex; justify-content: space-between; align-items: flex-start; }
+              .logo { max-height: 100px; max-width: 200px; object-fit: contain; }
+              .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.5; }
+              .title-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; }
+              .biz-name { font-size: 24px; font-weight: 800; color: #1F2937; margin: 0; }
+              .doc-type { font-size: 22px; font-weight: 800; color: #1D4ED8; margin: 0; }
+              .divider { border-top: 2px solid #111827; margin: 15px 0 25px 0; }
+              .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #374151; }
+              .bill-to-details { line-height: 1.5; }
+              .items-table { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 11px; }
+              .items-table th { background-color: #111827; color: #ffffff; padding: 10px; font-weight: 700; text-align: left; }
+              .text-right { text-align: right; }
+              .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+              .balance-due { background-color: #1D4ED8; color: #ffffff; font-size: 14px; font-weight: 700; padding: 10px 15px; display: flex; justify-content: space-between; width: 220px; border-radius: 4px; }
+            </style>
+          </head>
+          <body>
+            <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${settings?.abn ? `ABN: ${settings.abn}` : ''}</div><div>${settings?.bizPhone || ''}</div><div>${settings?.bizEmail || ''}</div><div>${settings?.website || ''}</div></div></div>
+            <div class="title-row"><h1 class="biz-name">${settings?.businessName || 'Get Handyman'}</h1><h2 class="doc-type">QUOTE</h2></div>
+            <div class="divider"></div>
+            <div class="meta-row">
+              <div>
+                <div style="color: #9CA3AF; font-weight: 700; margin-bottom: 4px;">BILL TO:</div>
+                <div class="bill-to-details">
+                  <div style="font-weight: 700;">${localName}</div>
+                  <div>${localEmail}</div>
+                  <div>${localPhone}</div>
+                  ${localAddress ? `<div>${localAddress}</div>` : ''}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div><span style="color: #9CA3AF;">Quote Date:</span> ${quoteDate}</div>
+                <div><span style="color: #9CA3AF;">Currency:</span> AUD</div>
+                <div><span style="color: #9CA3AF;">Terms:</span> Due on receipt</div>
+              </div>
+            </div>
+            <table class="items-table">
+              <tr><th>DESCRIPTION</th><th class="text-right">AMOUNT</th></tr>
+              ${itemsHtml}
+            </table>
+            <div class="totals-container">
+              <div class="balance-due"><span>TOTAL</span><span>$${total.toFixed(2)}</span></div>
+            </div>
+            ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #4B5563; line-height: 1.5;">${settings.quoteMessage}</div>` : ''}
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { 
+          mimeType: 'application/pdf', 
+          dialogTitle: `Share Quote for ${localName}`,
+          UTI: '.pdf' 
+        });
+      }
+      
+      // Update Database Status
+      await sendQuote(items);
+      showToast('Quote sent successfully');
+    } catch (err) {
+      Alert.alert("Error", "Failed to generate or share quote.");
+    }
+  };
+
+  const handleAccept = async () => {
     try {
       const { job } = await accept();
       showToast('Job created from enquiry');
@@ -7914,29 +7975,73 @@ export default function EnquiryDetailScreen() {
     } catch (e) {
       Alert.alert("Error", "Could not accept enquiry.");
     }
-  }
+  };
 
   return (
     <View style={styles.screen}>
       <ScreenHeader title="ENQUIRY" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {loading && <LoadingState />}
         {error && <ErrorState>{error}</ErrorState>}
         
         {enquiry && (
-          <EnquiryDetail
-            enquiry={enquiry}
-            onReject={handleReject}
-            onSendQuote={handleSendQuote}
-            onAccept={handleAccept}
-            onReactivate={handleReactivate} // Passed the function down to the button here
-          />
-        )}
+          <>
+            <View style={styles.top}>
+              <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>
+                {enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}
+              </Chip>
+              {enquiry.when ? <Text style={styles.detail}>Preferred: {enquiry.when}</Text> : null}
+            </View>
 
-        {enquiry && (
-          <Button variant="outline" style={{ borderColor: colors.red, marginTop: 20 }} onPress={handleDelete}>
-            <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Enquiry</Text>
-          </Button>
+            {enquiry.message ? <Text style={styles.message}>{enquiry.message}</Text> : null}
+
+            {/* Editable Customer Fields */}
+            <FieldLabel style={{ marginTop: 14 }}>Customer Details</FieldLabel>
+            <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
+            <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+            <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+            <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Address" />
+            
+            <Button variant="primary" style={{ marginBottom: 20 }} onPress={handleUpdateEnquiry}>
+              💾 Save Customer Details
+            </Button>
+
+            {enquiry.status === 'new' && (
+              <>
+                <QuoteComposer initialItems={enquiry.quoteItems} onSend={handleSendQuote} />
+                <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>
+                  ✅ Accept Instantly (Confirmed on Phone)
+                </Button>
+                <Button variant="outline" onPress={handleReject} style={{ marginTop: 10 }}>
+                  Reject enquiry
+                </Button>
+              </>
+            )}
+
+            {enquiry.status === 'quoted' && (
+              <>
+                <Text style={styles.quoted}>Quote Sent</Text>
+                <EnquiryActions onReject={handleReject} onAccept={handleAccept} acceptLabel="Mark accepted & create job" />
+              </>
+            )}
+
+            {enquiry.status === 'accepted' && (
+              <Text style={styles.note}>This enquiry is accepted and linked to a job.</Text>
+            )}
+
+            {enquiry.status === 'rejected' && (
+              <>
+                <Text style={styles.noteError}>This enquiry was previously rejected.</Text>
+                <Button variant="primary" style={{ backgroundColor: colors.green, marginTop: 12 }} onPress={handleReactivate}>
+                  🔄 Reactivate & Edit Details
+                </Button>
+              </>
+            )}
+
+            <Button variant="outline" style={{ borderColor: colors.red, marginTop: 20 }} onPress={handleDelete}>
+              <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Enquiry</Text>
+            </Button>
+          </>
         )}
       </ScrollView>
     </View>
@@ -7946,12 +8051,19 @@ export default function EnquiryDetailScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16 },
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  detail: { fontSize: 12, color: colors.gray },
+  message: { padding: 12, backgroundColor: colors.offwhite, borderRadius: 8, fontSize: 12.5, color: colors.charcoal2, marginBottom: 10 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 8, color: colors.charcoal },
+  quoted: { fontWeight: '800', fontSize: 15, marginVertical: 10 },
+  note: { fontSize: 12.5, color: colors.green, fontWeight: '700', marginTop: 10 },
+  noteError: { fontSize: 12.5, color: colors.red, fontWeight: '700', marginTop: 10 },
 });
 </file>
 
 <file path="src/screens/InvoiceDetailScreen.js">
-import React, { useState } from 'react';
-import { View, ScrollView, Text, StyleSheet, Alert, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -7963,6 +8075,7 @@ import DiscountEditor from '../components/invoices/DiscountEditor';
 import InvoiceTotals from '../components/invoices/InvoiceTotals';
 import InvoiceActions from '../components/invoices/InvoiceActions';
 import CostItemsEditor from '../components/invoices/CostItemsEditor';
+import PhotoUploadButton from '../components/invoices/PhotoUploadButton';
 import FieldLabel from '../components/ui/FieldLabel';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
@@ -7972,20 +8085,9 @@ import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { money } from '../utils/money';
 import { colors } from '../theme/colors';
-import * as invoiceService from '../services/invoiceService'; // FIXED MISSING IMPORT
+import * as invoiceService from '../services/invoiceService';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
-  divider: { borderTopWidth: 1, borderTopColor: colors.grayLight, marginVertical: 12 },
-  hintText: { fontSize: 10, color: '#9CA3AF', marginBottom: 10 },
-  expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 12 },
-  expenseTotal: { fontSize: 17, fontWeight: '800', color: colors.charcoal },
-  gstBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.grayLight, marginBottom: 14 },
-  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' }
-});
 
 export default function InvoiceDetailScreen() {
   const { params } = useRoute();
@@ -7993,11 +8095,24 @@ export default function InvoiceDetailScreen() {
   const { showToast } = useToast();
   const { settings, update: updateSettings } = useSettings();
   const {
-    invoice, loading, error, updateItems, setDiscount, toggleGstIncluded,
+    invoice, loading, error, refresh, updateItems, setDiscount, toggleGstIncluded,
     setPaymentMode, togglePaidStatus, setCostItems, uploadCostItemPhoto,
   } = useInvoice(params.id);
 
-  const [localGstRate, setLocalGstRate] = useState(settings?.gstRate ? String(settings.gstRate) : '10');
+  const [localGstRate, setLocalGstRate] = useState('10');
+  const [localCustomer, setLocalCustomer] = useState('');
+  const [localPhone, setLocalPhone] = useState('');
+  const [localEmail, setLocalEmail] = useState('');
+  const [savingInvoice, setSavingInvoice] = useState(false);
+
+  useEffect(() => {
+    if (settings?.gstRate) setLocalGstRate(String(settings.gstRate));
+    if (invoice) {
+      setLocalCustomer(invoice.customer || '');
+      setLocalPhone(invoice.customerPhone || '');
+      setLocalEmail(invoice.customerEmail || '');
+    }
+  }, [invoice, settings]);
 
   if (loading || !invoice) return <View style={styles.screen}><LoadingState /></View>;
   if (error) return <View style={styles.screen}><ErrorState>{error}</ErrorState></View>;
@@ -8009,9 +8124,22 @@ export default function InvoiceDetailScreen() {
     showToast('GST Rate Updated');
   };
 
-  // EXPLICIT UPDATE BUTTON - gives visual confirmation since fields auto-save
-  const handleUpdateInvoice = () => {
-    showToast('✅ All invoice changes saved securely');
+  const handleUpdateInvoice = async () => {
+    Keyboard.dismiss();
+    setSavingInvoice(true);
+    try {
+      await invoiceService.updateInvoice(invoice._id, {
+        customer: localCustomer,
+        customerPhone: localPhone,
+        customerEmail: localEmail
+      });
+      refresh();
+      showToast('✅ Invoice details updated successfully');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save changes');
+    } finally {
+      setSavingInvoice(false);
+    }
   };
 
   const handleDeleteInvoice = () => {
@@ -8035,7 +8163,7 @@ export default function InvoiceDetailScreen() {
 
   const generateHTMLString = () => {
     const itemsHtml = invoice.items && invoice.items.length 
-      ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB;">${i.name ? i.name : ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB;">${i.qty ? i.qty : 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${parseFloat(i.amt ? i.amt : 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB;">$${(parseFloat(i.amt ? i.amt : 0) * parseInt(i.qty ? i.qty : 1)).toFixed(2)}</td></tr>`).join('')
+      ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name ? i.name : ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.qty ? i.qty : 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt ? i.amt : 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${(parseFloat(i.amt ? i.amt : 0) * parseInt(i.qty ? i.qty : 1)).toFixed(2)}</td></tr>`).join('')
       : '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
 
     const bsbStr = settings?.bsb || '';
@@ -8055,9 +8183,9 @@ export default function InvoiceDetailScreen() {
     const invDate = new Date(invoice.date).toLocaleDateString('en-GB');
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-GB') : invDate;
     
-    const customerName = invoice.customer || 'Customer Name';
-    const customerEmailHtml = invoice.customerEmail ? `<div>${invoice.customerEmail}</div>` : '';
-    const customerPhoneHtml = invoice.customerPhone ? `<div>${invoice.customerPhone}</div>` : '';
+    const customerName = localCustomer || 'Customer Name';
+    const customerEmailHtml = localEmail ? `<div>${localEmail}</div>` : '';
+    const customerPhoneHtml = localPhone ? `<div>${localPhone}</div>` : '';
     
     const invoiceNum = invoice.number ? invoice.number.replace('GH-', '') : '0';
     const termsStr = invoice.terms === 'Due on receipt' ? 'NET 0' : invoice.terms;
@@ -8072,7 +8200,7 @@ export default function InvoiceDetailScreen() {
     const balanceAmt = invoice.status === 'paid' ? '0.00' : totalDue;
 
     const paymentDetailsHtml = bankNameStr ? `
-      <div style="margin-top: 40px; font-size: 10px; color: #6B7280; line-height: 1.6;">
+      <div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;">
         <strong>Payment Details</strong><br/>
         Bank: ${bankNameStr}<br/>
         BSB: ${bsbStr}<br/>
@@ -8083,6 +8211,13 @@ export default function InvoiceDetailScreen() {
     ` : '';
 
     const discountHtml = invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${discAmt}</span></div>` : '';
+
+    const completionPhotoHtml = invoice.completionPhotoUrl ? `
+      <div style="margin-top: 30px; page-break-inside: avoid;">
+        <h3 style="color: #374151; font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px;">Job Completion Proof</h3>
+        <img src="${invoice.completionPhotoUrl.startsWith('http') ? invoice.completionPhotoUrl : `${BASE_URL}${invoice.completionPhotoUrl}`}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1px solid #E5E7EB;" />
+      </div>
+    ` : '';
 
     return `
       <html>
@@ -8105,7 +8240,7 @@ export default function InvoiceDetailScreen() {
             .items-table td { padding: 12px 10px; color: #374151; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
-            .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+            .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid; }
             .totals { width: 260px; font-size: 11px; color: #374151; }
             .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; }
             .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
@@ -8142,6 +8277,7 @@ export default function InvoiceDetailScreen() {
             </div>
           </div>
           ${paymentDetailsHtml}
+          ${completionPhotoHtml}
         </body>
       </html>
     `;
@@ -8169,6 +8305,16 @@ export default function InvoiceDetailScreen() {
     <View style={styles.screen}>
       <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => navigation.navigate('InvoicesList')} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        
+        <FieldLabel>Customer Details</FieldLabel>
+        <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
+        <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+        <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+
+        <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
+          {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
+        </Button>
+
         <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
         <View style={{ marginBottom: 12 }}>
           <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
@@ -8200,6 +8346,70 @@ export default function InvoiceDetailScreen() {
         <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
         <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
         
+        {/* COMPLETION PHOTO UI */}
+        <FieldLabel style={{ marginTop: 24 }}>Job Completion Photo (Sent with PDF Invoice)</FieldLabel>
+        {invoice.completionPhotoUrl ? (
+          <View style={styles.photoAttachedBox}>
+            <PhotoUploadButton photoUrl={invoice.completionPhotoUrl} onUpload={() => {}} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={{ fontSize: 11, color: colors.gray, marginBottom: 6 }}>Photo attached to PDF.</Text>
+              <Button variant="outline" style={{ borderColor: colors.red, paddingVertical: 6 }} onPress={async () => {
+                try {
+                  await invoiceService.updateInvoice(invoice._id, { completionPhotoUrl: null });
+                  showToast('Photo removed');
+                  refresh();
+                } catch(e) { Alert.alert('Error', 'Could not remove photo'); }
+              }}>
+                <Text style={{ color: colors.red, fontWeight: '700', fontSize: 12 }}>🗑️ Remove Photo</Text>
+              </Button>
+            </View>
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <PhotoUploadButton 
+              onUpload={async (asset) => {
+                try {
+                  await invoiceService.uploadCompletionPhoto(invoice._id, asset);
+                  showToast('Completion photo attached!');
+                  refresh();
+                } catch (e) { Alert.alert('Error', 'Upload failed'); }
+              }} 
+            />
+            <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Tap the icon to attach a completion photo.</Text>
+          </View>
+        )}
+
+        <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
+        <View style={styles.expenseCard}>
+          <Text style={styles.cardTitle}>Materials</Text>
+          <CostItemsEditor
+            items={invoice.costs?.materials}
+            kind="materials"
+            onSetItems={(items) => setCostItems('materials', items)}
+            onUploadPhoto={async (idx, asset) => {
+              try {
+                await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset);
+                showToast('Material photo saved!');
+                refresh();
+              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
+            }}
+          />
+          <View style={styles.divider} />
+          <Text style={styles.cardTitle}>Other Expenses</Text>
+          <CostItemsEditor
+            items={invoice.costs?.other}
+            kind="other"
+            onSetItems={(items) => setCostItems('other', items)}
+            onUploadPhoto={async (idx, asset) => {
+              try {
+                await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset);
+                showToast('Expense photo saved!');
+                refresh();
+              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
+            }}
+          />
+        </View>
+
         <InvoiceActions
           isPaid={isPaid}
           customerEmail={invoice.customerEmail}
@@ -8209,7 +8419,6 @@ export default function InvoiceDetailScreen() {
           onShare={handleSharePdf}
         />
 
-        {/* Delete Invoice Button */}
         <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={handleDeleteInvoice}>
           <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
         </Button>
@@ -8217,28 +8426,43 @@ export default function InvoiceDetailScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 8, color: colors.charcoal },
+  divider: { borderTopWidth: 1, borderTopColor: colors.grayLight, marginVertical: 12 },
+  expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 6 },
+  cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.blue, marginBottom: 10 },
+  gstBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.grayLight, marginBottom: 14 },
+  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' },
+  photoAttachedBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.offwhite, padding: 12, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: colors.grayLight }
+});
 </file>
 
 <file path="src/screens/InvoicesScreen.js">
-import { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TextInput } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import InvoiceTabs from '../components/invoices/InvoiceTabs';
 import InvoiceList from '../components/invoices/InvoiceList';
 import ReportScreen from '../components/report/ReportScreen';
+import SegmentedControl from '../components/ui/SegmentedControl';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
+import Button from '../components/ui/Button';
 import useInvoices from '../hooks/useInvoices';
+import useReport from '../hooks/useReport';
 import { colors } from '../theme/colors';
 
 function InvoiceListPane({ tab }) {
   const { invoices, loading, error } = useInvoices(tab);
-  const [searchQuery, setSearchQuery] = useState(''); // NEW: Search state
+  const [searchQuery, setSearchQuery] = useState('');
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState>{error}</ErrorState>;
 
-  // NEW: Filter logic for the search bar
   const filteredInvoices = invoices.filter(i => 
     searchQuery === '' ||
     i.customer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -8247,7 +8471,6 @@ function InvoiceListPane({ tab }) {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* NEW: Global Search Bar */}
       <TextInput 
         style={styles.searchBar} 
         placeholder="Search by customer name or invoice #..." 
@@ -8261,11 +8484,98 @@ function InvoiceListPane({ tab }) {
 }
 
 function ReportPane() {
-  const useReport = require('../hooks/useReport').default;
-  const { report, loading, error } = useReport();
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState>{error}</ErrorState>;
-  return <ReportScreen report={report} />;
+  const [period, setPeriod] = useState('month'); 
+  const [refDate, setRefDate] = useState(new Date());
+  
+  const [customStart, setCustomStart] = useState(new Date(new Date().setDate(new Date().getDate() - 7)));
+  const [customEnd, setCustomEnd] = useState(new Date());
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState('start');
+
+  const shiftDate = (dir) => {
+    const next = new Date(refDate);
+    if (period === 'day') next.setDate(next.getDate() + dir);
+    if (period === 'month') next.setMonth(next.getMonth() + dir);
+    if (period === 'year') next.setFullYear(next.getFullYear() + dir);
+    setRefDate(next);
+  };
+
+  let start = null, end = null, label = "All Time";
+  const d = new Date(refDate);
+
+  if (period === 'day') {
+    start = new Date(d.setHours(0,0,0,0));
+    end = new Date(d.setHours(23,59,59,999));
+    label = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  } else if (period === 'month') {
+    start = new Date(d.getFullYear(), d.getMonth(), 1);
+    end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23,59,59,999);
+    label = start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  } else if (period === 'year') {
+    start = new Date(d.getFullYear(), 0, 1);
+    end = new Date(d.getFullYear(), 11, 31, 23,59,59,999);
+    label = start.getFullYear().toString();
+  } else if (period === 'custom') {
+    start = new Date(customStart);
+    start.setHours(0,0,0,0);
+    end = new Date(customEnd);
+    end.setHours(23,59,59,999);
+  }
+
+  const { report, loading, error } = useReport(start?.toISOString(), end?.toISOString());
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.filterControlRow}>
+        <SegmentedControl
+          options={[
+            {label: 'Day', value: 'day'}, 
+            {label: 'Month', value: 'month'}, 
+            {label: 'Year', value: 'year'},
+            {label: 'Custom', value: 'custom'}
+          ]}
+          value={period}
+          onChange={setPeriod}
+        />
+      </View>
+
+      {period === 'custom' && (
+        <View style={styles.customDateRow}>
+          <Button variant="outline" style={{flex: 1, paddingVertical: 8}} onPress={() => { setPickerTarget('start'); setShowPicker(true); }}>
+            Start: {customStart.toLocaleDateString('en-GB')}
+          </Button>
+          <Button variant="outline" style={{flex: 1, paddingVertical: 8}} onPress={() => { setPickerTarget('end'); setShowPicker(true); }}>
+            End: {customEnd.toLocaleDateString('en-GB')}
+          </Button>
+        </View>
+      )}
+
+      {(period !== 'all' && period !== 'custom') && (
+        <View style={styles.dateNavRow}>
+          <TouchableOpacity onPress={() => shiftDate(-1)} style={styles.arrowBtn}><Text style={styles.arrowText}>◀</Text></TouchableOpacity>
+          <Text style={styles.dateLabel}>{label}</Text>
+          <TouchableOpacity onPress={() => shiftDate(1)} style={styles.arrowBtn}><Text style={styles.arrowText}>▶</Text></TouchableOpacity>
+        </View>
+      )}
+
+      {showPicker && (
+        <DateTimePicker
+          value={pickerTarget === 'start' ? customStart : customEnd}
+          mode="date"
+          display="default"
+          onChange={(event, date) => {
+            setShowPicker(false);
+            if (date) {
+              if (pickerTarget === 'start') setCustomStart(date);
+              else setCustomEnd(date);
+            }
+          }}
+        />
+      )}
+
+      {loading ? <LoadingState /> : error ? <ErrorState>{error}</ErrorState> : <ReportScreen report={report} />}
+    </View>
+  );
 }
 
 export default function InvoicesScreen() {
@@ -8290,7 +8600,13 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
   body: { flex: 1 },
   bodyContent: { padding: 14 },
-  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal }
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
+  filterControlRow: { marginBottom: 16 },
+  customDateRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  dateNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 8, padding: 8, marginBottom: 16, borderWidth: 1, borderColor: colors.grayLight },
+  arrowBtn: { padding: 8 },
+  arrowText: { fontSize: 16, color: colors.charcoal },
+  dateLabel: { fontWeight: '800', fontSize: 14, color: colors.charcoal }
 });
 </file>
 
@@ -8308,6 +8624,7 @@ import useToast from '../hooks/useToast';
 import { openPhone, openEmail, openMaps } from '../utils/linking';
 import { money } from '../utils/money';
 import { colors } from '../theme/colors';
+import * as invoiceService from '../services/invoiceService';
 
 export default function JobDetailScreen() {
   const { params } = useRoute();
@@ -8326,7 +8643,23 @@ export default function JobDetailScreen() {
   const handleSaveDetails = async (payload) => {
     try {
       await saveDetails(payload);
+
+      // SYNCHRONIZE JOB COST DIRECTLY TO LINKED INVOICE
+      if (payload.labour !== undefined && job.invoiceId) {
+        try {
+          const inv = await invoiceService.getInvoice(job.invoiceId);
+          if (inv && inv.items && inv.items.length > 0) {
+            const updatedItems = [...inv.items];
+            updatedItems[0].amt = payload.labour; // Syncs the new price to the first line item
+            await invoiceService.updateInvoice(job.invoiceId, { items: updatedItems });
+          }
+        } catch (invErr) {
+          console.log("Invoice sync failed silently", invErr);
+        }
+      }
+
       setIsEditingJob(false);
+      setEditingPrice(false); 
       showToast('Job details saved');
     } catch (err) {
       let errorText = 'An unknown error occurred.';
@@ -8408,7 +8741,6 @@ export default function JobDetailScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Services</Text>
                 <Text style={styles.value}>
-                  {/* FIXED: Array Validation before joining */}
                   {(Array.isArray(job.services) && job.services.length > 0) ? job.services.join(', ') : (job.service || 'None')}
                 </Text>
               </View>
@@ -8432,7 +8764,7 @@ export default function JobDetailScreen() {
               {editingPrice ? (
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <TextInput style={styles.priceInput} value={priceInput} onChangeText={setPriceInput} keyboardType="numeric" autoFocus />
-                  <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={async () => { await handleSaveDetails({ labour: Number(priceInput) }); setEditingPrice(false); }}>Save</Button>
+                  <Button variant="primary" style={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={() => handleSaveDetails({ labour: Number(priceInput) })}>Save</Button>
                 </View>
               ) : (
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -8521,29 +8853,31 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import JobFilterTabs from '../components/jobs/JobFilterTabs';
 import JobListItem from '../components/jobs/JobListItem';
 import SegmentedControl from '../components/ui/SegmentedControl';
 import LoadingState from '../components/ui/LoadingState';
+import ErrorState from '../components/ui/ErrorState';
 import useJobs from '../hooks/useJobs';
 import { colors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// FIXED: Prevents Hermes Engine Fatal Crash by never returning NaN during sorting
 const safeTime = (dateStr) => {
-  if (!dateStr) return 0;
+  if (!dateStr) return Infinity; // Pushes jobs with no scheduled date to the bottom of the list
   const time = new Date(dateStr).getTime();
-  return isNaN(time) ? 0 : time;
+  return isNaN(time) ? Infinity : time;
 };
 
 export default function JobsScreen() {
   const navigation = useNavigation();
-  const { jobs, loading } = useJobs('all');
-  
   const [viewMode, setViewMode] = useState('list'); 
-  const [listFilter, setListFilter] = useState('all'); 
+  const [filter, setFilter] = useState('all'); 
   const [searchQuery, setSearchQuery] = useState('');
+
+  // useJobs automatically hits the backend API whenever 'filter' changes
+  const { jobs, loading, error } = useJobs(filter);
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const year = currentDate.getFullYear();
@@ -8568,86 +8902,84 @@ export default function JobsScreen() {
 
   const filteredJobs = jobs.filter(j => {
     const q = searchQuery.toLowerCase();
-    const matchesSearch = q === '' || 
+    return q === '' || 
       (j.name && j.name.toLowerCase().includes(q)) ||
       (j.address && j.address.toLowerCase().includes(q)) ||
       (Array.isArray(j.services) && j.services.some(s => s && s.toLowerCase().includes(q))) ||
       (typeof j.service === 'string' && j.service.toLowerCase().includes(q));
-
-    if (!matchesSearch) return false;
-
-    if (listFilter === 'complete') return j.status === 'complete';
-    if (listFilter === 'incomplete') return j.status !== 'complete';
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const isJobToday = j.scheduledDate && new Date(j.scheduledDate).toDateString() === today.toDateString();
-    
-    if (listFilter === 'today') return j.status !== 'complete' && isJobToday;
-    if (listFilter === 'upcoming') {
-      if (!j.scheduledDate) return true;
-      const jobDate = new Date(j.scheduledDate);
-      jobDate.setHours(0, 0, 0, 0);
-      return j.status !== 'complete' && jobDate > today;
-    }
-    return true;
-  }).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); // CRASH PREVENTED HERE
+  }).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
 
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.header}>
-        <Text style={styles.title}>JOBS</Text>
+        <View style={styles.headerTop}>
+          <Text style={styles.title}>JOBS</Text>
+          {/* NEW: Explicit + New Job Button on the Jobs screen */}
+          <TouchableOpacity onPress={() => navigation.navigate('Home', { screen: 'NewJob' })} style={styles.addBtn}>
+            <Text style={styles.addBtnText}>+ New Job</Text>
+          </TouchableOpacity>
+        </View>
         <SegmentedControl 
           options={[{ value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]}
           value={viewMode} onChange={setViewMode} dark 
         />
       </SafeAreaView>
 
-      {loading ? ( <LoadingState /> ) : (
-        <ScrollView style={styles.content}>
-          {viewMode === 'list' ? (
-            <View style={styles.listContainer}>
-              <TextInput style={styles.searchBar} placeholder="Search jobs by client, address..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor={colors.gray} />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-                {['all', 'today', 'upcoming', 'complete', 'incomplete'].map(f => (
-                  <TouchableOpacity key={f} style={[styles.filterChip, listFilter === f && styles.filterChipActive]} onPress={() => setListFilter(f)}>
-                    <Text style={[styles.filterText, listFilter === f && styles.filterTextActive]}>{f.charAt(0).toUpperCase() + f.slice(1)}</Text>
+      <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+        {viewMode === 'list' ? (
+          <View style={styles.listContainer}>
+            {/* RESTORED: Accepted | Confirmed | Complete | All */}
+            <View style={styles.tabs}>
+              <JobFilterTabs value={filter} onChange={setFilter} />
+            </View>
+            
+            <TextInput 
+              style={styles.searchBar} 
+              placeholder="Search jobs by client, address..." 
+              value={searchQuery} 
+              onChangeText={setSearchQuery} 
+              placeholderTextColor={colors.gray} 
+            />
+            
+            {loading && <LoadingState />}
+            {error && <ErrorState>{error}</ErrorState>}
+            
+            {!loading && !error && filteredJobs.length > 0 ? ( 
+              filteredJobs.map(j => <JobListItem key={j._id} job={j} />) 
+            ) : ( 
+              !loading && <Text style={styles.emptyText}>No jobs match this filter.</Text> 
+            )}
+          </View>
+        ) : (
+          <View style={styles.calendarContainer}>
+            <View style={styles.monthNav}>
+              <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
+              <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
+              <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
+            </View>
+            <View style={styles.daysHeader}>
+              {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
+            </View>
+            <View style={styles.grid}>
+              {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
+              {daysArray.map(day => {
+                const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
+                const count = jobsPerDay[day] || 0;
+                return (
+                  <TouchableOpacity key={day} style={[styles.dayCell, isTodayCell && styles.todayCell]} onPress={() => navigation.navigate('DayDetail', { day, year, month })}>
+                    <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
+                    {count > 0 && (
+                      <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
+                        <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
+                      </View>
+                    )}
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-              {filteredJobs.length > 0 ? ( filteredJobs.map(j => <JobListItem key={j._id} job={j} />) ) : ( <Text style={styles.emptyText}>No jobs match this filter.</Text> )}
+                );
+              })}
             </View>
-          ) : (
-            <View style={styles.calendarContainer}>
-              <View style={styles.monthNav}>
-                <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
-                <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
-                <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
-              </View>
-              <View style={styles.daysHeader}>
-                {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
-              </View>
-              <View style={styles.grid}>
-                {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
-                {daysArray.map(day => {
-                  const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
-                  const count = jobsPerDay[day] || 0;
-                  return (
-                    <TouchableOpacity key={day} style={[styles.dayCell, isTodayCell && styles.todayCell]} onPress={() => navigation.navigate('DayDetail', { day, year, month })}>
-                      <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
-                      {count > 0 && (
-                        <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
-                          <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-        </ScrollView>
-      )}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -8655,15 +8987,14 @@ export default function JobsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.offwhite },
   header: { backgroundColor: colors.charcoal, paddingHorizontal: 16, paddingBottom: 14 },
-  title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1 },
+  addBtn: { backgroundColor: colors.orange, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
+  addBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   content: { flex: 1 },
   listContainer: { padding: 14 },
-  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 12, color: colors.charcoal },
-  filterScroll: { flexDirection: 'row', marginBottom: 14 },
-  filterChip: { paddingVertical: 6, paddingHorizontal: 13, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, marginRight: 8 },
-  filterChipActive: { backgroundColor: colors.charcoal, borderColor: colors.charcoal },
-  filterText: { fontSize: 11, fontWeight: '700', color: colors.gray },
-  filterTextActive: { color: '#fff' },
+  tabs: { marginBottom: 14 },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
   emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
   calendarContainer: { padding: 14 },
   monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.grayLight },
@@ -8708,9 +9039,9 @@ const styles = StyleSheet.create({
 </file>
 
 <file path="src/screens/NewJobScreen.js">
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import Button from '../components/ui/Button';
@@ -8721,6 +9052,7 @@ import { colors } from '../theme/colors';
 
 export default function NewJobScreen() {
   const navigation = useNavigation();
+  const { params } = useRoute();
   const { showToast } = useToast();
   const [saving, setSaving] = useState(false);
   const debounceTimer = useRef(null);
@@ -8739,6 +9071,21 @@ export default function NewJobScreen() {
   const [services, setServices] = useState(['General Handyman']);
   const [materials, setMaterials] = useState([]);
   const [extraFields, setExtraFields] = useState([]);
+
+  // Prefill if navigating from customer screen
+  useEffect(() => {
+    if (params?.customer) {
+      setForm(prev => ({
+        ...prev,
+        name: params.customer.name || '',
+        phone: params.customer.phone || '',
+        email: params.customer.email || '',
+        address: params.customer.address || '',
+        suburb: params.customer.suburb || '',
+        postcode: params.customer.postcode || '',
+      }));
+    }
+  }, [params?.customer]);
 
   const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -8805,7 +9152,6 @@ export default function NewJobScreen() {
     }
   };
 
-  // NEW: Live Google Maps Search
   const searchPlaces = async (text) => {
     updateForm('address', text);
     if (text.length < 3) { setSuggestions([]); return; }
@@ -8813,7 +9159,7 @@ export default function NewJobScreen() {
     debounceTimer.current = setTimeout(async () => {
       try {
         const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
-        if (!key) return; // Failsafe if key isn't set yet
+        if (!key) return;
         const res = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&components=country:au&key=${key}`);
         const data = await res.json();
         setSuggestions(data.predictions || []);
@@ -8821,7 +9167,6 @@ export default function NewJobScreen() {
     }, 500);
   };
 
-  // NEW: Exact Pin-Drop GPS Capture & Postcode Autofill
   const handleSelectPlace = async (placeId, description) => {
     updateForm('address', description);
     setSuggestions([]);
@@ -8875,7 +9220,6 @@ export default function NewJobScreen() {
           </View>
         </View>
 
-        {/* UPDATED: Google Maps Autocomplete Dropdown */}
         <View style={styles.fieldRow}>
           <Text style={styles.icon}>📍</Text>
           <View style={{ flex: 1, zIndex: 10 }}>
@@ -8959,9 +9303,9 @@ const styles = StyleSheet.create({
 </file>
 
 <file path="src/screens/NewQuoteScreen.js">
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import ScreenHeader from '../components/layout/ScreenHeader';
@@ -8975,6 +9319,7 @@ const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
 
 export default function NewQuoteScreen() {
   const navigation = useNavigation();
+  const { params } = useRoute();
   const { showToast } = useToast();
   const { settings } = useSettings();
   const [generating, setGenerating] = useState(false);
@@ -8983,6 +9328,19 @@ export default function NewQuoteScreen() {
     name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt'
   });
   const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150.00' }]);
+
+  // Prefill if navigating from customer screen
+  useEffect(() => {
+    if (params?.customer) {
+      setForm(prev => ({
+        ...prev,
+        name: params.customer.name || '',
+        phone: params.customer.phone || '',
+        email: params.customer.email || '',
+        address: params.customer.address || '',
+      }));
+    }
+  }, [params?.customer]);
 
   const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -9065,7 +9423,6 @@ export default function NewQuoteScreen() {
 
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       
-      // Forces native sharing dialog to work across all apps (WhatsApp, Gmail, Drive, etc.)
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { 
           mimeType: 'application/pdf', 
@@ -9599,6 +9956,20 @@ export const uploadCostItemPhoto = async (id, kind, index, asset) => {
   if (!data.success) throw new Error(data.message);
   return data.data;
 };
+
+export const uploadCompletionPhoto = async (id, asset) => {
+  const form = new FormData();
+  form.append('photo', {
+    uri: Platform.OS === 'android' ? asset.uri : asset.uri.replace('file://', ''),
+    name: asset.fileName || `completion-${Date.now()}.jpg`,
+    type: asset.mimeType || 'image/jpeg',
+  });
+  return unwrap(
+    apiClient.post(`/api/invoices/${id}/completion-photo`, form, { 
+      headers: { 'Content-Type': 'multipart/form-data' } 
+    })
+  );
+};
 </file>
 
 <file path="src/services/jobService.js">
@@ -9629,7 +10000,6 @@ export const markJobComplete = (id) => unwrap(apiClient.post(`/api/jobs/${id}/co
 <file path="src/services/notificationService.js">
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 
 // 1. Set handler safely so it doesn't crash if unsupported
 try {
@@ -9644,15 +10014,8 @@ try {
   console.log("Notification handler initialization skipped.");
 }
 
-// 2. Safely get the push token, bypassing Expo Go restrictions
+// 2. Safely get the push token
 export async function getExpoPushToken() {
-  // Expo Go on Android no longer supports remote push notifications
-  // Returning null here prevents the fatal startup crash
-  if (Constants.appOwnership === 'expo' && Platform.OS === 'android') {
-    console.log("Remote push notifications are not supported in Expo Go on Android. Skipping.");
-    return null;
-  }
-
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -9712,16 +10075,13 @@ export async function scheduleLocalJobReminder(job) {
 </file>
 
 <file path="src/services/reportService.js">
-/**
- * reportService.js
- * ------------------------------------------------------------------
- * Fetches the business Report (Reported income, Cash Bonus, GST on
- * material, Reportable GST, expenses, profit) from the backend.
- * ------------------------------------------------------------------
- */
 import { apiClient, unwrap } from './apiClient';
 
-export const getBusinessReport = () => unwrap(apiClient.get('/api/report'));
+export const getBusinessReport = (start, end) => {
+  let url = '/api/report';
+  if (start && end) url += `?start=${start}&end=${end}`;
+  return unwrap(apiClient.get(url));
+};
 </file>
 
 <file path="src/services/settingsService.js">
@@ -9864,10 +10224,11 @@ dist/
 .env
 *.apk
 *.aab
+google-services.json
 </file>
 
 <file path="App.js">
-import React, { useEffect } from 'react';
+import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -9876,13 +10237,8 @@ import { AuthProvider } from './src/context/AuthContext';
 import { SettingsProvider } from './src/context/SettingsContext';
 import { ToastProvider } from './src/context/ToastContext';
 import RootNavigator from './src/navigation/RootNavigator';
-import { registerForPushNotificationsAsync } from './src/services/notificationService';
 
 export default function App() {
-  useEffect(() => {
-    registerForPushNotificationsAsync();
-  }, []);
-
   return (
     <SafeAreaProvider>
       <AuthProvider>
@@ -10006,6 +10362,7 @@ registerRootComponent(App);
     "@react-navigation/native-stack": "^6.11.0",
     "axios": "^1.7.2",
     "expo": "~57.0.24",
+    "expo-constants": "~57.0.19",
     "expo-image-picker": "~57.0.19",
     "expo-notifications": "~57.0.20",
     "expo-print": "~57.0.2",
@@ -10682,6 +11039,10 @@ class MainApplication : Application(), ReactApplication {
 </resources>
 </file>
 
+<file path="mobile/android/app/src/main/res/values-night/colors.xml">
+<resources/>
+</file>
+
 <file path="mobile/android/app/src/main/AndroidManifest.xml">
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.CAMERA"/>
@@ -10718,7 +11079,7 @@ class MainApplication : Application(), ReactApplication {
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
-
+apply plugin: "com.google.gms.google-services"
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
 /**
@@ -10897,6 +11258,8 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+apply plugin: 'com.google.gms.google-services'
 </file>
 
 <file path="mobile/android/gradle/wrapper/gradle-wrapper.properties">
@@ -10940,6 +11303,7 @@ buildscript {
     mavenCentral()
   }
   dependencies {
+classpath('com.google.gms:google-services:4.4.1')
     classpath('com.android.tools.build:gradle')
     classpath('com.facebook.react:react-native-gradle-plugin')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
@@ -11736,6 +12100,18 @@ const styles = StyleSheet.create({
 });
 </file>
 
+<file path="mobile/src/components/jobs/JobStatusBadge.js">
+import React from 'react';
+import Chip from '../ui/Chip';
+
+export default function JobStatusBadge({ job }) {
+  if (job.needsDetails) return <Chip tone="orange">Needs details</Chip>;
+  if (job.status === 'complete') return <Chip tone="green">Complete</Chip>;
+  if (job.status === 'confirmed') return <Chip tone="blue">Confirmed</Chip>;
+  return <Chip tone="red">Pending</Chip>;
+}
+</file>
+
 <file path="mobile/src/components/jobs/JobSummaryCard.js">
 import { View, Text, StyleSheet } from 'react-native';
 import { money } from '../../utils/money';
@@ -12115,6 +12491,16 @@ export const openMaps = async (address, lat, lng) => {
 };
 </file>
 
+<file path="mobile/.gitignore">
+node_modules/
+.expo/
+dist/
+.env
+*.apk
+*.aab
+google-services.json
+</file>
+
 <file path="mobile/app.json">
 {
   "expo": {
@@ -12130,6 +12516,8 @@ export const openMaps = async (address, lat, lng) => {
     },
     "android": {
       "package": "au.com.gethandyman.worker",
+      "googleServicesFile": "./google-services.json",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1F2937"
@@ -12139,6 +12527,13 @@ export const openMaps = async (address, lat, lng) => {
         "READ_EXTERNAL_STORAGE",
         "READ_MEDIA_IMAGES"
       ]
+    },
+    "androidStatusBar": {
+      "translucent": false,
+      "backgroundColor": "#1F2937"
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#ffffff"
     },
     "extra": {
       "eas": {
@@ -12789,72 +13184,6 @@ export default function DashboardStack() {
 }
 </file>
 
-<file path="mobile/src/navigation/MainTabNavigator.js">
-import React from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, StyleSheet } from 'react-native';
-import { colors } from '../theme/colors';
-
-import DashboardStack from './DashboardStack';
-import EnquiriesStack from './EnquiriesStack';
-import JobsStack from './JobsStack';
-import InvoicesStack from './InvoicesStack';
-
-const Tab = createBottomTabNavigator();
-
-const ICONS = { Home: '🏠', Enquiries: '📩', Jobs: '📅', Invoices: '💰' };
-
-const resetTab = (navigation, tabName, rootScreen) => ({
-  tabPress: (e) => {
-    e.preventDefault();
-    navigation.navigate(tabName, { screen: rootScreen });
-  },
-});
-
-export default function MainTabNavigator() {
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.orange,
-        tabBarInactiveTintColor: colors.gray,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '700', paddingBottom: 5 },
-        tabBarIcon: ({ color }) => (
-          // FIXED: Increased the font size of the tab icons drastically so they pop
-          <Text style={{ fontSize: 24, color, marginBottom: -4 }}>{ICONS[route.name]}</Text>
-        ),
-        tabBarStyle: styles.tabBar,
-      })}
-    >
-      <Tab.Screen 
-        name="Home" 
-        component={DashboardStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Home', 'Dashboard')} 
-      />
-      <Tab.Screen 
-        name="Enquiries" 
-        component={EnquiriesStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Enquiries', 'EnquiriesList')} 
-      />
-      <Tab.Screen 
-        name="Jobs" 
-        component={JobsStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Jobs', 'JobsList')} 
-      />
-      <Tab.Screen 
-        name="Invoices" 
-        component={InvoicesStack} 
-        listeners={({navigation}) => resetTab(navigation, 'Invoices', 'InvoicesList')} 
-      />
-    </Tab.Navigator>
-  );
-}
-
-const styles = StyleSheet.create({
-  tabBar: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: colors.grayLight, height: 64, paddingTop: 8 }
-});
-</file>
-
 <file path="mobile/src/screens/EnquiryDetailScreen.js">
 import React, { useState, useEffect } from 'react';
 import { View, ScrollView, StyleSheet, Alert, Text, TextInput } from 'react-native';
@@ -13030,14 +13359,29 @@ export default function EnquiryDetailScreen() {
   };
 
   const handleAccept = async () => {
-    try {
-      const { job } = await accept();
-      showToast('Job created from enquiry');
-      navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: job._id } });
-    } catch (e) {
-      Alert.alert("Error", "Could not accept enquiry.");
+  try {
+    const data = await accept();
+    showToast('Job created from enquiry');
+    
+    if (data && data.job && data.job._id) {
+      navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: data.job._id } });
+    } else {
+      navigation.goBack();
     }
-  };
+  } catch (e) {
+    // Extract the exact error from the backend response
+    let errorText = 'An unknown error occurred.';
+    if (e.response?.data?.errors) {
+      errorText = e.response.data.errors.join('\n');
+    } else if (e.response?.data?.message) {
+      errorText = e.response.data.message;
+    } else if (e.message) {
+      errorText = e.message;
+    }
+    
+    Alert.alert("Backend Error", errorText);
+  }
+};
 
   return (
     <View style={styles.screen}>
@@ -13495,91 +13839,6 @@ const styles = StyleSheet.create({
 });
 </file>
 
-<file path="mobile/src/services/notificationService.js">
-import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
-
-// 1. Set handler safely so it doesn't crash if unsupported
-try {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-    }),
-  });
-} catch (e) {
-  console.log("Notification handler initialization skipped.");
-}
-
-// 2. Safely get the push token, bypassing Expo Go restrictions
-export async function getExpoPushToken() {
-  // Expo Go on Android no longer supports remote push notifications
-  // Returning null here prevents the fatal startup crash
-  if (Constants.appOwnership === 'expo' && Platform.OS === 'android') {
-    console.log("Remote push notifications are not supported in Expo Go on Android. Skipping.");
-    return null;
-  }
-
-  try {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    
-    if (finalStatus !== 'granted') {
-      return null;
-    }
-
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Job Reminders & Alerts',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#F5821F',
-      });
-    }
-
-    const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: '9bc67899-cae6-4259-ba01-5d512cb0fb8e' 
-    });
-    
-    return tokenData.data;
-  } catch (error) {
-    console.log("Could not fetch push token:", error);
-    return null;
-  }
-}
-
-// 3. Schedule local reminders safely
-export async function scheduleLocalJobReminder(job) {
-  if (!job.scheduledDate) return;
-  
-  // Trigger 1 hour before the scheduled date
-  const triggerTime = new Date(job.scheduledDate).getTime() - (60 * 60 * 1000); 
-  
-  // Don't schedule if the time has already passed
-  if (triggerTime <= Date.now()) return;
-
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Upcoming Job 🛠️",
-        body: `You have a job at ${job.address} in 1 hour.`,
-        sound: true,
-      },
-      trigger: { date: new Date(triggerTime) },
-    });
-  } catch (e) {
-    console.log("Could not schedule local notification:", e);
-  }
-}
-</file>
-
 <file path="mobile/App.js">
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
@@ -13865,6 +14124,48 @@ export default function InvoicesStack() {
 }
 </file>
 
+<file path="mobile/src/navigation/MainTabNavigator.js">
+import React from 'react';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Text, StyleSheet } from 'react-native';
+import { colors } from '../theme/colors';
+
+import DashboardStack from './DashboardStack';
+import EnquiriesStack from './EnquiriesStack';
+import JobsStack from './JobsStack';
+import InvoicesStack from './InvoicesStack';
+
+const Tab = createBottomTabNavigator();
+
+const ICONS = { Home: '🏠', Enquiries: '📩', Jobs: '📅', Invoices: '💰' };
+
+export default function MainTabNavigator() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarActiveTintColor: colors.orange,
+        tabBarInactiveTintColor: colors.gray,
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '700', paddingBottom: 5 },
+        tabBarIcon: ({ color }) => (
+          <Text style={{ fontSize: 24, color, marginBottom: -4 }}>{ICONS[route.name]}</Text>
+        ),
+        tabBarStyle: styles.tabBar,
+      })}
+    >
+      <Tab.Screen name="Home" component={DashboardStack} />
+      <Tab.Screen name="Enquiries" component={EnquiriesStack} />
+      <Tab.Screen name="Jobs" component={JobsStack} />
+      <Tab.Screen name="Invoices" component={InvoicesStack} />
+    </Tab.Navigator>
+  );
+}
+
+const styles = StyleSheet.create({
+  tabBar: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: colors.grayLight, height: 64, paddingTop: 8 }
+});
+</file>
+
 <file path="mobile/src/screens/EnquiriesScreen.js">
 import { useState } from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity, Text, TextInput } from 'react-native';
@@ -13986,6 +14287,104 @@ export const uploadCompletionPhoto = async (id, asset) => {
     })
   );
 };
+</file>
+
+<file path="mobile/src/services/notificationService.js">
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
+
+// 1. Force notifications to appear on the lock screen and in the notification bar
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+} catch (e) {
+  console.log("Notification handler initialization skipped.");
+}
+
+// 2. Safely get the push token & ask for permissions
+export async function getExpoPushToken() {
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    
+    if (finalStatus !== 'granted') return null;
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Job Reminders & Alerts',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#F5821F',
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Forces lock screen visibility
+      });
+    }
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: '9bc67899-cae6-4259-ba01-5d512cb0fb8e' 
+    });
+    return tokenData.data;
+  } catch (error) {
+    return null;
+  }
+}
+
+// 3. MASTER SYNC: Queues everything from the "Bell" to the OS
+export async function syncLocalNotifications(todayJobs, unpaidInvoices) {
+  try {
+    // Clear old queue to prevent duplicates
+    await Notifications.cancelAllScheduledNotificationsAsync();
+
+    // A. Schedule Today's Jobs (1 hour before)
+    todayJobs.forEach(async (job) => {
+      if (!job.scheduledDate) return;
+      const triggerTime = new Date(job.scheduledDate).getTime() - (60 * 60 * 1000); 
+      
+      if (triggerTime > Date.now()) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Upcoming Job 🛠️",
+            body: `You have a job at ${job.address || 'client'} in 1 hour.`,
+            sound: true,
+          },
+          trigger: { date: new Date(triggerTime) },
+        });
+      }
+    });
+
+    // B. Schedule Unpaid Invoices (Every morning at 9:00 AM)
+    if (unpaidInvoices && unpaidInvoices.length > 0) {
+      const nineAM = new Date();
+      nineAM.setHours(9, 0, 0, 0);
+      
+      // If it's already past 9 AM today, schedule for 9 AM tomorrow
+      if (Date.now() > nineAM.getTime()) {
+        nineAM.setDate(nineAM.getDate() + 1); 
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Pending Invoices 💰",
+          body: `You have ${unpaidInvoices.length} unpaid invoices waiting to be collected.`,
+          sound: true,
+        },
+        trigger: { date: nineAM },
+      });
+    }
+
+  } catch (e) {
+    console.log("Could not sync notifications:", e);
+  }
+}
 </file>
 
 <file path="mobile/package.json">
@@ -14112,7 +14511,6 @@ function ReportPane() {
   const [period, setPeriod] = useState('month'); 
   const [refDate, setRefDate] = useState(new Date());
   
-  // Custom Date Picker State
   const [customStart, setCustomStart] = useState(new Date(new Date().setDate(new Date().getDate() - 7)));
   const [customEnd, setCustomEnd] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
@@ -14158,8 +14556,7 @@ function ReportPane() {
             {label: 'Day', value: 'day'}, 
             {label: 'Month', value: 'month'}, 
             {label: 'Year', value: 'year'},
-            {label: 'Custom', value: 'custom'}, 
-            {label: 'All Time', value: 'all'}
+            {label: 'Custom', value: 'custom'}
           ]}
           value={period}
           onChange={setPeriod}
@@ -14239,9 +14636,12 @@ const styles = StyleSheet.create({
 
 <file path="mobile/src/screens/NewJobScreen.js">
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
+// IMPORT KeyboardAvoidingView
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert, KeyboardAvoidingView } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+// IMPORT useSafeAreaInsets
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import Button from '../components/ui/Button';
 import FieldLabel from '../components/ui/FieldLabel';
@@ -14253,6 +14653,8 @@ export default function NewJobScreen() {
   const navigation = useNavigation();
   const { params } = useRoute();
   const { showToast } = useToast();
+  const insets = useSafeAreaInsets(); // GRABS THE EXACT NOTCH/HOME BAR HEIGHT
+  
   const [saving, setSaving] = useState(false);
   const debounceTimer = useRef(null);
 
@@ -14271,7 +14673,6 @@ export default function NewJobScreen() {
   const [materials, setMaterials] = useState([]);
   const [extraFields, setExtraFields] = useState([]);
 
-  // Prefill if navigating from customer screen
   useEffect(() => {
     if (params?.customer) {
       setForm(prev => ({
@@ -14382,99 +14783,102 @@ export default function NewJobScreen() {
     } catch (e) { }
   };
 
+  // WRAPPED ENTIRE FORM IN KEYBOARD AVOIDING VIEW
   return (
     <View style={styles.screen}>
       <ScreenHeader title="NEW JOB" onBack={() => navigation.navigate('Dashboard')} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        
-        <View style={styles.customerStrip}>
-          <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
-          <View style={{ flex: 1 }}>
-            <TextInput style={styles.nameInput} placeholder="Customer name" placeholderTextColor={colors.gray} value={form.name} onChangeText={(val) => updateForm('name', val)} />
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📞</Text>
-          <View style={{ flex: 1 }}>
-            <FieldLabel>Phone & Email</FieldLabel>
-            <TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholder="Phone Number" />
-            <TextInput style={[styles.input, { marginTop: 8 }]} value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="Email Address" />
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📅</Text>
-          <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
+          
+          <View style={styles.customerStrip}>
+            <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
             <View style={{ flex: 1 }}>
-              <FieldLabel>Date</FieldLabel>
-              <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
-                <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Select"}</Text></View>
-              </TouchableOpacity>
-            </View>
-            <View style={{ flex: 1 }}>
-              <FieldLabel>Exact Time</FieldLabel>
-              <TextInput style={styles.input} value={form.exactTime} onChangeText={v => updateForm('exactTime', v)} placeholder="e.g. 10:30 AM" />
+              <TextInput style={styles.nameInput} placeholder="Customer name" placeholderTextColor={colors.gray} value={form.name} onChangeText={(val) => updateForm('name', val)} />
             </View>
           </View>
-        </View>
 
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📍</Text>
-          <View style={{ flex: 1, zIndex: 10 }}>
-            <FieldLabel>Street Address</FieldLabel>
-            <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
-            {suggestions.length > 0 && (
-              <View style={styles.dropdown}>
-                {suggestions.map((item) => (
-                  <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
-                    <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
-                  </TouchableOpacity>
-                ))}
+          <View style={styles.fieldRow}>
+            <Text style={styles.icon}>📞</Text>
+            <View style={{ flex: 1 }}>
+              <FieldLabel>Phone & Email</FieldLabel>
+              <TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholder="Phone Number" />
+              <TextInput style={[styles.input, { marginTop: 8 }]} value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="Email Address" />
+            </View>
+          </View>
+
+          <View style={styles.fieldRow}>
+            <Text style={styles.icon}>📅</Text>
+            <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <FieldLabel>Date</FieldLabel>
+                <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
+                  <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Select"}</Text></View>
+                </TouchableOpacity>
               </View>
-            )}
-          </View>
-        </View>
-        
-        <View style={styles.rowSplit}>
-          <View style={{ flex: 1, marginLeft: 46 }}>
-            <FieldLabel>Suburb</FieldLabel>
-            <TextInput style={styles.input} value={form.suburb} onChangeText={v => updateForm('suburb', v)} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <FieldLabel>Postcode</FieldLabel>
-            <TextInput style={styles.input} value={form.postcode} onChangeText={v => updateForm('postcode', v)} keyboardType="numeric" />
-          </View>
-        </View>
-
-        <View style={[styles.detailsCard, { zIndex: -1 }]}>
-          <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
-          
-          <FieldLabel>Services</FieldLabel>
-          {services.map((srv, idx) => (
-            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv} onChangeText={v => { const s = [...services]; s[idx] = v; setServices(s); }} placeholder="e.g. Plumbing Repair" />
-              <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <FieldLabel>Exact Time</FieldLabel>
+                <TextInput style={styles.input} value={form.exactTime} onChangeText={v => updateForm('exactTime', v)} placeholder="e.g. 10:30 AM" />
+              </View>
             </View>
-          ))}
-          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, ''])}>+ Add another service</Button>
+          </View>
 
-          <FieldLabel>Labour Cost (A$)</FieldLabel>
-          <TextInput style={[styles.input, { marginBottom: 14 }]} value={form.labour} onChangeText={v => updateForm('labour', v)} keyboardType="numeric" />
-          
-          <FieldLabel>Other Details / Fields</FieldLabel>
-          {extraFields.map((f, idx) => (
-            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.label} onChangeText={v => { const e = [...extraFields]; e[idx].label = v; setExtraFields(e); }} placeholder="Label" />
-              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.value} onChangeText={v => { const e = [...extraFields]; e[idx].value = v; setExtraFields(e); }} placeholder="Value" />
-              <TouchableOpacity onPress={() => setExtraFields(extraFields.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+          <View style={styles.fieldRow}>
+            <Text style={styles.icon}>📍</Text>
+            <View style={{ flex: 1, zIndex: 10 }}>
+              <FieldLabel>Street Address</FieldLabel>
+              <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
+              {suggestions.length > 0 && (
+                <View style={styles.dropdown}>
+                  {suggestions.map((item) => (
+                    <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
+                      <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
-          ))}
-          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setExtraFields([...extraFields, {label: '', value: ''}])}>+ Add other field</Button>
+          </View>
+          
+          <View style={styles.rowSplit}>
+            <View style={{ flex: 1, marginLeft: 46 }}>
+              <FieldLabel>Suburb</FieldLabel>
+              <TextInput style={styles.input} value={form.suburb} onChangeText={v => updateForm('suburb', v)} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <FieldLabel>Postcode</FieldLabel>
+              <TextInput style={styles.input} value={form.postcode} onChangeText={v => updateForm('postcode', v)} keyboardType="numeric" />
+            </View>
+          </View>
 
-          <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
-        </View>
-      </ScrollView>
+          <View style={[styles.detailsCard, { zIndex: -1 }]}>
+            <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
+            
+            <FieldLabel>Services</FieldLabel>
+            {services.map((srv, idx) => (
+              <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv} onChangeText={v => { const s = [...services]; s[idx] = v; setServices(s); }} placeholder="e.g. Plumbing Repair" />
+                <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+              </View>
+            ))}
+            <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, ''])}>+ Add another service</Button>
+
+            <FieldLabel>Labour Cost (A$)</FieldLabel>
+            <TextInput style={[styles.input, { marginBottom: 14 }]} value={form.labour} onChangeText={v => updateForm('labour', v)} keyboardType="numeric" />
+            
+            <FieldLabel>Other Details / Fields</FieldLabel>
+            {extraFields.map((f, idx) => (
+              <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.label} onChangeText={v => { const e = [...extraFields]; e[idx].label = v; setExtraFields(e); }} placeholder="Label" />
+                <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.value} onChangeText={v => { const e = [...extraFields]; e[idx].value = v; setExtraFields(e); }} placeholder="Value" />
+                <TouchableOpacity onPress={() => setExtraFields(extraFields.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+              </View>
+            ))}
+            <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setExtraFields([...extraFields, {label: '', value: ''}])}>+ Add other field</Button>
+
+            <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {showPicker && (
         <DateTimePicker value={pickerMode === 'time' ? tempDate : dateObj} mode={pickerMode} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />
@@ -14512,14 +14916,10 @@ import useJobs from '../hooks/useJobs';
 import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
-import { getExpoPushToken, scheduleLocalJobReminder } from '../services/notificationService';
-import { colors } from '../theme/colors';
 
-const safeTime = (dateStr) => {
-  if (!dateStr) return 0;
-  const time = new Date(dateStr).getTime();
-  return isNaN(time) ? 0 : time;
-};
+// IMPORTING THE NEW SYNC FUNCTION
+import { getExpoPushToken, syncLocalNotifications } from '../services/notificationService';
+import { colors } from '../theme/colors';
 
 function SummaryCard({ big, label, sub, bg, fg, onPress }) {
   return (
@@ -14546,32 +14946,27 @@ export default function DashboardScreen() {
     async function syncPushToken() {
       if (settings && !settings.expoPushToken) {
         const token = await getExpoPushToken();
-        if (token) {
-          update({ expoPushToken: token });
-        }
+        if (token) update({ expoPushToken: token });
       }
     }
     syncPushToken();
   }, [settings]);
 
-  // BULLETPROOF ANDROID DATE CHECK
   const isToday = (dateString) => {
     if (!dateString) return false;
     const d = new Date(dateString);
     const today = new Date();
-    
     return d.getFullYear() === today.getFullYear() &&
            d.getMonth() === today.getMonth() &&
            d.getDate() === today.getDate();
   };
 
-  const todaysJobs = jobs
-    .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
-    .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
+  const todaysJobs = jobs.filter(j => j.status !== 'complete' && (j.needsDetails || isToday(j.scheduledDate)));
 
+  // SYNC ALL BELL ITEMS TO THE ANDROID OS NOTIFICATION SYSTEM
   useEffect(() => {
-    todaysJobs.forEach(job => scheduleLocalJobReminder(job));
-  }, [todaysJobs]);
+    syncLocalNotifications(todaysJobs, unpaidInvoices);
+  }, [todaysJobs, unpaidInvoices]);
 
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
   const confirmedCount = todaysJobs.filter(j => j.status === 'confirmed').length;
@@ -14890,6 +15285,7 @@ export default function JobDetailScreen() {
   );
 }
 
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16 },
@@ -14925,28 +15321,24 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import JobFilterTabs from '../components/jobs/JobFilterTabs';
 import JobListItem from '../components/jobs/JobListItem';
 import SegmentedControl from '../components/ui/SegmentedControl';
 import LoadingState from '../components/ui/LoadingState';
+import ErrorState from '../components/ui/ErrorState';
 import useJobs from '../hooks/useJobs';
 import { colors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-const safeTime = (dateStr) => {
-  if (!dateStr) return 0;
-  const time = new Date(dateStr).getTime();
-  return isNaN(time) ? 0 : time;
-};
-
 export default function JobsScreen() {
   const navigation = useNavigation();
-  const { jobs, loading } = useJobs('all');
-  
   const [viewMode, setViewMode] = useState('list'); 
-  const [listFilter, setListFilter] = useState('all'); 
+  const [filter, setFilter] = useState('all'); 
   const [searchQuery, setSearchQuery] = useState('');
+
+  const { jobs, loading, error } = useJobs(filter);
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const year = currentDate.getFullYear();
@@ -14969,97 +15361,87 @@ export default function JobsScreen() {
     }
   });
 
+  // FIXED: Backend handles sorting now. Just filter out search queries.
   const filteredJobs = jobs.filter(j => {
     const q = searchQuery.toLowerCase();
-    const matchesSearch = q === '' || 
+    return q === '' || 
       (j.name && j.name.toLowerCase().includes(q)) ||
       (j.address && j.address.toLowerCase().includes(q)) ||
       (Array.isArray(j.services) && j.services.some(s => s && s.toLowerCase().includes(q))) ||
       (typeof j.service === 'string' && j.service.toLowerCase().includes(q));
-
-    if (!matchesSearch) return false;
-
-    if (listFilter === 'complete') return j.status === 'complete';
-    if (listFilter === 'incomplete') return j.status !== 'complete';
-    
-    const today = new Date();
-    
-    // BULLETPROOF ANDROID DATE CHECK
-    const isJobToday = j.scheduledDate ? (
-      new Date(j.scheduledDate).getFullYear() === today.getFullYear() &&
-      new Date(j.scheduledDate).getMonth() === today.getMonth() &&
-      new Date(j.scheduledDate).getDate() === today.getDate()
-    ) : false;
-    
-    if (listFilter === 'today') return j.status !== 'complete' && isJobToday;
-    
-    if (listFilter === 'upcoming') {
-      if (!j.scheduledDate) return true;
-      const jobDate = new Date(j.scheduledDate);
-      jobDate.setHours(0, 0, 0, 0);
-      const todayZeroed = new Date();
-      todayZeroed.setHours(0, 0, 0, 0);
-      return j.status !== 'complete' && jobDate > todayZeroed;
-    }
-    
-    return true;
-  }).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
+  });
 
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.header}>
-        <Text style={styles.title}>JOBS</Text>
+        <View style={styles.headerTop}>
+          <Text style={styles.title}>JOBS</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Home', { screen: 'NewJob' })} style={styles.addBtn}>
+            <Text style={styles.addBtnText}>+ New Job</Text>
+          </TouchableOpacity>
+        </View>
         <SegmentedControl 
           options={[{ value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]}
           value={viewMode} onChange={setViewMode} dark 
         />
       </SafeAreaView>
 
-      {loading ? ( <LoadingState /> ) : (
-        <ScrollView style={styles.content}>
-          {viewMode === 'list' ? (
-            <View style={styles.listContainer}>
-              <TextInput style={styles.searchBar} placeholder="Search jobs by client, address..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor={colors.gray} />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-                {['all', 'today', 'upcoming', 'complete', 'incomplete'].map(f => (
-                  <TouchableOpacity key={f} style={[styles.filterChip, listFilter === f && styles.filterChipActive]} onPress={() => setListFilter(f)}>
-                    <Text style={[styles.filterText, listFilter === f && styles.filterTextActive]}>{f.charAt(0).toUpperCase() + f.slice(1)}</Text>
+      <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+        {viewMode === 'list' ? (
+          <View style={styles.listContainer}>
+            <View style={styles.tabs}>
+              <JobFilterTabs value={filter} onChange={setFilter} />
+            </View>
+            
+            <TextInput 
+              style={styles.searchBar} 
+              placeholder="Search jobs by client, address..." 
+              value={searchQuery} 
+              onChangeText={setSearchQuery} 
+              placeholderTextColor={colors.gray} 
+            />
+            
+            {loading && <LoadingState />}
+            {error && <ErrorState>{error}</ErrorState>}
+            
+            {!loading && !error && filteredJobs.length > 0 && (
+              filteredJobs.map(j => <JobListItem key={j._id} job={j} />)
+            )}
+            
+            {!loading && !error && filteredJobs.length === 0 && (
+              <Text style={styles.emptyText}>No jobs match this filter.</Text>
+            )}
+          </View>
+        ) : (
+          <View style={styles.calendarContainer}>
+            <View style={styles.monthNav}>
+              <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
+              <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
+              <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
+            </View>
+            <View style={styles.daysHeader}>
+              {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
+            </View>
+            <View style={styles.grid}>
+              {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
+              {daysArray.map(day => {
+                const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
+                const count = jobsPerDay[day] || 0;
+                return (
+                  <TouchableOpacity key={day} style={[styles.dayCell, isTodayCell && styles.todayCell]} onPress={() => navigation.navigate('DayDetail', { day, year, month })}>
+                    <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
+                    {count > 0 && (
+                      <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
+                        <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
+                      </View>
+                    )}
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-              {filteredJobs.length > 0 ? ( filteredJobs.map(j => <JobListItem key={j._id} job={j} />) ) : ( <Text style={styles.emptyText}>No jobs match this filter.</Text> )}
+                );
+              })}
             </View>
-          ) : (
-            <View style={styles.calendarContainer}>
-              <View style={styles.monthNav}>
-                <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
-                <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
-                <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
-              </View>
-              <View style={styles.daysHeader}>
-                {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
-              </View>
-              <View style={styles.grid}>
-                {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
-                {daysArray.map(day => {
-                  const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
-                  const count = jobsPerDay[day] || 0;
-                  return (
-                    <TouchableOpacity key={day} style={[styles.dayCell, isTodayCell && styles.todayCell]} onPress={() => navigation.navigate('DayDetail', { day, year, month })}>
-                      <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
-                      {count > 0 && (
-                        <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
-                          <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-        </ScrollView>
-      )}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -15067,15 +15449,14 @@ export default function JobsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.offwhite },
   header: { backgroundColor: colors.charcoal, paddingHorizontal: 16, paddingBottom: 14 },
-  title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginBottom: 10 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1 },
+  addBtn: { backgroundColor: colors.orange, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
+  addBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   content: { flex: 1 },
   listContainer: { padding: 14 },
-  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 12, color: colors.charcoal },
-  filterScroll: { flexDirection: 'row', marginBottom: 14 },
-  filterChip: { paddingVertical: 6, paddingHorizontal: 13, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, marginRight: 8 },
-  filterChipActive: { backgroundColor: colors.charcoal, borderColor: colors.charcoal },
-  filterText: { fontSize: 11, fontWeight: '700', color: colors.gray },
-  filterTextActive: { color: '#fff' },
+  tabs: { marginBottom: 14 },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
   emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
   calendarContainer: { padding: 14 },
   monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.grayLight },
@@ -15251,8 +15632,11 @@ module.exports = {
 
 <file path="mobile/src/screens/InvoiceDetailScreen.js">
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard, TouchableOpacity } from 'react-native';
+// IMPORT KeyboardAvoidingView
+import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+// IMPORT useSafeAreaInsets
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import ScreenHeader from '../components/layout/ScreenHeader';
@@ -15281,6 +15665,8 @@ export default function InvoiceDetailScreen() {
   const { params } = useRoute();
   const navigation = useNavigation();
   const { showToast } = useToast();
+  const insets = useSafeAreaInsets(); // GRABS SAFE AREA NOTCH HEIGHT
+  
   const { settings, update: updateSettings } = useSettings();
   const {
     invoice, loading, error, refresh, updateItems, setDiscount, toggleGstIncluded,
@@ -15293,7 +15679,6 @@ export default function InvoiceDetailScreen() {
   const [localEmail, setLocalEmail] = useState('');
   const [savingInvoice, setSavingInvoice] = useState(false);
 
-  // Sync state when invoice loads
   useEffect(() => {
     if (settings?.gstRate) setLocalGstRate(String(settings.gstRate));
     if (invoice) {
@@ -15490,125 +15875,131 @@ export default function InvoiceDetailScreen() {
     }
   };
 
+  // WRAPPED ENTIRE FORM IN KEYBOARD AVOIDING VIEW
   return (
     <View style={styles.screen}>
       <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => navigation.navigate('InvoicesList')} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        
-        <FieldLabel>Customer Details</FieldLabel>
-        <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
-        <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
-        <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
+          
+          <FieldLabel>Customer Details</FieldLabel>
+          <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
+          <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+          <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
 
-        <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
-          {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
-        </Button>
+          <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
+            {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
+          </Button>
 
-        <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
-        <View style={{ marginBottom: 12 }}>
-          <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
-        </View>
-        
-        <View style={styles.gstBox}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontWeight: '700', fontSize: 12.5, color: invoice.gstIncluded ? colors.green : colors.red }}>
-              {invoice.gstIncluded ? 'Reported income' : 'Cash Bonus'}
-            </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-              <Text style={{ fontSize: 11, color: colors.gray, marginRight: 8 }}>Include GST at</Text>
-              <TextInput
-                style={styles.gstInput}
-                value={localGstRate}
-                onChangeText={setLocalGstRate}
-                onBlur={handleSaveGstRate}
-                keyboardType="numeric"
-                editable={invoice.gstIncluded}
-              />
-              <Text style={{ fontSize: 11, color: colors.gray, marginLeft: 4 }}>%</Text>
-            </View>
+          <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
+          <View style={{ marginBottom: 12 }}>
+            <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
           </View>
-          <Toggle on={invoice.gstIncluded} onToggle={toggleGstIncluded} />
-        </View>
+          
+          <View style={styles.gstBox}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: '700', fontSize: 12.5, color: invoice.gstIncluded ? colors.green : colors.red }}>
+                {invoice.gstIncluded ? 'Reported income' : 'Cash Bonus'}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <Text style={{ fontSize: 11, color: colors.gray, marginRight: 8 }}>Include GST at</Text>
+                <TextInput
+                  style={styles.gstInput}
+                  value={localGstRate}
+                  onChangeText={setLocalGstRate}
+                  onBlur={handleSaveGstRate}
+                  keyboardType="numeric"
+                  editable={invoice.gstIncluded}
+                />
+                <Text style={{ fontSize: 11, color: colors.gray, marginLeft: 4 }}>%</Text>
+              </View>
+            </View>
+            <Toggle on={invoice.gstIncluded} onToggle={toggleGstIncluded} />
+          </View>
 
-        <InvoiceLineItemsEditor items={invoice.items} onChange={updateItems} />
-        <View style={styles.divider} />
-        <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
-        <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
-        
-        <FieldLabel style={{ marginTop: 24 }}>Job Completion Photo (Sent with PDF Invoice)</FieldLabel>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <PhotoUploadButton 
-            photoUrl={invoice.completionPhotoUrl} 
-            onUpload={async (asset) => {
-              try {
-                await invoiceService.uploadCompletionPhoto(invoice._id, asset);
-                showToast('Completion photo attached to invoice!');
-                refresh();
-              } catch (e) { Alert.alert('Error', 'Upload failed'); }
-            }} 
-          />
+          <InvoiceLineItemsEditor items={invoice.items} onChange={updateItems} />
+          <View style={styles.divider} />
+          <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
+          <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
+          
+          {/* COMPLETION PHOTO UI */}
+          <FieldLabel style={{ marginTop: 24 }}>Job Completion Photo (Sent with PDF Invoice)</FieldLabel>
           {invoice.completionPhotoUrl ? (
-            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Photo attached. It will appear on PDF.</Text>
-              <TouchableOpacity onPress={async () => {
-                try {
-                  await invoiceService.updateInvoice(invoice._id, { completionPhotoUrl: null });
-                  showToast('Photo removed');
-                  refresh();
-                } catch(e) { Alert.alert('Error', 'Could not remove photo'); }
-              }}>
-                <Text style={{ color: colors.red, fontSize: 24, fontWeight: 'bold', paddingHorizontal: 10 }}>×</Text>
-              </TouchableOpacity>
+            <View style={styles.photoAttachedBox}>
+              <PhotoUploadButton photoUrl={invoice.completionPhotoUrl} onUpload={() => {}} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={{ fontSize: 11, color: colors.gray, marginBottom: 6 }}>Photo attached to PDF.</Text>
+                <Button variant="outline" style={{ borderColor: colors.red, paddingVertical: 6 }} onPress={async () => {
+                  try {
+                    await invoiceService.updateInvoice(invoice._id, { completionPhotoUrl: null });
+                    showToast('Photo removed');
+                    refresh();
+                  } catch(e) { Alert.alert('Error', 'Could not remove photo'); }
+                }}>
+                  <Text style={{ color: colors.red, fontWeight: '700', fontSize: 12 }}>🗑️ Remove Photo</Text>
+                </Button>
+              </View>
             </View>
           ) : (
-            <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Tap the icon to attach a completion photo.</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <PhotoUploadButton 
+                onUpload={async (asset) => {
+                  try {
+                    await invoiceService.uploadCompletionPhoto(invoice._id, asset);
+                    showToast('Completion photo attached!');
+                    refresh();
+                  } catch (e) { Alert.alert('Error', 'Upload failed'); }
+                }} 
+              />
+              <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Tap the icon to attach a completion photo.</Text>
+            </View>
           )}
-        </View>
 
-        <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
-        <View style={styles.expenseCard}>
-          <Text style={styles.cardTitle}>Materials</Text>
-          <CostItemsEditor
-            items={invoice.costs?.materials}
-            kind="materials"
-            onSetItems={(items) => setCostItems('materials', items)}
-            onUploadPhoto={async (idx, asset) => {
-              try {
-                await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset);
-                showToast('Material photo saved!');
-                refresh();
-              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
-            }}
+          <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
+          <View style={styles.expenseCard}>
+            <Text style={styles.cardTitle}>Materials</Text>
+            <CostItemsEditor
+              items={invoice.costs?.materials}
+              kind="materials"
+              onSetItems={(items) => setCostItems('materials', items)}
+              onUploadPhoto={async (idx, asset) => {
+                try {
+                  await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset);
+                  showToast('Material photo saved!');
+                  refresh();
+                } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
+              }}
+            />
+            <View style={styles.divider} />
+            <Text style={styles.cardTitle}>Other Expenses</Text>
+            <CostItemsEditor
+              items={invoice.costs?.other}
+              kind="other"
+              onSetItems={(items) => setCostItems('other', items)}
+              onUploadPhoto={async (idx, asset) => {
+                try {
+                  await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset);
+                  showToast('Expense photo saved!');
+                  refresh();
+                } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
+              }}
+            />
+          </View>
+
+          <InvoiceActions
+            isPaid={isPaid}
+            customerEmail={invoice.customerEmail}
+            onUpdateInvoice={handleUpdateInvoice}
+            onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
+            onPreviewPdf={handlePreviewPdf}
+            onShare={handleSharePdf}
           />
-          <View style={styles.divider} />
-          <Text style={styles.cardTitle}>Other Expenses</Text>
-          <CostItemsEditor
-            items={invoice.costs?.other}
-            kind="other"
-            onSetItems={(items) => setCostItems('other', items)}
-            onUploadPhoto={async (idx, asset) => {
-              try {
-                await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset);
-                showToast('Expense photo saved!');
-                refresh();
-              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
-            }}
-          />
-        </View>
 
-        <InvoiceActions
-          isPaid={isPaid}
-          customerEmail={invoice.customerEmail}
-          onUpdateInvoice={handleUpdateInvoice}
-          onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
-          onPreviewPdf={handlePreviewPdf}
-          onShare={handleSharePdf}
-        />
-
-        <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={handleDeleteInvoice}>
-          <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
-        </Button>
-      </ScrollView>
+          <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={handleDeleteInvoice}>
+            <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
+          </Button>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -15621,7 +16012,8 @@ const styles = StyleSheet.create({
   expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 6 },
   cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.blue, marginBottom: 10 },
   gstBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.grayLight, marginBottom: 14 },
-  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' }
+  gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' },
+  photoAttachedBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.offwhite, padding: 12, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: colors.grayLight }
 });
 </file>
 

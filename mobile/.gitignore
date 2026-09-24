@@ -4,4 +4,4 @@ dist/
 .env
 *.apk
 *.aab
-google-services-key.json
+google-services.json

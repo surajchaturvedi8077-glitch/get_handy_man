@@ -172,14 +172,29 @@ export default function EnquiryDetailScreen() {
   };
 
   const handleAccept = async () => {
-    try {
-      const { job } = await accept();
-      showToast('Job created from enquiry');
-      navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: job._id } });
-    } catch (e) {
-      Alert.alert("Error", "Could not accept enquiry.");
+  try {
+    const data = await accept();
+    showToast('Job created from enquiry');
+    
+    if (data && data.job && data.job._id) {
+      navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: data.job._id } });
+    } else {
+      navigation.goBack();
     }
-  };
+  } catch (e) {
+    // Extract the exact error from the backend response
+    let errorText = 'An unknown error occurred.';
+    if (e.response?.data?.errors) {
+      errorText = e.response.data.errors.join('\n');
+    } else if (e.response?.data?.message) {
+      errorText = e.response.data.message;
+    } else if (e.message) {
+      errorText = e.message;
+    }
+    
+    Alert.alert("Backend Error", errorText);
+  }
+};
 
   return (
     <View style={styles.screen}>
