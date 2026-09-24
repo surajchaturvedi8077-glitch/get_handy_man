@@ -9,9 +9,16 @@ import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
 
-// IMPORTING THE NEW SYNC FUNCTION
+// FIXED: Correctly imports the new sync system instead of the deleted function
 import { getExpoPushToken, syncLocalNotifications } from '../services/notificationService';
 import { colors } from '../theme/colors';
+
+// FIXED: Replaced 'Infinity' with a massive valid number to prevent Hermes crashes
+const safeTime = (dateStr) => {
+  if (!dateStr) return 999999999999999;
+  const time = new Date(dateStr).getTime();
+  return isNaN(time) ? 999999999999999 : time;
+};
 
 function SummaryCard({ big, label, sub, bg, fg, onPress }) {
   return (
@@ -38,30 +45,30 @@ export default function DashboardScreen() {
     async function syncPushToken() {
       if (settings && !settings.expoPushToken) {
         const token = await getExpoPushToken();
-        if (token) update({ expoPushToken: token });
+        if (token) {
+          update({ expoPushToken: token });
+        }
       }
     }
     syncPushToken();
   }, [settings]);
 
-  const isToday = (dateString) => {
-    if (!dateString) return false;
-    const d = new Date(dateString);
-    const today = new Date();
-    return d.getFullYear() === today.getFullYear() &&
-           d.getMonth() === today.getMonth() &&
-           d.getDate() === today.getDate();
-  };
+  // FIXED: Filters ALL upcoming jobs (today and future) and sorts them nearest-time first
+  const upcomingJobs = jobs
+    .filter(j => j.status !== 'complete')
+    .sort((a, b) => {
+      if (a.needsDetails && !b.needsDetails) return -1;
+      if (!a.needsDetails && b.needsDetails) return 1;
+      return safeTime(a.scheduledDate) - safeTime(b.scheduledDate);
+    });
 
-  const todaysJobs = jobs.filter(j => j.status !== 'complete' && (j.needsDetails || isToday(j.scheduledDate)));
-
-  // SYNC ALL BELL ITEMS TO THE ANDROID OS NOTIFICATION SYSTEM
+  // FIXED: Safely syncs the cascading lock-screen alarms to the Android OS
   useEffect(() => {
-    syncLocalNotifications(todaysJobs, unpaidInvoices);
-  }, [todaysJobs, unpaidInvoices]);
+    syncLocalNotifications(upcomingJobs, unpaidInvoices);
+  }, [upcomingJobs, unpaidInvoices]);
 
-  const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
-  const confirmedCount = todaysJobs.filter(j => j.status === 'confirmed').length;
+  const needsDetailsCount = upcomingJobs.filter(j => j.needsDetails).length;
+  const confirmedCount = upcomingJobs.filter(j => j.status === 'confirmed').length;
 
   const todayOptions = { weekday: 'long', day: 'numeric', month: 'long' };
   const todayStr = new Date().toLocaleDateString('en-US', todayOptions);
@@ -111,8 +118,8 @@ export default function DashboardScreen() {
         />
 
         <SummaryCard
-          big={todaysJobs.length}
-          label="JOBS TODAY"
+          big={upcomingJobs.length}
+          label="UPCOMING JOBS"
           sub={`${confirmedCount} confirmed · ${needsDetailsCount} need details`}
           bg={colors.blueTint}
           fg={colors.blue}
@@ -130,12 +137,12 @@ export default function DashboardScreen() {
           />
         )}
 
-        <Text style={styles.sectionLabel}>Today's schedule</Text>
-        {todaysJobs.map((job) => (
+        <Text style={styles.sectionLabel}>Upcoming Schedule</Text>
+        {upcomingJobs.map((job) => (
           <JobListItem key={job._id} job={job} />
         ))}
-        {todaysJobs.length === 0 && (
-          <Text style={styles.emptyText}>No jobs scheduled for today.</Text>
+        {upcomingJobs.length === 0 && (
+          <Text style={styles.emptyText}>No upcoming jobs scheduled.</Text>
         )}
       </ScrollView>
     </View>

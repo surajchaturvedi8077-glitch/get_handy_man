@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 
 import DashboardStack from './DashboardStack';
@@ -13,6 +14,8 @@ const Tab = createBottomTabNavigator();
 const ICONS = { Home: '🏠', Enquiries: '📩', Jobs: '📅', Invoices: '💰' };
 
 export default function MainTabNavigator() {
+  const insets = useSafeAreaInsets(); // Grabs the exact height of the Android system bar
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -23,7 +26,13 @@ export default function MainTabNavigator() {
         tabBarIcon: ({ color }) => (
           <Text style={{ fontSize: 24, color, marginBottom: -4 }}>{ICONS[route.name]}</Text>
         ),
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: 64 + insets.bottom,
+            paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+          }
+        ],
       })}
     >
       <Tab.Screen name="Home" component={DashboardStack} />
@@ -35,5 +44,5 @@ export default function MainTabNavigator() {
 }
 
 const styles = StyleSheet.create({
-  tabBar: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: colors.grayLight, height: 64, paddingTop: 8 }
+  tabBar: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: colors.grayLight, paddingTop: 8 }
 });

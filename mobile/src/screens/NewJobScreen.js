@@ -147,10 +147,15 @@ export default function NewJobScreen() {
   };
 
   // WRAPPED ENTIRE FORM IN KEYBOARD AVOIDING VIEW
+ // FIXED: Forced Android to use 'padding' and added a keyboard vertical offset
   return (
     <View style={styles.screen}>
       <ScreenHeader title="NEW JOB" onBack={() => navigation.navigate('Dashboard')} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} 
+        keyboardVerticalOffset={Platform.OS === 'android' ? 80 : 0} 
+        style={{ flex: 1 }}
+      >
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
           
           <View style={styles.customerStrip}>

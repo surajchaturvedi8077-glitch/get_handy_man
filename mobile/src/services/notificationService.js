@@ -33,7 +33,7 @@ export async function getExpoPushToken() {
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#F5821F',
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Forces lock screen visibility
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, 
       });
     }
 
@@ -46,25 +46,54 @@ export async function getExpoPushToken() {
   }
 }
 
-// 3. MASTER SYNC: Queues everything from the "Bell" to the OS
-export async function syncLocalNotifications(todayJobs, unpaidInvoices) {
+// 3. MASTER SYNC: Queues cascading alerts from the "Bell" to the OS
+export async function syncLocalNotifications(upcomingJobs, unpaidInvoices) {
   try {
-    // Clear old queue to prevent duplicates
+    // Clear old queue to prevent duplicate spam
     await Notifications.cancelAllScheduledNotificationsAsync();
 
-    // A. Schedule Today's Jobs (1 hour before)
-    todayJobs.forEach(async (job) => {
+    // A. Schedule Cascading Job Alerts
+    upcomingJobs.forEach(async (job) => {
       if (!job.scheduledDate) return;
-      const triggerTime = new Date(job.scheduledDate).getTime() - (60 * 60 * 1000); 
+      const jobTime = new Date(job.scheduledDate).getTime();
       
-      if (triggerTime > Date.now()) {
+      const twoHours = jobTime - (2 * 60 * 60 * 1000);
+      const oneHour = jobTime - (60 * 60 * 1000);
+      const fifteenMins = jobTime - (15 * 60 * 1000);
+
+      // Reminder: 2 Hours Before
+      if (twoHours > Date.now()) {
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: "Upcoming Job 🛠️",
+            title: "Job Today 🗓️",
+            body: `Upcoming job at ${job.address || 'client'} in 2 hours.`,
+            sound: true,
+          },
+          trigger: { date: new Date(twoHours) },
+        });
+      }
+
+      // Reminder: 1 Hour Before
+      if (oneHour > Date.now()) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Leaving Soon ⏳",
             body: `You have a job at ${job.address || 'client'} in 1 hour.`,
             sound: true,
           },
-          trigger: { date: new Date(triggerTime) },
+          trigger: { date: new Date(oneHour) },
+        });
+      }
+
+      // Reminder: 15 Minutes Before (High Priority)
+      if (fifteenMins > Date.now()) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Job Starting! 🚀",
+            body: `You should be arriving at ${job.address || 'client'} in 15 minutes.`,
+            sound: true,
+          },
+          trigger: { date: new Date(fifteenMins) },
         });
       }
     });
@@ -74,7 +103,6 @@ export async function syncLocalNotifications(todayJobs, unpaidInvoices) {
       const nineAM = new Date();
       nineAM.setHours(9, 0, 0, 0);
       
-      // If it's already past 9 AM today, schedule for 9 AM tomorrow
       if (Date.now() > nineAM.getTime()) {
         nineAM.setDate(nineAM.getDate() + 1); 
       }

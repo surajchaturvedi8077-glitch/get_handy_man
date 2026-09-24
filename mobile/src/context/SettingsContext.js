@@ -1,11 +1,3 @@
-/**
- * SettingsContext.js
- * ------------------------------------------------------------------
- * Loads business Settings (GST rate/toggle, branding) once via
- * services/settingsService.js and makes them available app-wide
- * through useSettings().
- * ------------------------------------------------------------------
- */
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import * as settingsService from '../services/settingsService';
 import { AuthContext } from './AuthContext';
@@ -21,9 +13,8 @@ export function SettingsProvider({ children }) {
     setLoading(true);
     try {
       setSettings(await settingsService.getSettings());
-    } catch (error) {
-      // Fixed: Catch block prevents unhandled promise rejection crashes
-      console.log("Settings fetch failed gracefully:", error);
+    } catch (err) {
+      console.log("Settings fetch caught safely:", err);
     } finally {
       setLoading(false);
     }

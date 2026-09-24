@@ -13,6 +13,13 @@ import { colors } from '../theme/colors';
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+// FIXED: Replaced 'Infinity' with a massive valid number to prevent Hermes crashes
+const safeTime = (dateStr) => {
+  if (!dateStr) return 999999999999999;
+  const time = new Date(dateStr).getTime();
+  return isNaN(time) ? 999999999999999 : time;
+};
+
 export default function JobsScreen() {
   const navigation = useNavigation();
   const [viewMode, setViewMode] = useState('list'); 
@@ -42,7 +49,7 @@ export default function JobsScreen() {
     }
   });
 
-  // FIXED: Backend handles sorting now. Just filter out search queries.
+  // FIXED: Searches the jobs, places newly accepted jobs at the top, and sorts the rest chronologically
   const filteredJobs = jobs.filter(j => {
     const q = searchQuery.toLowerCase();
     return q === '' || 
@@ -50,6 +57,10 @@ export default function JobsScreen() {
       (j.address && j.address.toLowerCase().includes(q)) ||
       (Array.isArray(j.services) && j.services.some(s => s && s.toLowerCase().includes(q))) ||
       (typeof j.service === 'string' && j.service.toLowerCase().includes(q));
+  }).sort((a, b) => {
+    if (a.needsDetails && !b.needsDetails) return -1;
+    if (!a.needsDetails && b.needsDetails) return 1;
+    return safeTime(a.scheduledDate) - safeTime(b.scheduledDate);
   });
 
   return (
@@ -85,10 +96,10 @@ export default function JobsScreen() {
             {loading && <LoadingState />}
             {error && <ErrorState>{error}</ErrorState>}
             
-            {!loading && !error && filteredJobs.length > 0 && (
-              filteredJobs.map(j => <JobListItem key={j._id} job={j} />)
+            {!loading && !error && filteredJobs.length > 0 && ( 
+              filteredJobs.map(j => <JobListItem key={j._id} job={j} />) 
             )}
-            
+
             {!loading && !error && filteredJobs.length === 0 && (
               <Text style={styles.emptyText}>No jobs match this filter.</Text>
             )}
