@@ -1,53 +1,66 @@
-/**
- * cronService.js
- * ------------------------------------------------------------------
- * Automated background tasks. Runs to check for unpaid invoices
- * and pushes a lock-screen notification to the worker's device.
- * ------------------------------------------------------------------
- */
 const cron = require('node-cron');
-const { Expo } = require('expo-server-sdk');
+const https = require('https');
+const Job = require('../models/Job');
 const Invoice = require('../models/Invoice');
 const Settings = require('../models/Settings');
 
-function startCronJobs() {
-  cron.schedule('* * * * *', async () => {
-    try {
-      const settings = await Settings.getSingleton();
-      
-      if (!settings.expoPushToken || !Expo.isExpoPushToken(settings.expoPushToken)) {
-        return;
-      }
+const sendPush = (token, title, body) => {
+  const payload = JSON.stringify({
+    to: token,
+    title,
+    body,
+    sound: "default",
+    channelId: "alerts-v2" 
+  });
 
-      const unpaidInvoices = await Invoice.find({ status: 'unpaid' });
-      if (unpaidInvoices.length === 0) return;
-
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      const overdueCount = unpaidInvoices.filter(inv => new Date(inv.date) < oneWeekAgo).length;
-
-      let message = `You have ${unpaidInvoices.length} unpaid invoice(s) awaiting collection.`;
-      if (overdueCount > 0) {
-        message = `⚠️ ${overdueCount} invoice(s) are severely overdue! ` + message;
-      }
-
-      const expo = new Expo();
-      await expo.sendPushNotificationsAsync([{
-        to: settings.expoPushToken,
-        sound: 'default',
-        title: 'Invoice Reminder 💰',
-        body: message,
-        priority: 'high',      // REQUIRED FOR ANDROID LOCK SCREEN
-        channelId: 'default'   // REQUIRED FOR ANDROID LOCK SCREEN
-      }]);
-      
-      console.log(`[cron] Sent unpaid invoice reminder for ${unpaidInvoices.length} invoices.`);
-    } catch (err) {
-      console.error('[cron] Failed to send daily invoice reminders:', err);
-    }
+  const req = https.request({
+    hostname: 'exp.host',
+    path: '/--/api/v2/push/send',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
   });
   
-  console.log('[cron] Automated hourly invoice reminders (8 AM - 6 PM) initialized.');
-}
+  req.on('error', (e) => console.error("[Cron Push Error]", e));
+  req.write(payload);
+  req.end();
+};
 
-module.exports = { startCronJobs };
+const runMorningBriefing = async () => {
+  try {
+    const settings = await Settings.findOne();
+    if (!settings || !settings.expoPushToken) return;
+
+    const token = settings.expoPushToken;
+    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
+
+    // 1. Send Today's Jobs
+    const todaysJobs = await Job.find({
+      status: { $ne: 'complete' },
+      scheduledDate: { $gte: startOfDay,$lte: endOfDay }
+    });
+
+    if (todaysJobs.length > 0) {
+      sendPush(token, "Today's Schedule 🛠️", `Good morning! You have ${todaysJobs.length} job(s) scheduled for today.`);
+    }
+
+    // 2. Send Unpaid Invoices
+    const unpaidInvoices = await Invoice.find({ status: 'unpaid' });
+    if (unpaidInvoices.length > 0) {
+      const totalUnpaid = unpaidInvoices.reduce((sum, inv) => sum + (inv.totals?.total || 0), 0);
+      setTimeout(() => {
+        sendPush(token, "Pending Invoices 💰", `You have ${unpaidInvoices.length} unpaid invoices totaling $${totalUnpaid.toFixed(2)}.`);
+      }, 5000);
+    }
+  } catch (err) {
+    console.error("[Cron Service Error]", err.message);
+  }
+};
+
+// FIXED: Strict 8:00 AM trigger locked specifically to Australian Central Standard Time
+cron.schedule('0 8 * * *', runMorningBriefing, {
+  scheduled: true,
+  timezone: "Australia/Adelaide" 
+});
+
+module.exports = { runMorningBriefing };

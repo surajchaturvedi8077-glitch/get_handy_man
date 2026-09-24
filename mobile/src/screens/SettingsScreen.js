@@ -85,6 +85,15 @@ export default function SettingsScreen() {
     }
   }
 
+  async function fireBackendBriefing() {
+    try {
+      showToast('Requesting briefing from server...');
+      await settingsService.triggerMorningBriefing();
+    } catch (e) {
+      Alert.alert('Error', 'Could not trigger briefing from backend.');
+    }
+  }
+
   if (!draft) return <View style={styles.screen}><ScreenHeader title="SETTINGS" /><LoadingState /></View>;
 
   return (
@@ -133,6 +142,7 @@ export default function SettingsScreen() {
             🔔 Test & Enable Notifications
           </Button>
         </View>
+        
 
         <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginBottom: 40 }}>
           {saving ? 'Saving…' : 'Save all settings'}

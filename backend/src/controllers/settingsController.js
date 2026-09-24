@@ -32,4 +32,11 @@ const uploadLogo = asyncHandler(async (req, res) => {
   ok(res, settings);
 });
 
-module.exports = { getSettings, updateSettings, uploadLogo };
+const { runMorningBriefing } = require('../services/cronService');
+
+const testMorningBriefing = asyncHandler(async (req, res) => {
+  await runMorningBriefing();
+  res.status(200).json({ success: true, message: 'Briefing sent' });
+});
+
+module.exports = { getSettings, updateSettings, uploadLogo ,testMorningBriefing};

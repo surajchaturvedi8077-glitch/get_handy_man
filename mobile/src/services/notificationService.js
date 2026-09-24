@@ -1,7 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-// 1. Force notifications to appear as top-level banners even when app is open
 try {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -14,7 +13,6 @@ try {
   console.log("Notification handler initialization skipped.");
 }
 
-// 2. Build the high-priority lock screen channel and grab the push token
 export async function getExpoPushToken() {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('alerts-v2', {
@@ -42,58 +40,39 @@ export async function getExpoPushToken() {
     });
     return tokenData.data;
   } catch (error) {
-    console.log("Token error:", error);
     return null;
   }
 }
 
-// 3. MASTER SYNC: Queues cascading alerts to the OS
+// FIXED: Stripped out all overlapping alarms. ONLY triggers exactly 1 hour before the job.
 export async function syncLocalNotifications(upcomingJobs, unpaidInvoices) {
   try {
+    // Clear the old queue to prevent ghost alarms
     await Notifications.cancelAllScheduledNotificationsAsync();
 
-    // A. Schedule Cascading Job Alerts
     upcomingJobs.forEach(async (job) => {
       if (!job.scheduledDate) return;
-      const jobTime = new Date(job.scheduledDate).getTime();
       
-      const twoHours = jobTime - (2 * 60 * 60 * 1000);
-      const oneHour = jobTime - (60 * 60 * 1000);
-      const fifteenMins = jobTime - (15 * 60 * 1000);
+      const jobTime = new Date(job.scheduledDate).getTime();
+      const oneHourBefore = jobTime - (60 * 60 * 1000);
 
-      if (twoHours > Date.now()) {
+      // Only schedule if the 1-hour mark is still in the future
+      if (oneHourBefore > Date.now()) {
         await Notifications.scheduleNotificationAsync({
-          content: { title: "Job Today 🗓️", body: `Upcoming job at ${job.address || 'client'} in 2 hours.`, sound: true, channelId: 'alerts-v2' },
-          trigger: { date: new Date(twoHours) },
-        });
-      }
-
-      if (oneHour > Date.now()) {
-        await Notifications.scheduleNotificationAsync({
-          content: { title: "Leaving Soon ⏳", body: `You have a job at ${job.address || 'client'} in 1 hour.`, sound: true, channelId: 'alerts-v2' },
-          trigger: { date: new Date(oneHour) },
-        });
-      }
-
-      if (fifteenMins > Date.now()) {
-        await Notifications.scheduleNotificationAsync({
-          content: { title: "Job Starting! 🚀", body: `You should be arriving at ${job.address || 'client'} in 15 minutes.`, sound: true, channelId: 'alerts-v2' },
-          trigger: { date: new Date(fifteenMins) },
+          content: {
+            title: "Leaving Soon ⏳",
+            body: `You have a job at ${job.address || 'client'} in 1 hour.`,
+            sound: true,
+            channelId: 'alerts-v2',
+          },
+          trigger: { date: new Date(oneHourBefore) },
         });
       }
     });
 
-    // B. Schedule Unpaid Invoices
-    if (unpaidInvoices && unpaidInvoices.length > 0) {
-      const nineAM = new Date();
-      nineAM.setHours(9, 0, 0, 0);
-      if (Date.now() > nineAM.getTime()) nineAM.setDate(nineAM.getDate() + 1); 
+    // NOTE: Unpaid invoices are no longer scheduled locally here, 
+    // they are perfectly handled by your Backend Cron Job every morning!
 
-      await Notifications.scheduleNotificationAsync({
-        content: { title: "Pending Invoices 💰", body: `You have ${unpaidInvoices.length} unpaid invoices waiting to be collected.`, sound: true, channelId: 'alerts-v2' },
-        trigger: { date: nineAM },
-      });
-    }
   } catch (e) {
     console.log("Could not sync notifications:", e);
   }

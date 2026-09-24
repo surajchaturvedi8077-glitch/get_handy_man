@@ -29,3 +29,7 @@ export function resolveMediaUrl(path) {
   if (!path) return null;
   return path.startsWith('http') ? path : `${BASE_URL}${path}`;
 }
+
+export function triggerMorningBriefing() {
+  return unwrap(apiClient.post('/api/settings/test-briefing'));
+}
