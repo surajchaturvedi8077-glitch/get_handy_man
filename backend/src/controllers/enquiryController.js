@@ -34,29 +34,39 @@ const getEnquiry = asyncHandler(async (req, res) => {
 // POST /api/enquiries (Website Contact Form)
 const createEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.create(req.body);
-
-  // Send Push Notification to Worker Phone
+  
+  // FIXED: Beam a high-priority push notification directly to the worker's phone
   try {
-    const settings = await Settings.getSingleton();
-    if (settings.expoPushToken && Expo.isExpoPushToken(settings.expoPushToken)) {
-      const expo = new Expo();
-      await expo.sendPushNotificationsAsync([{
+    const settings = await Settings.findOne();
+    if (settings && settings.expoPushToken) {
+      const payload = JSON.stringify({
         to: settings.expoPushToken,
-        sound: 'default',
-        title: 'New Enquiry! 🛠️',
-        body: `${enquiry.name} requested a quote for ${req.body.service || 'a job'}.`,
-        data: { enquiryId: enquiry._id },
-        priority: 'high',      // REQUIRED FOR ANDROID LOCK SCREEN
-        channelId: 'default'   // REQUIRED FOR ANDROID LOCK SCREEN
-      }]);
+        title: "New Enquiry! 📩",
+        body: `You received a new request from ${enquiry.name || 'a customer'}.`,
+        sound: "default",
+        channelId: "alerts-v2" // Hits the high-priority lock screen channel
+      });
+
+      const reqPush = https.request({
+        hostname: 'exp.host',
+        path: '/--/api/v2/push/send',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      });
+      
+      reqPush.on('error', (e) => console.error("[Push Error]", e));
+      reqPush.write(payload);
+      reqPush.end();
     }
   } catch (err) {
-    console.error("Push notification failed to send:", err);
+    console.log("[Push Notification Failed]", err.message);
   }
 
   created(res, enquiry);
 });
-
 // PUT /api/enquiries/:id (Update Enquiry Details)
 const updateEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });

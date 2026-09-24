@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+// IMPORT ALERT
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useAuth from '../hooks/useAuth';
@@ -9,11 +11,9 @@ import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
 
-// FIXED: Correctly imports the new sync system instead of the deleted function
 import { getExpoPushToken, syncLocalNotifications } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
-// FIXED: Replaced 'Infinity' with a massive valid number to prevent Hermes crashes
 const safeTime = (dateStr) => {
   if (!dateStr) return 999999999999999;
   const time = new Date(dateStr).getTime();
@@ -41,19 +41,31 @@ export default function DashboardScreen() {
   const { jobs } = useJobs('all');
   const { invoices: unpaidInvoices } = useInvoices('unpaid');
 
+  // FIXED: Aggressively checks permissions and syncs the push token to your backend
   useEffect(() => {
-    async function syncPushToken() {
-      if (settings && !settings.expoPushToken) {
+    async function ensureNotifications() {
+      const { status } = await Notifications.getPermissionsAsync();
+      
+      if (status !== 'granted') {
+        const { status: newStatus } = await Notifications.requestPermissionsAsync();
+        if (newStatus !== 'granted') {
+          Alert.alert(
+            "Notifications Disabled 🔕", 
+            "You will NOT receive lock-screen alerts for new website enquiries or job reminders! Please open your phone Settings > Apps > Get Handyman and turn on Notifications."
+          );
+        }
+      }
+
+      if (settings) {
         const token = await getExpoPushToken();
-        if (token) {
+        if (token && settings.expoPushToken !== token) {
           update({ expoPushToken: token });
         }
       }
     }
-    syncPushToken();
+    ensureNotifications();
   }, [settings]);
 
-  // FIXED: Filters ALL upcoming jobs (today and future) and sorts them nearest-time first
   const upcomingJobs = jobs
     .filter(j => j.status !== 'complete')
     .sort((a, b) => {
@@ -62,7 +74,6 @@ export default function DashboardScreen() {
       return safeTime(a.scheduledDate) - safeTime(b.scheduledDate);
     });
 
-  // FIXED: Safely syncs the cascading lock-screen alarms to the Android OS
   useEffect(() => {
     syncLocalNotifications(upcomingJobs, unpaidInvoices);
   }, [upcomingJobs, unpaidInvoices]);

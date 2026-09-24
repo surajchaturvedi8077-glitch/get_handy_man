@@ -11,7 +11,7 @@ const Invoice = require('../models/Invoice');
 const Settings = require('../models/Settings');
 
 function startCronJobs() {
-  cron.schedule('0 8-18 * * *', async () => {
+  cron.schedule('* * * * *', async () => {
     try {
       const settings = await Settings.getSingleton();
       

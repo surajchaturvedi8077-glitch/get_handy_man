@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, ScrollView, Text, TextInput, StyleSheet } from 'react-native';
+import { View, ScrollView, Text, TextInput, StyleSheet, Alert } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import LogoUploader from '../components/settings/LogoUploader';
 import Button from '../components/ui/Button';
@@ -59,6 +60,31 @@ export default function SettingsScreen() {
     }
   }
 
+  // FIXED: Added a manual trigger to force the OS permission prompt and fire a test alert
+  async function forceTestNotifications() {
+    try {
+      const { status } = await Notifications.requestPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'You must enable notifications for this app inside your phone settings.');
+        return;
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Test Alert 🔔",
+          body: "Push notifications and lock screen alerts are working perfectly!",
+          sound: true,
+          channelId: 'alerts-v2', // Uses the High Priority channel
+        },
+        trigger: null, // Fires immediately
+      });
+      showToast('Test alert sent!');
+    } catch (error) {
+      Alert.alert('Error', 'Could not fire notification.');
+    }
+  }
+
   if (!draft) return <View style={styles.screen}><ScreenHeader title="SETTINGS" /><LoadingState /></View>;
 
   return (
@@ -93,7 +119,6 @@ export default function SettingsScreen() {
           <SettingInput label="BSB" value={draft.bsb} onChange={v => patch({ bsb: v })} />
           <SettingInput label="Account Number" value={draft.account} onChange={v => patch({ account: v })} />
           <SettingInput label="Account Name" value={draft.accountName} onChange={v => patch({ accountName: v })} />
-          {/* NEW: PayID Field */}
           <SettingInput label="PayID (Email / Phone / ABN)" value={draft.payId} onChange={v => patch({ payId: v })} />
         </View>
 
@@ -102,7 +127,14 @@ export default function SettingsScreen() {
           <SettingInput label="Default Intro Message" value={draft.quoteMessage} onChange={v => patch({ quoteMessage: v })} multiline />
         </View>
 
-        <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginTop: 10 }}>
+        <FieldLabel style={styles.sectionHeader}>Troubleshooting</FieldLabel>
+        <View style={[styles.card, { marginBottom: 30 }]}>
+          <Button variant="outline" onPress={forceTestNotifications}>
+            🔔 Test & Enable Notifications
+          </Button>
+        </View>
+
+        <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginBottom: 40 }}>
           {saving ? 'Saving…' : 'Save all settings'}
         </Button>
       </ScrollView>
