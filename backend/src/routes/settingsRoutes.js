@@ -5,7 +5,6 @@
  * ------------------------------------------------------------------
  */
 const express = require('express');
-const { getSettings, updateSettings, uploadLogo } = require('../controllers/settingsController');
 const { protect } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { getSettings, updateSettings, uploadLogo, testMorningBriefing } = require('../controllers/settingsController');
