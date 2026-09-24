@@ -2,8 +2,9 @@ import React from 'react';
 import Chip from '../ui/Chip';
 
 export default function JobStatusBadge({ job }) {
-  if (job.needsDetails) return <Chip tone="orange">Needs details</Chip>;
+  // FIXED: Explicitly marks newly accepted jobs as requiring a scheduled time
+  if (job.needsDetails || job.status === 'accepted') return <Chip tone="orange">Accepted (Needs Time)</Chip>;
   if (job.status === 'complete') return <Chip tone="green">Complete</Chip>;
-  if (job.status === 'confirmed') return <Chip tone="blue">Confirmed</Chip>; // Fixed: changed 'yellow' to 'blue'
+  if (job.status === 'confirmed') return <Chip tone="blue">Confirmed</Chip>;
   return <Chip tone="red">Pending</Chip>;
 }

@@ -125,16 +125,18 @@ const acceptEnquiry = asyncHandler(async (req, res) => {
   }
 
   // Convert Enquiry into a Pending Job
+  // FIXED: Status is set to 'accepted' instead of the invalid 'pending' enum
   const job = await Job.create({
-    name: enquiry.name,
-    phone: enquiry.phone,
-    email: enquiry.email,
-    address: enquiry.address || enquiry.suburb || 'Address not provided',
-    service: enquiry.service || (enquiry.services && enquiry.services[0]) || 'General Handyman',
-    services: enquiry.services || [],
-    when: enquiry.when || 'Not scheduled',
-    status: 'pending',
+    name: enquiry.name || 'New Customer',
+    phone: enquiry.phone || '',
+    email: enquiry.email || '',
+    address: enquiry.address || enquiry.suburb || 'Address not set',
+    services: enquiry.services?.length ? enquiry.services : [enquiry.service || 'General Handyman'],
+    service: enquiry.service || 'General Handyman',
+    when: enquiry.when || 'Not scheduled yet',
+    status: 'accepted', 
     needsDetails: true,
+    labour: 0,
     enquiryId: enquiry._id
   });
 

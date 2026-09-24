@@ -229,7 +229,7 @@ export default function EnquiryDetailScreen() {
               <>
                 <QuoteComposer initialItems={enquiry.quoteItems} onSend={handleSendQuote} />
                 <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>
-                  ✅ Accept Instantly (Confirmed on Phone)
+                  ✅ Accept & Move to Jobs List
                 </Button>
                 <Button variant="outline" onPress={handleReject} style={{ marginTop: 10 }}>
                   Reject enquiry
@@ -240,7 +240,7 @@ export default function EnquiryDetailScreen() {
             {enquiry.status === 'quoted' && (
               <>
                 <Text style={styles.quoted}>Quote Sent</Text>
-                <EnquiryActions onReject={handleReject} onAccept={handleAccept} acceptLabel="Mark accepted & create job" />
+                <EnquiryActions onReject={handleReject} onAccept={handleAccept} acceptLabel="Accept & Move to Jobs List" />
               </>
             )}
 
