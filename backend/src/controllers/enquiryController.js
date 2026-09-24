@@ -31,12 +31,16 @@ const getEnquiry = asyncHandler(async (req, res) => {
   ok(res, enquiry);
 });
 
-// POST /api/enquiries (Website Contact Form)
+// POST /api/enquiries (Called by your website contact form)
 const createEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.create(req.body);
   
-  // FIXED: Beam a high-priority push notification directly to the worker's phone
+  // --- BULLETPROOF NOTIFICATION BLOCK ---
   try {
+    // We import these INSIDE the function so it can never throw an "Undefined" crash
+    const https = require('https');
+    const Settings = require('../models/Settings');
+    
     const settings = await Settings.findOne();
     if (settings && settings.expoPushToken) {
       const payload = JSON.stringify({
@@ -44,7 +48,7 @@ const createEnquiry = asyncHandler(async (req, res) => {
         title: "New Enquiry! 📩",
         body: `You received a new request from ${enquiry.name || 'a customer'}.`,
         sound: "default",
-        channelId: "alerts-v2" // Hits the high-priority lock screen channel
+        channelId: "alerts-v2" // Guaranteed to hit the lock screen
       });
 
       const reqPush = https.request({
@@ -62,9 +66,11 @@ const createEnquiry = asyncHandler(async (req, res) => {
       reqPush.end();
     }
   } catch (err) {
-    console.log("[Push Notification Failed]", err.message);
+    console.log("[Push Notification Failed]:", err.message);
   }
+  // --- END NOTIFICATION BLOCK ---
 
+  const { created } = require('../utils/apiResponse');
   created(res, enquiry);
 });
 // PUT /api/enquiries/:id (Update Enquiry Details)

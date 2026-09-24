@@ -60,7 +60,6 @@ export default function SettingsScreen() {
     }
   }
 
-  // FIXED: Added a manual trigger to force the OS permission prompt and fire a test alert
   async function forceTestNotifications() {
     try {
       const { status } = await Notifications.requestPermissionsAsync();
@@ -75,9 +74,9 @@ export default function SettingsScreen() {
           title: "Test Alert 🔔",
           body: "Push notifications and lock screen alerts are working perfectly!",
           sound: true,
-          channelId: 'alerts-v2', // Uses the High Priority channel
+          channelId: 'alerts-v2', 
         },
-        trigger: null, // Fires immediately
+        trigger: null, 
       });
       showToast('Test alert sent!');
     } catch (error) {
@@ -90,7 +89,8 @@ export default function SettingsScreen() {
       showToast('Requesting briefing from server...');
       await settingsService.triggerMorningBriefing();
     } catch (e) {
-      Alert.alert('Error', 'Could not trigger briefing from backend.');
+      // If the backend route is missing, it falls into this error!
+      Alert.alert('Backend Error', 'Ensure your Node.js server is running and the /test-briefing route is saved.');
     }
   }
 
@@ -138,11 +138,15 @@ export default function SettingsScreen() {
 
         <FieldLabel style={styles.sectionHeader}>Troubleshooting</FieldLabel>
         <View style={[styles.card, { marginBottom: 30 }]}>
-          <Button variant="outline" onPress={forceTestNotifications}>
+          <Button variant="outline" onPress={forceTestNotifications} style={{ marginBottom: 12 }}>
             🔔 Test & Enable Notifications
           </Button>
+          
+          {/* FIXED: Added the Morning Briefing button here */}
+          <Button variant="outline" onPress={fireBackendBriefing}>
+            🚀 Send Morning Briefing Now
+          </Button>
         </View>
-        
 
         <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginBottom: 40 }}>
           {saving ? 'Saving…' : 'Save all settings'}
