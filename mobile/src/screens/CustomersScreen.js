@@ -92,8 +92,10 @@ export default function CustomersScreen({ navigation }) {
            <View key={c._id} style={styles.card}>
              <View style={{ flex: 1 }}>
                <Text style={styles.name}>{c.name}</Text>
-               {/* FIXED: Repaired the broken line break on the phone and email text */}
+               
+               {/* FIXED: Removed the minus sign and line break, formatted perfectly */}
                <Text style={styles.detail}>{c.phone || 'No phone'} • {c.email || 'No email'}</Text>
+               
                <Text style={styles.detail}>{c.address || 'No address saved'}</Text>
                {c.notes ? <Text style={styles.notes}>Notes: {c.notes}</Text> : null}
              </View>

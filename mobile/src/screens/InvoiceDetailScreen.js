@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-// IMPORT KeyboardAvoidingView
 import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-// IMPORT useSafeAreaInsets
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -32,7 +30,7 @@ export default function InvoiceDetailScreen() {
   const { params } = useRoute();
   const navigation = useNavigation();
   const { showToast } = useToast();
-  const insets = useSafeAreaInsets(); // GRABS SAFE AREA NOTCH HEIGHT
+  const insets = useSafeAreaInsets();
   
   const { settings, update: updateSettings } = useSettings();
   const {
@@ -118,7 +116,8 @@ export default function InvoiceDetailScreen() {
     const bizPhoneStr = settings?.bizPhone || '';
     const bizWebStr = settings?.website || '';
     
-    const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
+    // FIXED: Safely builds logo URL with trailing slash check
+    const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl.startsWith('/') ? '' : '/'}${settings.logoUrl}`) : '';
     const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${bizNameStr}</h2>`;
     
     const invDate = new Date(invoice.date).toLocaleDateString('en-GB');
@@ -242,7 +241,7 @@ export default function InvoiceDetailScreen() {
     }
   };
 
-  // WRAPPED ENTIRE FORM IN KEYBOARD AVOIDING VIEW
+  // FIXED: Properly wraps the entire ScrollView
   return (
     <View style={styles.screen}>
       <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => navigation.navigate('InvoicesList')} />
@@ -301,7 +300,7 @@ export default function InvoiceDetailScreen() {
                     await invoiceService.updateInvoice(invoice._id, { completionPhotoUrl: null });
                     showToast('Photo removed');
                     refresh();
-                  } catch(e) { Alert.alert('Error', 'Could not remove photo'); }
+                  } catch(e) { Alert.alert('Error', e.message || 'Could not remove photo'); }
                 }}>
                   <Text style={{ color: colors.red, fontWeight: '700', fontSize: 12 }}>🗑️ Remove Photo</Text>
                 </Button>
@@ -315,7 +314,7 @@ export default function InvoiceDetailScreen() {
                     await invoiceService.uploadCompletionPhoto(invoice._id, asset);
                     showToast('Completion photo attached!');
                     refresh();
-                  } catch (e) { Alert.alert('Error', 'Upload failed'); }
+                  } catch (e) { Alert.alert('Upload Error', e.message || 'Upload failed'); }
                 }} 
               />
               <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Tap the icon to attach a completion photo.</Text>
@@ -334,7 +333,7 @@ export default function InvoiceDetailScreen() {
                   await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset);
                   showToast('Material photo saved!');
                   refresh();
-                } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
+                } catch (e) { Alert.alert('Upload Failed', e.message || 'Could not save the photo.'); }
               }}
             />
             <View style={styles.divider} />
@@ -348,7 +347,7 @@ export default function InvoiceDetailScreen() {
                   await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset);
                   showToast('Expense photo saved!');
                   refresh();
-                } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
+                } catch (e) { Alert.alert('Upload Failed', e.message || 'Could not save the photo.'); }
               }}
             />
           </View>

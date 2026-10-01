@@ -17,8 +17,8 @@ export const uploadCostItemPhoto = async (id, kind, index, asset) => {
   const form = new FormData();
   form.append('photo', {
     uri: Platform.OS === 'android' ? asset.uri : asset.uri.replace('file://', ''),
-    name: asset.fileName || `receipt-${index}.jpg`,
-    type: asset.mimeType || 'image/jpeg',
+    name: asset.name || asset.fileName || `receipt-${index}.jpg`,
+    type: asset.type || asset.mimeType || 'image/jpeg',
   });
   
   const token = await AsyncStorage.getItem('gh_token');
@@ -29,7 +29,7 @@ export const uploadCostItemPhoto = async (id, kind, index, asset) => {
   });
   
   const data = await res.json();
-  if (!data.success) throw new Error(data.message);
+  if (!data.success) throw new Error(data.message || 'Backend upload failed');
   return data.data;
 };
 
@@ -38,8 +38,8 @@ export const uploadCompletionPhoto = async (id, asset) => {
   const form = new FormData();
   form.append('photo', {
     uri: Platform.OS === 'android' ? asset.uri : asset.uri.replace('file://', ''),
-    name: asset.fileName || `completion-${Date.now()}.jpg`,
-    type: asset.mimeType || 'image/jpeg',
+    name: asset.name || asset.fileName || `completion-${Date.now()}.jpg`,
+    type: asset.type || asset.mimeType || 'image/jpeg',
   });
 
   const token = await AsyncStorage.getItem('gh_token');
@@ -50,6 +50,6 @@ export const uploadCompletionPhoto = async (id, asset) => {
   });
 
   const data = await res.json();
-  if (!data.success) throw new Error(data.message);
+  if (!data.success) throw new Error(data.message || 'Backend upload failed');
   return data.data;
 };

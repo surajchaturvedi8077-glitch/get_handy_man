@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import JobFilterTabs from '../components/jobs/JobFilterTabs';
 import JobListItem from '../components/jobs/JobListItem';
 import SegmentedControl from '../components/ui/SegmentedControl';
@@ -12,6 +12,7 @@ import { colors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DAY_NAMES = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 // FIXED: Replaced 'Infinity' with a massive valid number to prevent Hermes crashes
 const safeTime = (dateStr) => {
@@ -20,12 +21,39 @@ const safeTime = (dateStr) => {
   return isNaN(time) ? 999999999999999 : time;
 };
 
+// Reads the job's scheduled date from whichever field the API uses
+const getJobDate = (job) =>
+  job?.scheduledDate || job?.scheduled_date || job?.date || job?.startDate || job?.start_date || null;
+
+// Text used for the search box
+const getSearchText = (job) =>
+  [
+    job?.customerName,
+    job?.customer_name,
+    job?.customer?.name,
+    job?.title,
+    job?.address,
+    job?.jobNumber,
+    job?.job_number,
+    job?.id,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+const toDayKey = (date) =>
+  `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+
 export default function JobsScreen() {
   const navigation = useNavigation();
   const { params } = useRoute(); // <-- GRAB PARAMS
   const [viewMode, setViewMode] = useState('list'); 
   const [filter, setFilter] = useState('all'); 
   const [searchQuery, setSearchQuery] = useState('');
+
+  const today = new Date();
+  const [calYear, setCalYear] = useState(today.getFullYear());
+  const [calMonth, setCalMonth] = useState(today.getMonth());
 
   const { jobs, loading, error } = useJobs(filter);
 
@@ -37,113 +65,155 @@ export default function JobsScreen() {
       setViewMode('list');
     }
   }, [params?.searchCustomer]);
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
 
-  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
-  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
+  // Search + sort (earliest scheduled first, undated jobs last)
+  const visibleJobs = useMemo(() => {
+    const list = Array.isArray(jobs) ? jobs : [];
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = q ? list.filter((job) => getSearchText(job).includes(q)) : list;
+    return [...filtered].sort((a, b) => safeTime(getJobDate(a)) - safeTime(getJobDate(b)));
+  }, [jobs, searchQuery]);
 
-  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayIndex = new Date(year, month, 1).getDay();
-  const daysArray = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
+  // Job count per day for the calendar badges
+  const jobsPerDay = useMemo(() => {
+    const counts = {};
+    visibleJobs.forEach((job) => {
+      const raw = getJobDate(job);
+      if (!raw) return;
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return;
+      const key = toDayKey(d);
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [visibleJobs]);
 
-  const jobsPerDay = {};
-  jobs.forEach(j => {
-    if (!j.scheduledDate) return;
-    const d = new Date(j.scheduledDate);
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      const dayNum = d.getDate();
-      jobsPerDay[dayNum] = (jobsPerDay[dayNum] || 0) + 1;
+  const goToMonth = (delta) => {
+    let m = calMonth + delta;
+    let y = calYear;
+    if (m < 0) { m = 11; y -= 1; }
+    if (m > 11) { m = 0; y += 1; }
+    setCalMonth(m);
+    setCalYear(y);
+  };
+
+  const openJob = (job) => {
+    navigation.navigate('JobDetail', { jobId: job.id, job });
+  };
+
+  const renderList = () => (
+    <ScrollView style={styles.content} contentContainerStyle={styles.listContainer} keyboardShouldPersistTaps="handled">
+      <View style={styles.tabs}>
+        <JobFilterTabs value={filter} onChange={setFilter} />
+      </View>
+
+      <TextInput
+        style={styles.searchBar}
+        placeholder="Search by customer, address or job number"
+        placeholderTextColor={colors.gray}
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        autoCorrect={false}
+        clearButtonMode="while-editing"
+      />
+
+      {visibleJobs.length === 0 ? (
+        <Text style={styles.emptyText}>
+          {searchQuery ? 'No jobs match your search.' : 'No jobs found.'}
+        </Text>
+      ) : (
+        visibleJobs.map((job, index) => (
+          <JobListItem
+            key={String(job.id ?? index)}
+            job={job}
+            onPress={() => openJob(job)}
+          />
+        ))
+      )}
+    </ScrollView>
+  );
+
+  const renderCalendar = () => {
+    const firstWeekday = new Date(calYear, calMonth, 1).getDay();
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const cells = [];
+
+    for (let i = 0; i < firstWeekday; i++) {
+      cells.push(<View key={`blank-${i}`} style={styles.dayCell} />);
     }
-  });
 
-  // FIXED: Searches the jobs, places newly accepted jobs at the top, and sorts the rest chronologically
-  const filteredJobs = jobs.filter(j => {
-    const q = searchQuery.toLowerCase();
-    return q === '' || 
-      (j.name && j.name.toLowerCase().includes(q)) ||
-      (j.address && j.address.toLowerCase().includes(q)) ||
-      (Array.isArray(j.services) && j.services.some(s => s && s.toLowerCase().includes(q))) ||
-      (typeof j.service === 'string' && j.service.toLowerCase().includes(q));
-  }).sort((a, b) => {
-    if (a.needsDetails && !b.needsDetails) return -1;
-    if (!a.needsDetails && b.needsDetails) return 1;
-    return safeTime(a.scheduledDate) - safeTime(b.scheduledDate);
-  });
+    for (let day = 1; day <= daysInMonth; day++) {
+      const key = `${calYear}-${calMonth}-${day}`;
+      const count = jobsPerDay[key] || 0;
+      const isToday =
+        day === today.getDate() &&
+        calMonth === today.getMonth() &&
+        calYear === today.getFullYear();
 
-  return (
-    <View style={styles.screen}>
-      <SafeAreaView edges={['top']} style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={styles.title}>JOBS</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Home', { screen: 'NewJob' })} style={styles.addBtn}>
-            <Text style={styles.addBtnText}>+ New Job</Text>
+      cells.push(
+        <View key={key} style={[styles.dayCell, isToday && styles.todayCell]}>
+          <Text style={styles.dayText}>{day}</Text>
+          {count > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{count}</Text>
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView style={styles.content} contentContainerStyle={styles.calendarContainer}>
+        <View style={styles.monthNav}>
+          <TouchableOpacity style={styles.monthBtn} onPress={() => goToMonth(-1)}>
+            <Text style={styles.monthBtnText}>{'<'}</Text>
+          </TouchableOpacity>
+          <Text style={styles.monthTitle}>{MONTH_NAMES[calMonth]} {calYear}</Text>
+          <TouchableOpacity style={styles.monthBtn} onPress={() => goToMonth(1)}>
+            <Text style={styles.monthBtnText}>{'>'}</Text>
           </TouchableOpacity>
         </View>
-        <SegmentedControl 
-          options={[{ value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]}
-          value={viewMode} onChange={setViewMode} dark 
-        />
-      </SafeAreaView>
 
-      <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
-        {viewMode === 'list' ? (
-          <View style={styles.listContainer}>
-            <View style={styles.tabs}>
-              <JobFilterTabs value={filter} onChange={setFilter} />
-            </View>
-            
-            <TextInput 
-              style={styles.searchBar} 
-              placeholder="Search jobs by client, address..." 
-              value={searchQuery} 
-              onChangeText={setSearchQuery} 
-              placeholderTextColor={colors.gray} 
-            />
-            
-            {loading && <LoadingState />}
-            {error && <ErrorState>{error}</ErrorState>}
-            
-            {!loading && !error && filteredJobs.length > 0 && ( 
-              filteredJobs.map(j => <JobListItem key={j._id} job={j} />) 
-            )}
+        <View style={styles.daysHeader}>
+          {DAY_NAMES.map((d, i) => (
+            <Text key={`dayname-${i}`} style={styles.dayHeadText}>{d}</Text>
+          ))}
+        </View>
 
-            {!loading && !error && filteredJobs.length === 0 && (
-              <Text style={styles.emptyText}>No jobs match this filter.</Text>
-            )}
-          </View>
-        ) : (
-          <View style={styles.calendarContainer}>
-            <View style={styles.monthNav}>
-              <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
-              <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
-              <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
-            </View>
-            <View style={styles.daysHeader}>
-              {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
-            </View>
-            <View style={styles.grid}>
-              {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
-              {daysArray.map(day => {
-                const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
-                const count = jobsPerDay[day] || 0;
-                return (
-                  <TouchableOpacity key={day} style={[styles.dayCell, isTodayCell && styles.todayCell]} onPress={() => navigation.navigate('DayDetail', { day, year, month })}>
-                    <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
-                    {count > 0 && (
-                      <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
-                        <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        )}
+        <View style={styles.grid}>{cells}</View>
       </ScrollView>
-    </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <Text style={styles.title}>JOBS</Text>
+          <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate('AddJob')}>
+            <Text style={styles.addBtnText}>+ NEW JOB</Text>
+          </TouchableOpacity>
+        </View>
+        <SegmentedControl
+          options={[
+            { label: 'List', value: 'list' },
+            { label: 'Calendar', value: 'calendar' },
+          ]}
+          value={viewMode}
+          onChange={setViewMode}
+        />
+      </View>
+
+      {loading ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorState message={typeof error === 'string' ? error : error?.message} />
+      ) : viewMode === 'list' ? (
+        renderList()
+      ) : (
+        renderCalendar()
+      )}
+    </SafeAreaView>
   );
 }
 
