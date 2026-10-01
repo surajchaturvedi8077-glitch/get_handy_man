@@ -22,12 +22,21 @@ const safeTime = (dateStr) => {
 
 export default function JobsScreen() {
   const navigation = useNavigation();
+  const { params } = useRoute(); // <-- GRAB PARAMS
   const [viewMode, setViewMode] = useState('list'); 
   const [filter, setFilter] = useState('all'); 
   const [searchQuery, setSearchQuery] = useState('');
 
   const { jobs, loading, error } = useJobs(filter);
 
+  // FIXED: Automatically filter the list to show the customer's chain of jobs if clicked from Customers Screen
+  React.useEffect(() => {
+    if (params?.searchCustomer) {
+      setSearchQuery(params.searchCustomer);
+      setFilter('all'); // Force 'all' so we see past completed jobs too
+      setViewMode('list');
+    }
+  }, [params?.searchCustomer]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();

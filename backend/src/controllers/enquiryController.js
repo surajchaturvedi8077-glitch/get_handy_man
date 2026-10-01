@@ -73,6 +73,7 @@ const createEnquiry = asyncHandler(async (req, res) => {
   const { created } = require('../utils/apiResponse');
   created(res, enquiry);
 });
+
 // PUT /api/enquiries/:id (Update Enquiry Details)
 const updateEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });

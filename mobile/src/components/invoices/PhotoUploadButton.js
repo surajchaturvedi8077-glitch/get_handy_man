@@ -17,14 +17,9 @@ export default function PhotoUploadButton({ photoUrl, onUpload }) {
       quality: 0.7,
     });
     
+    // FIXED: Passes raw asset to the service to prevent undefined file names
     if (!result.canceled) {
-      const asset = result.assets[0];
-      const fileToUpload = {
-        uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
-        type: asset.mimeType || 'image/jpeg',
-        name: asset.fileName || `receipt-${Date.now()}.jpg`
-      };
-      onUpload(fileToUpload);
+      onUpload(result.assets[0]);
     }
   }
 

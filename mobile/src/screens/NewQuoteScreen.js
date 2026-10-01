@@ -64,7 +64,7 @@ export default function NewQuoteScreen() {
       const html = `
         <html>
           <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+, initial-scale=1.0" />
             <style>
               @page { margin: 0; }
               body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }

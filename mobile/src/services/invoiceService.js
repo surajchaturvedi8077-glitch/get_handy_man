@@ -12,7 +12,7 @@ export const setPaymentMode = (id, paymentMode) => unwrap(apiClient.put(`/api/in
 export const setInvoiceStatus = (id, status) => unwrap(apiClient.put(`/api/invoices/${id}/status`, { status }));
 export const setCostItems = (id, kind, items) => unwrap(apiClient.put(`/api/invoices/${id}/cost-items/${kind}`, { items }));
 
-// FIXED: Uses native fetch to ensure Android/iOS multipart boundaries aren't stripped
+// FIXED: Forced native fetch API to bypass Axios stripping image files
 export const uploadCostItemPhoto = async (id, kind, index, asset) => {
   const form = new FormData();
   form.append('photo', {
@@ -24,7 +24,7 @@ export const uploadCostItemPhoto = async (id, kind, index, asset) => {
   const token = await AsyncStorage.getItem('gh_token');
   const res = await fetch(`${BASE_URL}/api/invoices/${id}/cost-items/${kind}/${index}/photo`, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` }, // Do NOT set Content-Type; fetch sets it automatically
+    headers: { 'Authorization': `Bearer ${token}` }, // NO Content-Type required
     body: form
   });
   
@@ -33,6 +33,7 @@ export const uploadCostItemPhoto = async (id, kind, index, asset) => {
   return data.data;
 };
 
+// FIXED: Forced native fetch API for completion photos
 export const uploadCompletionPhoto = async (id, asset) => {
   const form = new FormData();
   form.append('photo', {
@@ -40,9 +41,15 @@ export const uploadCompletionPhoto = async (id, asset) => {
     name: asset.fileName || `completion-${Date.now()}.jpg`,
     type: asset.mimeType || 'image/jpeg',
   });
-  return unwrap(
-    apiClient.post(`/api/invoices/${id}/completion-photo`, form, { 
-      headers: { 'Content-Type': 'multipart/form-data' } 
-    })
-  );
+
+  const token = await AsyncStorage.getItem('gh_token');
+  const res = await fetch(`${BASE_URL}/api/invoices/${id}/completion-photo`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
+    body: form
+  });
+
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message);
+  return data.data;
 };

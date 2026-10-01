@@ -12,6 +12,7 @@ import { openPhone, openEmail, openMaps } from '../utils/linking';
 import { money } from '../utils/money';
 import { colors } from '../theme/colors';
 import * as invoiceService from '../services/invoiceService';
+import { apiClient } from '../services/apiClient'; // ADD THIS IMPORT AT THE TOP
 
 export default function JobDetailScreen() {
   const { params } = useRoute();
@@ -60,13 +61,32 @@ export default function JobDetailScreen() {
   const handleComplete = async () => {
     try {
       const { invoice } = await complete();
+
+      // FIXED: Auto-Add Customer to database when job is completed
+      try {
+        const res = await apiClient.get('/api/customers');
+        const customers = res.data?.data || [];
+        const exists = customers.find(c => c.phone === job.phone || (c.email && c.email === job.email) || c.name === job.name);
+        
+        if (!exists && job.name) {
+          await apiClient.post('/api/customers', {
+            name: job.name,
+            phone: job.phone || '',
+            email: job.email || '',
+            address: job.address || '',
+            notes: 'Auto-added from completed job.'
+          });
+        }
+      } catch (autoAddErr) {
+        console.log("Auto-add customer bypassed");
+      }
+
       showToast('Job marked complete');
       navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: invoice._id } });
     } catch (err) {
       let errorText = 'An unknown error occurred.';
       if (err.response?.data?.errors) errorText = err.response.data.errors.join('\n');
       else if (err.response?.data?.message) errorText = err.response.data.message;
-      else if (err.message) errorText = err.message;
       Alert.alert("Backend Error", errorText);
     }
   };

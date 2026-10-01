@@ -92,7 +92,8 @@ export default function CustomersScreen({ navigation }) {
            <View key={c._id} style={styles.card}>
              <View style={{ flex: 1 }}>
                <Text style={styles.name}>{c.name}</Text>
-               <Text style={styles.detail}>{c.phone || 'No phone'}  •  {c.email || 'No email'}</Text>
+               {/* FIXED: Repaired the broken line break on the phone and email text */}
+               <Text style={styles.detail}>{c.phone || 'No phone'} • {c.email || 'No email'}</Text>
                <Text style={styles.detail}>{c.address || 'No address saved'}</Text>
                {c.notes ? <Text style={styles.notes}>Notes: {c.notes}</Text> : null}
              </View>
@@ -105,6 +106,12 @@ export default function CustomersScreen({ navigation }) {
                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Home', { screen: 'NewJob', params: { customer: c } })} style={styles.actionBtn}>
                  <Text style={styles.actionBtnText}>🛠️ Job</Text>
                </TouchableOpacity>
+               
+               {/* RESTORED: The History button to track the customer's chain of jobs */}
+               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Jobs', { screen: 'JobsList', params: { searchCustomer: c.name } })} style={styles.actionBtn}>
+                 <Text style={styles.actionBtnText}>📅 History</Text>
+               </TouchableOpacity>
+
                <TouchableOpacity onPress={() => openModal(c)} style={styles.iconBtn}><Text style={{fontSize: 16}}>✏️</Text></TouchableOpacity>
                <TouchableOpacity onPress={() => deleteCustomer(c._id)} style={styles.iconBtn}><Text style={{fontSize: 16}}>🗑️</Text></TouchableOpacity>
              </View>
@@ -148,10 +155,11 @@ const styles = StyleSheet.create({
   name: { fontSize: 15, fontWeight: '800', color: colors.charcoal, marginBottom: 4 },
   detail: { fontSize: 11.5, color: colors.gray, marginBottom: 2 },
   notes: { fontSize: 11, color: colors.orangeDeep, marginTop: 4, fontStyle: 'italic' },
-  actions: { flexDirection: 'row', gap: 10, marginTop: 12, alignItems: 'center' },
-  actionBtn: { backgroundColor: colors.blueTint, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  // FIXED: Added flexWrap so buttons wrap to the next line safely on small screens
+  actions: { flexDirection: 'row', gap: 10, marginTop: 12, alignItems: 'center', flexWrap: 'wrap' },
+  actionBtn: { backgroundColor: colors.blueTint, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, marginBottom: 4 },
   actionBtnText: { color: colors.blue, fontSize: 11, fontWeight: '700' },
-  iconBtn: { backgroundColor: colors.grayLight, padding: 6, borderRadius: 8 },
+  iconBtn: { backgroundColor: colors.grayLight, padding: 6, borderRadius: 8, marginBottom: 4 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 12, color: colors.charcoal },
   empty: { textAlign: 'center', color: colors.gray, marginTop: 40, fontSize: 13 }
 });
