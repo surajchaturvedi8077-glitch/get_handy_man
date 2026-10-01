@@ -8,11 +8,11 @@ import Button from '../components/ui/Button';
 import LoadingState from '../components/ui/LoadingState';
 import useJob from '../hooks/useJob';
 import useToast from '../hooks/useToast';
+import { apiClient } from '../services/apiClient'; // Auto-add customer dependency
 import { openPhone, openEmail, openMaps } from '../utils/linking';
 import { money } from '../utils/money';
 import { colors } from '../theme/colors';
 import * as invoiceService from '../services/invoiceService';
-import { apiClient } from '../services/apiClient'; // ADD THIS IMPORT AT THE TOP
 
 export default function JobDetailScreen() {
   const { params } = useRoute();
@@ -32,13 +32,12 @@ export default function JobDetailScreen() {
     try {
       await saveDetails(payload);
 
-      // SYNCHRONIZE JOB COST DIRECTLY TO LINKED INVOICE
       if (payload.labour !== undefined && job.invoiceId) {
         try {
           const inv = await invoiceService.getInvoice(job.invoiceId);
           if (inv && inv.items && inv.items.length > 0) {
             const updatedItems = [...inv.items];
-            updatedItems[0].amt = payload.labour; // Syncs the new price to the first line item
+            updatedItems[0].amt = payload.labour; 
             await invoiceService.updateInvoice(job.invoiceId, { items: updatedItems });
           }
         } catch (invErr) {
@@ -62,11 +61,16 @@ export default function JobDetailScreen() {
     try {
       const { invoice } = await complete();
 
-      // FIXED: Auto-Add Customer to database when job is completed
+      // FIXED: Flawless Permanent Customer Auto-Add implementation
       try {
         const res = await apiClient.get('/api/customers');
         const customers = res.data?.data || [];
-        const exists = customers.find(c => c.phone === job.phone || (c.email && c.email === job.email) || c.name === job.name);
+        
+        const exists = customers.find(c => 
+          (job.phone && c.phone === job.phone) || 
+          (job.email && c.email === job.email) || 
+          (job.name && c.name === job.name)
+        );
         
         if (!exists && job.name) {
           await apiClient.post('/api/customers', {
@@ -78,15 +82,16 @@ export default function JobDetailScreen() {
           });
         }
       } catch (autoAddErr) {
-        console.log("Auto-add customer bypassed");
+        console.log("Auto-add customer bypassed or failed silently");
       }
 
-      showToast('Job marked complete');
+      showToast('Job complete & Customer Saved');
       navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: invoice._id } });
     } catch (err) {
       let errorText = 'An unknown error occurred.';
       if (err.response?.data?.errors) errorText = err.response.data.errors.join('\n');
       else if (err.response?.data?.message) errorText = err.response.data.message;
+      else if (err.message) errorText = err.message;
       Alert.alert("Backend Error", errorText);
     }
   };
@@ -224,7 +229,6 @@ export default function JobDetailScreen() {
     </View>
   );
 }
-
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },

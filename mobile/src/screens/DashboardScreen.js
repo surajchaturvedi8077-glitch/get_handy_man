@@ -1,7 +1,5 @@
 import React, { useEffect } from 'react';
-// IMPORT ALERT
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useAuth from '../hooks/useAuth';
@@ -10,14 +8,13 @@ import useJobs from '../hooks/useJobs';
 import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
-
-import { getExpoPushToken, syncLocalNotifications } from '../services/notificationService';
+import { getExpoPushToken, scheduleLocalJobReminder } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
 const safeTime = (dateStr) => {
-  if (!dateStr) return 999999999999999;
+  if (!dateStr) return 0;
   const time = new Date(dateStr).getTime();
-  return isNaN(time) ? 999999999999999 : time;
+  return isNaN(time) ? 0 : time;
 };
 
 function SummaryCard({ big, label, sub, bg, fg, onPress }) {
@@ -41,45 +38,39 @@ export default function DashboardScreen() {
   const { jobs } = useJobs('all');
   const { invoices: unpaidInvoices } = useInvoices('unpaid');
 
-  // FIXED: Aggressively checks permissions and syncs the push token to your backend
   useEffect(() => {
-    async function ensureNotifications() {
-      const { status } = await Notifications.getPermissionsAsync();
-      
-      if (status !== 'granted') {
-        const { status: newStatus } = await Notifications.requestPermissionsAsync();
-        if (newStatus !== 'granted') {
-          Alert.alert(
-            "Notifications Disabled 🔕", 
-            "You will NOT receive lock-screen alerts for new website enquiries or job reminders! Please open your phone Settings > Apps > Get Handyman and turn on Notifications."
-          );
-        }
-      }
-
-      if (settings) {
+    async function syncPushToken() {
+      if (settings && !settings.expoPushToken) {
         const token = await getExpoPushToken();
-        if (token && settings.expoPushToken !== token) {
+        if (token) {
           update({ expoPushToken: token });
         }
       }
     }
-    ensureNotifications();
+    syncPushToken();
   }, [settings]);
 
-  const upcomingJobs = jobs
-    .filter(j => j.status !== 'complete')
-    .sort((a, b) => {
-      if (a.needsDetails && !b.needsDetails) return -1;
-      if (!a.needsDetails && b.needsDetails) return 1;
-      return safeTime(a.scheduledDate) - safeTime(b.scheduledDate);
-    });
+  const isToday = (dateString) => {
+    if (!dateString) return false;
+    const d = new Date(dateString);
+    const today = new Date();
+    
+    return d.getFullYear() === today.getFullYear() &&
+           d.getMonth() === today.getMonth() &&
+           d.getDate() === today.getDate();
+  };
+
+  const todaysJobs = jobs
+    .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
+    .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
 
   useEffect(() => {
-    syncLocalNotifications(upcomingJobs, unpaidInvoices);
-  }, [upcomingJobs, unpaidInvoices]);
+    todaysJobs.forEach(job => scheduleLocalJobReminder(job));
+  }, [todaysJobs]);
 
-  const needsDetailsCount = upcomingJobs.filter(j => j.needsDetails).length;
-  const confirmedCount = upcomingJobs.filter(j => j.status === 'confirmed').length;
+  const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
+  // FIXED: Dashboard now properly counts Accepted jobs instead of Confirmed
+  const acceptedCount = todaysJobs.filter(j => j.status === 'accepted' || j.status === 'confirmed').length;
 
   const todayOptions = { weekday: 'long', day: 'numeric', month: 'long' };
   const todayStr = new Date().toLocaleDateString('en-US', todayOptions);
@@ -129,9 +120,9 @@ export default function DashboardScreen() {
         />
 
         <SummaryCard
-          big={upcomingJobs.length}
-          label="UPCOMING JOBS"
-          sub={`${confirmedCount} confirmed · ${needsDetailsCount} need details`}
+          big={todaysJobs.length}
+          label="JOBS TODAY"
+          sub={`${acceptedCount} accepted · ${needsDetailsCount} need details`}
           bg={colors.blueTint}
           fg={colors.blue}
           onPress={() => navigation.getParent()?.navigate('Jobs')}
@@ -148,12 +139,12 @@ export default function DashboardScreen() {
           />
         )}
 
-        <Text style={styles.sectionLabel}>Upcoming Schedule</Text>
-        {upcomingJobs.map((job) => (
+        <Text style={styles.sectionLabel}>Today's schedule</Text>
+        {todaysJobs.map((job) => (
           <JobListItem key={job._id} job={job} />
         ))}
-        {upcomingJobs.length === 0 && (
-          <Text style={styles.emptyText}>No upcoming jobs scheduled.</Text>
+        {todaysJobs.length === 0 && (
+          <Text style={styles.emptyText}>No jobs scheduled for today.</Text>
         )}
       </ScrollView>
     </View>

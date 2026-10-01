@@ -1,12 +1,8 @@
-/**
- * JobFilterTabs.js
- * ------------------------------------------------------------------
- */
+import React from 'react';
 import SegmentedControl from '../ui/SegmentedControl';
 
 const OPTIONS = [
   { value: 'accepted', label: 'Accepted' },
-  { value: 'confirmed', label: 'Confirmed' },
   { value: 'complete', label: 'Complete' },
   { value: 'all', label: 'All' },
 ];

@@ -1,9 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-// IMPORT KeyboardAvoidingView
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert, KeyboardAvoidingView } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-// IMPORT useSafeAreaInsets
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import Button from '../components/ui/Button';
@@ -16,8 +14,7 @@ export default function NewJobScreen() {
   const navigation = useNavigation();
   const { params } = useRoute();
   const { showToast } = useToast();
-  const insets = useSafeAreaInsets(); // GRABS THE EXACT NOTCH/HOME BAR HEIGHT
-  
+  const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
   const debounceTimer = useRef(null);
 
@@ -72,7 +69,7 @@ export default function NewJobScreen() {
         service: validServices.length > 0 ? validServices[0] : 'General Handyman',
         extraFields: extraFields.filter(f => f.label && f.value),
         materials,
-        status: 'confirmed',
+        status: 'accepted', // FIXED: Now defaults to Accepted instead of Confirmed
         needsDetails: false
       };
       
@@ -146,16 +143,10 @@ export default function NewJobScreen() {
     } catch (e) { }
   };
 
-  // WRAPPED ENTIRE FORM IN KEYBOARD AVOIDING VIEW
- // FIXED: Forced Android to use 'padding' and added a keyboard vertical offset
   return (
     <View style={styles.screen}>
       <ScreenHeader title="NEW JOB" onBack={() => navigation.navigate('Dashboard')} />
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} 
-        keyboardVerticalOffset={Platform.OS === 'android' ? 80 : 0} 
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} keyboardVerticalOffset={Platform.OS === 'android' ? 80 : 0} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
           
           <View style={styles.customerStrip}>
