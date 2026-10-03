@@ -1,4 +1,5 @@
 import { apiClient, unwrap } from './apiClient';
+import { Platform } from 'react-native';
 
 export const listInvoices = (status) => unwrap(apiClient.get('/api/invoices', { params: { status } }));
 export const getInvoice = (id) => unwrap(apiClient.get(`/api/invoices/${id}`));
@@ -10,13 +11,13 @@ export const setPaymentMode = (id, paymentMode) => unwrap(apiClient.put(`/api/in
 export const setInvoiceStatus = (id, status) => unwrap(apiClient.put(`/api/invoices/${id}/status`, { status }));
 export const setCostItems = (id, kind, items) => unwrap(apiClient.put(`/api/invoices/${id}/cost-items/${kind}`, { items }));
 
-// FIXED: Explicitly builds a clean object to stop the React Native FormData crash
+// FIXED: Mirrors the exact logic of the working LogoUploader
 export const uploadCostItemPhoto = (id, kind, index, asset) => {
   const form = new FormData();
   form.append('photo', {
-    uri: asset.uri,
-    name: asset.name || asset.fileName || `receipt-${index}.jpg`,
-    type: asset.type || asset.mimeType || 'image/jpeg',
+    uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
+    name: asset.fileName || asset.name || `receipt-${index}.jpg`,
+    type: asset.mimeType || asset.type || 'image/jpeg',
   });
   
   return unwrap(apiClient.post(`/api/invoices/${id}/cost-items/${kind}/${index}/photo`, form, {
@@ -24,13 +25,13 @@ export const uploadCostItemPhoto = (id, kind, index, asset) => {
   }));
 };
 
-// FIXED: Explicitly builds a clean object for completion photos
+// FIXED: Mirrors the exact logic of the working LogoUploader
 export const uploadCompletionPhoto = (id, asset) => {
   const form = new FormData();
   form.append('photo', {
-    uri: asset.uri,
-    name: asset.name || asset.fileName || `completion-${Date.now()}.jpg`,
-    type: asset.type || asset.mimeType || 'image/jpeg',
+    uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
+    name: asset.fileName || asset.name || `completion-${Date.now()}.jpg`,
+    type: asset.mimeType || asset.type || 'image/jpeg',
   });
 
   return unwrap(apiClient.post(`/api/invoices/${id}/completion-photo`, form, {

@@ -9,8 +9,8 @@ import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
 
-// FIXED: Imported the correct sync function to stop the undefined TypeError
-import { getExpoPushToken, syncLocalNotifications } from '../services/notificationService';
+// FIXED: Restored the correct function name to stop the undefined TypeError crash
+import { getExpoPushToken, scheduleLocalJobReminder } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
 const safeTime = (dateStr) => {
@@ -36,9 +36,9 @@ export default function DashboardScreen() {
   const { user } = useAuth();
   const { settings, update } = useSettings();
 
-  const { enquiries: newEnquiries } = useEnquiries('new');
-  const { jobs } = useJobs('all');
-  const { invoices: unpaidInvoices } = useInvoices('unpaid');
+  const { enquiries: newEnquiries, refresh: refreshEnquiries } = useEnquiries('new');
+  const { jobs, refresh: refreshJobs } = useJobs('all');
+  const { invoices: unpaidInvoices, refresh: refreshInvoices } = useInvoices('unpaid');
 
   useEffect(() => {
     async function syncPushToken() {
@@ -51,6 +51,16 @@ export default function DashboardScreen() {
     }
     syncPushToken();
   }, [settings]);
+
+  // FRONTEND CRON JOB: Silently refreshes your dashboard every 30 seconds
+  useEffect(() => {
+    const frontendCron = setInterval(() => {
+      refreshEnquiries();
+      refreshJobs();
+      refreshInvoices();
+    }, 30000); 
+    return () => clearInterval(frontendCron);
+  }, [refreshEnquiries, refreshJobs, refreshInvoices]);
 
   const isToday = (dateString) => {
     if (!dateString) return false;
@@ -66,12 +76,14 @@ export default function DashboardScreen() {
     .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
     .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
 
-  // FIXED: Replaced the broken loop with the proper sync function
+  // FIXED: Restored the proper function to set offline alarms
   useEffect(() => {
-    if (todaysJobs.length > 0 || unpaidInvoices.length > 0) {
-      syncLocalNotifications(todaysJobs, unpaidInvoices);
-    }
-  }, [todaysJobs, unpaidInvoices]);
+    todaysJobs.forEach(job => {
+      if (scheduleLocalJobReminder) {
+        scheduleLocalJobReminder(job);
+      }
+    });
+  }, [todaysJobs]);
 
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
   const acceptedCount = todaysJobs.filter(j => j.status === 'confirmed' || j.status === 'accepted').length;

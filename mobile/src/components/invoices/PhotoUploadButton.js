@@ -13,11 +13,13 @@ export default function PhotoUploadButton({ photoUrl, onUpload }) {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
+      // FIXED: Used correct MediaType enum to clear up the warning in your logs
+      mediaTypes: ImagePicker.MediaType.Images,
+      quality: 0.2, // Keeps compression to prevent Hostinger size limits
     });
     
-    // FIXED: Passes raw asset to the service to prevent undefined file names
+    // FIXED: Pass the RAW asset object exactly like the working LogoUploader does!
+    // Do not strip or alter the object here, otherwise Android throws a Network Error.
     if (!result.canceled) {
       onUpload(result.assets[0]);
     }

@@ -34,43 +34,33 @@ const getEnquiry = asyncHandler(async (req, res) => {
 // POST /api/enquiries (Called by your website contact form)
 const createEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.create(req.body);
-  
-  // --- BULLETPROOF NOTIFICATION BLOCK ---
-  try {
-    // We import these INSIDE the function so it can never throw an "Undefined" crash
-    const https = require('https');
-    const Settings = require('../models/Settings');
-    
-    const settings = await Settings.findOne();
-    if (settings && settings.expoPushToken) {
-      const payload = JSON.stringify({
-        to: settings.expoPushToken,
-        title: "New Enquiry! 📩",
-        body: `You received a new request from ${enquiry.name || 'a customer'}.`,
-        sound: "default",
-        channelId: "alerts-v2" // Guaranteed to hit the lock screen
-      });
 
-      const reqPush = https.request({
-        hostname: 'exp.host',
-        path: '/--/api/v2/push/send',
+  // FIXED: Instant Push Notification to your phone via Expo
+  try {
+    const Settings = require('../models/Settings');
+    const settings = await Settings.getSingleton();
+    
+    if (settings.expoPushToken) {
+      // Sends a raw HTTP request directly to Expo's Push Server
+      await fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST',
         headers: {
+          'Accept': 'application/json',
           'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        }
+        },
+        body: JSON.stringify({
+          to: settings.expoPushToken,
+          sound: 'default',
+          title: '🆕 New Enquiry Received!',
+          body: `${enquiry.name} needs a ${enquiry.service || 'handyman'}.`,
+          data: { type: 'enquiry', id: enquiry._id }
+        })
       });
-      
-      reqPush.on('error', (e) => console.error("[Push Error]", e));
-      reqPush.write(payload);
-      reqPush.end();
     }
   } catch (err) {
-    console.log("[Push Notification Failed]:", err.message);
+    console.log('Push notification skipped/failed:', err.message);
   }
-  // --- END NOTIFICATION BLOCK ---
 
-  const { created } = require('../utils/apiResponse');
   created(res, enquiry);
 });
 

@@ -1,12 +1,3 @@
-/**
- * LogoUploader.js
- * ------------------------------------------------------------------
- * Uploads/replaces the business logo shown on invoice & quote PDFs.
- * Uses expo-image-picker to grab an image from the phone's gallery,
- * then hands the picked asset up via onUpload — the parent calls
- * services/settingsService.uploadLogo(asset).
- * ------------------------------------------------------------------
- */
 import { View, Text, Image, StyleSheet } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import FieldLabel from '../ui/FieldLabel';
@@ -19,10 +10,14 @@ export default function LogoUploader({ logoUrl, onUpload }) {
     if (!permission.granted) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
+      // FIXED: Used correct MediaType enum to clear up the warning in your logs
+      mediaTypes: ImagePicker.MediaType.Images,
+      quality: 0.2, 
     });
-    if (!result.canceled) onUpload(result.assets[0]);
+    
+    if (!result.canceled) {
+      onUpload(result.assets[0]);
+    }
   }
 
   return (
