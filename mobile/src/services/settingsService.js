@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient, unwrap, BASE_URL } from './apiClient';
 
 export function getSettings() {
@@ -9,8 +8,8 @@ export function updateSettings(payload) {
   return unwrap(apiClient.put('/api/settings', payload));
 }
 
-// FIXED: Bypasses the Axios FormData bug using native fetch
-export async function uploadLogo(asset) {
+// FIXED: Explicitly builds a clean object to stop the React Native FormData crash
+export function uploadLogo(asset) {
   const form = new FormData();
   form.append('logo', { 
     uri: asset.uri, 
@@ -18,20 +17,11 @@ export async function uploadLogo(asset) {
     type: asset.mimeType || asset.type || 'image/jpeg' 
   });
   
-  const token = await AsyncStorage.getItem('gh_token');
-  
-  const response = await fetch(`${BASE_URL}/api/settings/logo`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/json'
-    },
-    body: form
-  });
-  
-  const data = await response.json();
-  if (!response.ok || !data.success) throw new Error(data.message || 'Logo upload failed');
-  return data.data;
+  return unwrap(
+    apiClient.post('/api/settings/logo', form, { 
+      headers: { 'Content-Type': 'multipart/form-data' } 
+    })
+  );
 }
 
 export function resolveMediaUrl(path) {

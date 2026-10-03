@@ -9,6 +9,11 @@ import { colors } from '../../theme/colors';
 export default function JobDetailForm({ job, onSave }) {
   const initialServices = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : ['']);
 
+  // NEW: Customer Edit State
+  const [name, setName] = useState(job.name || '');
+  const [phone, setPhone] = useState(job.phone || '');
+  const [email, setEmail] = useState(job.email || '');
+
   const [services, setServices] = useState(initialServices);
   const [when, setWhen] = useState(job.when || '');
   const [exactTime, setExactTime] = useState(job.exactTime || '');
@@ -69,8 +74,11 @@ export default function JobDetailForm({ job, onSave }) {
     try {
       const validServices = services.filter(Boolean);
       await onSave({ 
+        name,
+        phone,
+        email,
         services: validServices, 
-        service: validServices.length > 0 ? validServices[0] : 'General Handyman', // FIXED: Prevents missing field DB error
+        service: validServices.length > 0 ? validServices[0] : 'General Handyman',
         when, 
         exactTime,
         scheduledDate,
@@ -86,7 +94,15 @@ export default function JobDetailForm({ job, onSave }) {
 
   return (
     <View>
-      <FieldLabel>Services</FieldLabel>
+      {/* NEW: Customer Details Editable Inputs */}
+      <FieldLabel>Customer Details</FieldLabel>
+      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Customer Name" />
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={phone} onChangeText={setPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+        <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={email} onChangeText={setEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+      </View>
+
+      <FieldLabel style={{ marginTop: 14 }}>Services</FieldLabel>
       {services.map((srv, idx) => (
         <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
           <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv} onChangeText={v => { const s = [...services]; s[idx] = v; setServices(s); }} placeholder="e.g. Plumbing Repair" />
@@ -99,27 +115,27 @@ export default function JobDetailForm({ job, onSave }) {
         <View style={{ flex: 1 }}>
           <FieldLabel>Schedule (Date)</FieldLabel>
           <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
-            <View style={[styles.input, { justifyContent: 'center', height: 42 }]}>
+            <View style={[styles.input, { justifyContent: 'center', height: 42, marginTop: 0 }]}>
               <Text style={{ color: when ? colors.charcoal : colors.gray, fontSize: 13 }}>{when || "Tap to select date"}</Text>
             </View>
           </TouchableOpacity>
         </View>
         <View style={{ flex: 1 }}>
           <FieldLabel>Exact Time</FieldLabel>
-          <TextInput value={exactTime} onChangeText={setExactTime} placeholder="e.g. 10:30 AM" style={styles.input} />
+          <TextInput value={exactTime} onChangeText={setExactTime} placeholder="e.g. 10:30 AM" style={[styles.input, { marginTop: 0 }]} />
         </View>
       </View>
 
-      <FieldLabel>Address</FieldLabel>
-      <TextInput value={address} onChangeText={setAddress} style={styles.input} />
+      <FieldLabel style={{ marginTop: 14 }}>Address</FieldLabel>
+      <TextInput value={address} onChangeText={setAddress} style={[styles.input, { marginTop: 0 }]} />
 
-      <FieldLabel>Labour Cost (A$)</FieldLabel>
-      <TextInput value={labour} onChangeText={setLabour} keyboardType="numeric" style={styles.input} />
+      <FieldLabel style={{ marginTop: 14 }}>Labour Cost (A$)</FieldLabel>
+      <TextInput value={labour} onChangeText={setLabour} keyboardType="numeric" style={[styles.input, { marginTop: 0 }]} />
 
-      <FieldLabel>Notes</FieldLabel>
-      <TextInput value={notes} onChangeText={setNotes} multiline style={[styles.input, styles.notesInput]} />
+      <FieldLabel style={{ marginTop: 14 }}>Notes</FieldLabel>
+      <TextInput value={notes} onChangeText={setNotes} multiline style={[styles.input, styles.notesInput, { marginTop: 0 }]} />
 
-      <FieldLabel style={{ marginTop: 4 }}>Materials</FieldLabel>
+      <FieldLabel style={{ marginTop: 14 }}>Materials</FieldLabel>
       <MaterialsEditor materials={materials} onChange={setMaterials} />
 
       <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginTop: 16 }}>

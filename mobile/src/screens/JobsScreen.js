@@ -13,7 +13,7 @@ import { colors } from '../theme/colors';
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// FIXED: Removed 'Infinity' to prevent Android crashes. Uses a massive valid number instead.
+// FIXED: Removed 'Infinity' to permanently stop the Android Hermes sorting crash
 const safeTime = (dateStr) => {
   if (!dateStr) return 9999999999999; 
   const time = new Date(dateStr).getTime();
@@ -31,6 +31,7 @@ export default function JobsScreen() {
 
   const { jobs, loading, error } = useJobs(filter);
 
+  // Auto-filter when viewing a specific customer's history
   useEffect(() => {
     if (params.searchCustomer) {
       setSearchQuery(params.searchCustomer);

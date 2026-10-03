@@ -8,7 +8,7 @@ import Button from '../components/ui/Button';
 import LoadingState from '../components/ui/LoadingState';
 import useJob from '../hooks/useJob';
 import useToast from '../hooks/useToast';
-import { apiClient } from '../services/apiClient'; // Required for auto-add
+import { apiClient } from '../services/apiClient';
 import { openPhone, openEmail, openMaps } from '../utils/linking';
 import { money } from '../utils/money';
 import { colors } from '../theme/colors';
@@ -53,12 +53,44 @@ export default function JobDetailScreen() {
     }
   };
 
+  // FIXED: Manual button to add old customers into the permanent database
+  const handleSaveAsClient = async () => {
+    try {
+      const res = await apiClient.get('/api/customers');
+      const customers = res.data?.data || [];
+      
+      const exists = customers.find(c => 
+        (job.phone && c.phone === job.phone) || 
+        (job.email && c.email === job.email) || 
+        (job.name && c.name.toLowerCase() === job.name.toLowerCase())
+      );
+      
+      if (exists) {
+        Alert.alert("Already Saved", "This customer is already in your Clients list.");
+        return;
+      }
+      
+      if (job.name) {
+        await apiClient.post('/api/customers', {
+          name: job.name,
+          phone: job.phone || '',
+          email: job.email || '',
+          address: job.address || '',
+          notes: 'Manually saved from past job history.'
+        });
+        showToast('✅ Saved to Clients List!');
+      } else {
+        Alert.alert("Error", "Job has no customer name to save.");
+      }
+    } catch (err) {
+      Alert.alert("Error", "Could not save customer.");
+    }
+  };
+
   const handleComplete = async () => {
     try {
-      // 1. Mark job complete on backend
       const { invoice } = await complete();
 
-      // 2. FIXED: Flawless Customer Auto-Add
       try {
         const res = await apiClient.get('/api/customers');
         const customers = res.data?.data || [];
@@ -116,6 +148,10 @@ export default function JobDetailScreen() {
             <Text style={styles.customerName}>{job.name}</Text>
             <JobStatusBadge job={job} />
           </View>
+          {/* NEW: Standalone Save Client Button for Old Jobs */}
+          <TouchableOpacity style={[styles.actionIcon, { backgroundColor: colors.blueTint }]} onPress={handleSaveAsClient}>
+            <Text>💾</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.actionIcon} onPress={() => openPhone(job.phone)}><Text>📞</Text></TouchableOpacity>
           <TouchableOpacity style={styles.actionIcon} onPress={() => openEmail(job.email)}><Text>✉️</Text></TouchableOpacity>
         </View>

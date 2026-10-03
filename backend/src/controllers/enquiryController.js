@@ -147,7 +147,8 @@ const acceptEnquiry = asyncHandler(async (req, res) => {
     name: enquiry.name || 'New Customer',
     phone: enquiry.phone || '',
     email: enquiry.email || '',
-    address: enquiry.address || enquiry.suburb || 'Address not set',
+    // FIXED: Combines Address, Suburb, and Postcode dynamically
+    address: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', ') || 'Address not set',
     services: enquiry.services?.length ? enquiry.services : [enquiry.service || 'General Handyman'],
     service: enquiry.service || 'General Handyman',
     when: enquiry.when || 'Not scheduled yet',

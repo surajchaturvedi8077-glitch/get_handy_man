@@ -8,7 +8,9 @@ import useJobs from '../hooks/useJobs';
 import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
-import { getExpoPushToken, scheduleLocalJobReminder } from '../services/notificationService';
+
+// FIXED: Imported the correct sync function to stop the undefined TypeError
+import { getExpoPushToken, syncLocalNotifications } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
 const safeTime = (dateStr) => {
@@ -64,13 +66,15 @@ export default function DashboardScreen() {
     .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
     .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
 
+  // FIXED: Replaced the broken loop with the proper sync function
   useEffect(() => {
-    todaysJobs.forEach(job => scheduleLocalJobReminder(job));
-  }, [todaysJobs]);
+    if (todaysJobs.length > 0 || unpaidInvoices.length > 0) {
+      syncLocalNotifications(todaysJobs, unpaidInvoices);
+    }
+  }, [todaysJobs, unpaidInvoices]);
 
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
-  // FIXED: Renamed to Accepted
-  const acceptedCount = todaysJobs.filter(j => j.status === 'confirmed').length;
+  const acceptedCount = todaysJobs.filter(j => j.status === 'confirmed' || j.status === 'accepted').length;
 
   const todayOptions = { weekday: 'long', day: 'numeric', month: 'long' };
   const todayStr = new Date().toLocaleDateString('en-US', todayOptions);
