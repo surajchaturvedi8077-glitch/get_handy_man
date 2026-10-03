@@ -69,7 +69,7 @@ export default function NewJobScreen() {
         service: validServices.length > 0 ? validServices[0] : 'General Handyman',
         extraFields: extraFields.filter(f => f.label && f.value),
         materials,
-        status: 'accepted', // FIXED: Now defaults to Accepted instead of Confirmed
+        status: 'accepted', 
         needsDetails: false
       };
       
@@ -77,8 +77,7 @@ export default function NewJobScreen() {
       showToast('Job created successfully');
       navigation.navigate('Jobs', { screen: 'JobsList' }); 
     } catch (err) {
-      const errMsg = err.response?.data?.errors ? err.response.data.errors.join('\n') : (err.response?.data?.message || 'Failed to create job');
-      Alert.alert("Cannot Create Job", errMsg);
+      Alert.alert("Cannot Create Job", err.message || 'Failed to create job');
     } finally {
       setSaving(false);
     }
@@ -115,13 +114,20 @@ export default function NewJobScreen() {
   const searchPlaces = async (text) => {
     updateForm('address', text);
     if (text.length < 3) { setSuggestions([]); return; }
+    
+    // Safety check for missing API Key
+    const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
+    if (!key) {
+      console.warn("Google Maps API Key is missing in .env!");
+      return;
+    }
+
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(async () => {
       try {
-        const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
-        if (!key) return;
         const res = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&components=country:au&key=${key}`);
         const data = await res.json();
+        if(data.status === 'REQUEST_DENIED') console.warn("Google Maps Error:", data.error_message);
         setSuggestions(data.predictions || []);
       } catch (e) { }
     }, 500);
@@ -181,24 +187,27 @@ export default function NewJobScreen() {
             </View>
           </View>
 
-          <View style={styles.fieldRow}>
+          {/* FIXED: Z-Index and Absolute Positioning applied so dropdown overlaps other fields safely */}
+          <View style={[styles.fieldRow, { zIndex: 9999, elevation: 10 }]}>
             <Text style={styles.icon}>📍</Text>
-            <View style={{ flex: 1, zIndex: 10 }}>
+            <View style={{ flex: 1 }}>
               <FieldLabel>Street Address</FieldLabel>
               <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
               {suggestions.length > 0 && (
-                <View style={styles.dropdown}>
-                  {suggestions.map((item) => (
-                    <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
-                      <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
-                    </TouchableOpacity>
-                  ))}
+                <View style={styles.dropdownContainer}>
+                  <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                    {suggestions.map((item) => (
+                      <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
+                        <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
                 </View>
               )}
             </View>
           </View>
           
-          <View style={styles.rowSplit}>
+          <View style={[styles.rowSplit, { zIndex: 1 }]}>
             <View style={{ flex: 1, marginLeft: 46 }}>
               <FieldLabel>Suburb</FieldLabel>
               <TextInput style={styles.input} value={form.suburb} onChangeText={v => updateForm('suburb', v)} />
@@ -252,12 +261,12 @@ const styles = StyleSheet.create({
   customerStrip: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 14 },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.charcoal, alignItems: 'center', justifyContent: 'center' },
   nameInput: { fontWeight: '800', fontSize: 16, color: colors.charcoal, padding: 0 },
-  fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 6, alignItems: 'flex-start', zIndex: 10 },
+  fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 6, alignItems: 'flex-start' },
   rowSplit: { flexDirection: 'row', gap: 12, paddingVertical: 6 },
   icon: { width: 34, textAlign: 'center', fontSize: 17, marginTop: 18 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, backgroundColor: '#fff', marginTop: 4, color: colors.charcoal },
-  dropdown: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, marginTop: 4, maxHeight: 150 },
-  dropdownItem: { padding: 10, borderBottomWidth: 1, borderBottomColor: colors.grayLight },
+  dropdownContainer: { position: 'absolute', top: 65, left: 0, right: 0, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, maxHeight: 200, zIndex: 9999, elevation: 10 },
+  dropdownItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: colors.grayLight },
   dropdownText: { fontSize: 12, color: colors.charcoal },
   detailsCard: { backgroundColor: colors.orangeTint, borderRadius: 10, padding: 14, marginTop: 20 },
   cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.orangeDeep, marginBottom: 10 },

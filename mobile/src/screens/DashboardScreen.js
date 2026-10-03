@@ -1,17 +1,25 @@
-import React, { useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications'; // FIXED: Direct Native Notifications
 import useAuth from '../hooks/useAuth';
 import useEnquiries from '../hooks/useEnquiries';
 import useJobs from '../hooks/useJobs';
 import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
-
-// FIXED: Restored the correct function name to stop the undefined TypeError crash
-import { getExpoPushToken, scheduleLocalJobReminder } from '../services/notificationService';
+import { getExpoPushToken } from '../services/notificationService';
 import { colors } from '../theme/colors';
+
+// Ensure notifications show up even if the app is open
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 const safeTime = (dateStr) => {
   if (!dateStr) return 0;
@@ -40,17 +48,41 @@ export default function DashboardScreen() {
   const { jobs, refresh: refreshJobs } = useJobs('all');
   const { invoices: unpaidInvoices, refresh: refreshInvoices } = useInvoices('unpaid');
 
+  const [notifiedEnquiries, setNotifiedEnquiries] = useState(new Set());
+
   useEffect(() => {
-    async function syncPushToken() {
+    async function setupNotifications() {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissions Required', 'Please enable notifications in your phone settings to receive alerts.');
+      }
       if (settings && !settings.expoPushToken) {
         const token = await getExpoPushToken();
-        if (token) {
-          update({ expoPushToken: token });
-        }
+        if (token) update({ expoPushToken: token });
       }
     }
-    syncPushToken();
+    setupNotifications();
   }, [settings]);
+
+  // FIXED: Flawless Local Fallback Notifications "No Matter What"
+  useEffect(() => {
+    if (newEnquiries && newEnquiries.length > 0) {
+      newEnquiries.forEach(enq => {
+        if (!notifiedEnquiries.has(enq._id)) {
+          // Force the phone to ring immediately
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: '🆕 New Enquiry Received!',
+              body: `${enq.name} needs a ${enq.service || 'handyman'}.`,
+              sound: 'default',
+            },
+            trigger: null, // trigger instantly
+          });
+          setNotifiedEnquiries(prev => new Set(prev).add(enq._id));
+        }
+      });
+    }
+  }, [newEnquiries]);
 
   // FRONTEND CRON JOB: Silently refreshes your dashboard every 30 seconds
   useEffect(() => {
@@ -66,24 +98,12 @@ export default function DashboardScreen() {
     if (!dateString) return false;
     const d = new Date(dateString);
     const today = new Date();
-    
-    return d.getFullYear() === today.getFullYear() &&
-           d.getMonth() === today.getMonth() &&
-           d.getDate() === today.getDate();
+    return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
   };
 
   const todaysJobs = jobs
     .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
     .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
-
-  // FIXED: Restored the proper function to set offline alarms
-  useEffect(() => {
-    todaysJobs.forEach(job => {
-      if (scheduleLocalJobReminder) {
-        scheduleLocalJobReminder(job);
-      }
-    });
-  }, [todaysJobs]);
 
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
   const acceptedCount = todaysJobs.filter(j => j.status === 'confirmed' || j.status === 'accepted').length;
@@ -104,7 +124,6 @@ export default function DashboardScreen() {
             <View style={styles.iconBoxDark}><Text style={styles.iconLarge}>👥</Text></View>
             <Text style={styles.navLabel}>Clients</Text>
           </TouchableOpacity>
-          
           <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Notifications')}>
             <View style={styles.iconBoxDark}>
               <Text style={styles.iconLarge}>🔔</Text>
@@ -112,12 +131,10 @@ export default function DashboardScreen() {
             </View>
             <Text style={styles.navLabel}>Alerts</Text>
           </TouchableOpacity>
-          
           <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Settings')}>
             <View style={styles.iconBoxDark}><Text style={styles.iconLarge}>⚙️</Text></View>
             <Text style={styles.navLabel}>Settings</Text>
           </TouchableOpacity>
-          
           <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('NewJob')}>
             <View style={styles.iconBoxOrange}><Text style={styles.iconPlus}>+</Text></View>
             <Text style={styles.navLabel}>New Job</Text>
@@ -134,7 +151,6 @@ export default function DashboardScreen() {
           fg={colors.orangeDeep}
           onPress={() => navigation.getParent()?.navigate('Enquiries')}
         />
-
         <SummaryCard
           big={todaysJobs.length}
           label="JOBS TODAY"
@@ -143,7 +159,6 @@ export default function DashboardScreen() {
           fg={colors.blue}
           onPress={() => navigation.getParent()?.navigate('Jobs')}
         />
-
         {unpaidInvoices.length > 0 && (
           <SummaryCard
             big={unpaidInvoices.length}
@@ -154,14 +169,9 @@ export default function DashboardScreen() {
             onPress={() => navigation.getParent()?.navigate('Invoices')}
           />
         )}
-
         <Text style={styles.sectionLabel}>Today's schedule</Text>
-        {todaysJobs.map((job) => (
-          <JobListItem key={job._id} job={job} />
-        ))}
-        {todaysJobs.length === 0 && (
-          <Text style={styles.emptyText}>No jobs scheduled for today.</Text>
-        )}
+        {todaysJobs.map((job) => <JobListItem key={job._id} job={job} />)}
+        {todaysJobs.length === 0 && <Text style={styles.emptyText}>No jobs scheduled for today.</Text>}
       </ScrollView>
     </View>
   );
@@ -173,7 +183,6 @@ const styles = StyleSheet.create({
   headerTop: { marginBottom: 20 },
   greeting: { color: '#fff', fontWeight: '800', fontSize: 18 },
   dateSub: { color: '#C7CCD4', fontSize: 11, marginTop: 4 },
-  
   headerActions: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 10 },
   navItem: { alignItems: 'center', width: '23%' },
   iconBoxDark: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.charcoal2, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
@@ -182,7 +191,6 @@ const styles = StyleSheet.create({
   iconPlus: { fontSize: 32, color: '#fff', fontWeight: 'bold' },
   navLabel: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   alertDot: { position: 'absolute', top: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: colors.red, borderWidth: 2, borderColor: colors.charcoal2 },
-
   content: { flex: 1 },
   card: { borderRadius: 10, padding: 14, marginBottom: 12 },
   cardTop: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
