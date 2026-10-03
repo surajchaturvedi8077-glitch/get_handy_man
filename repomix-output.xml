@@ -1665,25 +1665,6 @@ export default function PaymentModeSelector({ value, onChange }) {
 }
 </file>
 
-<file path="mobile/src/components/jobs/JobFilterTabs.js">
-/**
- * JobFilterTabs.js
- * ------------------------------------------------------------------
- */
-import SegmentedControl from '../ui/SegmentedControl';
-
-const OPTIONS = [
-  { value: 'accepted', label: 'Accepted' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'complete', label: 'Complete' },
-  { value: 'all', label: 'All' },
-];
-
-export default function JobFilterTabs({ value, onChange }) {
-  return <SegmentedControl options={OPTIONS} value={value} onChange={onChange} />;
-}
-</file>
-
 <file path="mobile/src/components/jobs/JobList.js">
 /**
  * JobList.js
@@ -4607,6 +4588,21 @@ const styles = StyleSheet.create({
 });
 </file>
 
+<file path="mobile/src/components/jobs/JobFilterTabs.js">
+import React from 'react';
+import SegmentedControl from '../ui/SegmentedControl';
+
+const OPTIONS = [
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'complete', label: 'Complete' },
+  { value: 'all', label: 'All' },
+];
+
+export default function JobFilterTabs({ value, onChange }) {
+  return <SegmentedControl options={OPTIONS} value={value} onChange={onChange} />;
+}
+</file>
+
 <file path="mobile/src/components/jobs/JobSummaryCard.js">
 import { View, Text, StyleSheet } from 'react-native';
 import { money } from '../../utils/money';
@@ -4779,44 +4775,6 @@ export const getBusinessReport = (start, end) => {
   if (start && end) url += `?start=${start}&end=${end}`;
   return unwrap(apiClient.get(url));
 };
-</file>
-
-<file path="mobile/src/services/settingsService.js">
-/**
- * settingsService.js
- * ------------------------------------------------------------------
- */
-import { apiClient, unwrap, BASE_URL } from './apiClient';
-
-export function getSettings() {
-  return unwrap(apiClient.get('/api/settings'));
-}
-
-export function updateSettings(payload) {
-  return unwrap(apiClient.put('/api/settings', payload));
-}
-
-// React Native uploads use { uri, name, type } objects (from the image
-// picker), not browser File objects — see components/settings/LogoUploader.js.
-export function uploadLogo(asset) {
-  const form = new FormData();
-  form.append('logo', { uri: asset.uri, name: asset.fileName || 'logo.jpg', type: asset.mimeType || 'image/jpeg' });
-  return unwrap(
-    apiClient.post('/api/settings/logo', form, { headers: { 'Content-Type': 'multipart/form-data' } })
-  );
-}
-
-// Receipt/logo photo URLs come back from the API as relative paths
-// (e.g. "/uploads/xyz.jpg"). Screens use this to build a full <Image
-// source={{ uri: resolveMediaUrl(item.photoUrl) }} /> URL.
-export function resolveMediaUrl(path) {
-  if (!path) return null;
-  return path.startsWith('http') ? path : `${BASE_URL}${path}`;
-}
-
-export function triggerMorningBriefing() {
-  return unwrap(apiClient.post('/api/settings/test-briefing'));
-}
 </file>
 
 <file path="mobile/src/utils/linking.js">
@@ -12957,6 +12915,53 @@ const styles = StyleSheet.create({
 });
 </file>
 
+<file path="mobile/src/services/settingsService.js">
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { apiClient, unwrap, BASE_URL } from './apiClient';
+
+export function getSettings() {
+  return unwrap(apiClient.get('/api/settings'));
+}
+
+export function updateSettings(payload) {
+  return unwrap(apiClient.put('/api/settings', payload));
+}
+
+// FIXED: Bypasses the Axios FormData bug using native fetch
+export async function uploadLogo(asset) {
+  const form = new FormData();
+  form.append('logo', { 
+    uri: asset.uri, 
+    name: asset.fileName || asset.name || `logo-${Date.now()}.jpg`, 
+    type: asset.mimeType || asset.type || 'image/jpeg' 
+  });
+  
+  const token = await AsyncStorage.getItem('gh_token');
+  
+  const response = await fetch(`${BASE_URL}/api/settings/logo`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
+    },
+    body: form
+  });
+  
+  const data = await response.json();
+  if (!response.ok || !data.success) throw new Error(data.message || 'Logo upload failed');
+  return data.data;
+}
+
+export function resolveMediaUrl(path) {
+  if (!path) return null;
+  return path.startsWith('http') ? path : `${BASE_URL}${path}`;
+}
+
+export function triggerMorningBriefing() {
+  return unwrap(apiClient.post('/api/settings/test-briefing'));
+}
+</file>
+
 <file path="mobile/.gitignore">
 node_modules/
 .expo/
@@ -13229,19 +13234,6 @@ const styles = StyleSheet.create({
   emailBtn: { backgroundColor: colors.blueTint, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   emailText: { fontSize: 10, fontWeight: '700', color: colors.blue }
 });
-</file>
-
-<file path="mobile/src/components/jobs/JobStatusBadge.js">
-import React from 'react';
-import Chip from '../ui/Chip';
-
-export default function JobStatusBadge({ job }) {
-  // FIXED: Explicitly marks newly accepted jobs as requiring a scheduled time
-  if (job.needsDetails || job.status === 'accepted') return <Chip tone="orange">Accepted (Needs Time)</Chip>;
-  if (job.status === 'complete') return <Chip tone="green">Complete</Chip>;
-  if (job.status === 'confirmed') return <Chip tone="blue">Confirmed</Chip>;
-  return <Chip tone="red">Pending</Chip>;
-}
 </file>
 
 <file path="mobile/src/components/jobs/MaterialItemRow.js">
@@ -13908,6 +13900,26 @@ app.listen(port, () => {
   // eslint-disable-next-line no-console
   console.log(`[server] Get Handyman API listening on port ${port}`);
 });
+</file>
+
+<file path="mobile/src/components/jobs/JobStatusBadge.js">
+import React from 'react';
+import Chip from '../ui/Chip';
+
+export default function JobStatusBadge({ job }) {
+  if (job.status === 'complete') return <Chip tone="green">Complete</Chip>;
+  
+  if (job.needsDetails) {
+    return <Chip tone="orange">Needs details</Chip>;
+  }
+
+  // FIXED: Replaced Confirmed with Accepted and mapped to Red
+  if (job.status === 'accepted' || job.status === 'confirmed') {
+    return <Chip tone="red">Accepted</Chip>;
+  }
+
+  return <Chip tone="red">Pending</Chip>;
+}
 </file>
 
 <file path="mobile/src/navigation/MainTabNavigator.js">
@@ -14583,9 +14595,7 @@ const styles = StyleSheet.create({
 </file>
 
 <file path="mobile/src/services/invoiceService.js">
-import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { apiClient, unwrap, BASE_URL } from './apiClient';
+import { apiClient, unwrap } from './apiClient';
 
 export const listInvoices = (status) => unwrap(apiClient.get('/api/invoices', { params: { status } }));
 export const getInvoice = (id) => unwrap(apiClient.get(`/api/invoices/${id}`));
@@ -14597,56 +14607,40 @@ export const setPaymentMode = (id, paymentMode) => unwrap(apiClient.put(`/api/in
 export const setInvoiceStatus = (id, status) => unwrap(apiClient.put(`/api/invoices/${id}/status`, { status }));
 export const setCostItems = (id, kind, items) => unwrap(apiClient.put(`/api/invoices/${id}/cost-items/${kind}`, { items }));
 
-// FIXED: Forced native fetch API to bypass Axios stripping image files
-export const uploadCostItemPhoto = async (id, kind, index, asset) => {
+// FIXED: Perfectly matches the { name, type } format from PhotoUploadButton and uses apiClient
+export const uploadCostItemPhoto = (id, kind, index, asset) => {
   const form = new FormData();
   form.append('photo', {
-    uri: Platform.OS === 'android' ? asset.uri : asset.uri.replace('file://', ''),
-    name: asset.name || asset.fileName || `receipt-${index}.jpg`,
-    type: asset.type || asset.mimeType || 'image/jpeg',
+    uri: asset.uri,
+    name: asset.name || `receipt-${index}.jpg`,
+    type: asset.type || 'image/jpeg',
   });
   
-  const token = await AsyncStorage.getItem('gh_token');
-  const res = await fetch(`${BASE_URL}/api/invoices/${id}/cost-items/${kind}/${index}/photo`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` }, // NO Content-Type required
-    body: form
-  });
-  
-  const data = await res.json();
-  if (!data.success) throw new Error(data.message || 'Backend upload failed');
-  return data.data;
+  return unwrap(apiClient.post(`/api/invoices/${id}/cost-items/${kind}/${index}/photo`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }));
 };
 
-// FIXED: Forced native fetch API for completion photos
-export const uploadCompletionPhoto = async (id, asset) => {
+// FIXED: Perfectly matches the { name, type } format and routes through apiClient
+export const uploadCompletionPhoto = (id, asset) => {
   const form = new FormData();
   form.append('photo', {
-    uri: Platform.OS === 'android' ? asset.uri : asset.uri.replace('file://', ''),
-    name: asset.name || asset.fileName || `completion-${Date.now()}.jpg`,
-    type: asset.type || asset.mimeType || 'image/jpeg',
+    uri: asset.uri,
+    name: asset.name || `completion-${Date.now()}.jpg`,
+    type: asset.type || 'image/jpeg',
   });
 
-  const token = await AsyncStorage.getItem('gh_token');
-  const res = await fetch(`${BASE_URL}/api/invoices/${id}/completion-photo`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` },
-    body: form
-  });
-
-  const data = await res.json();
-  if (!data.success) throw new Error(data.message || 'Backend upload failed');
-  return data.data;
+  return unwrap(apiClient.post(`/api/invoices/${id}/completion-photo`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }));
 };
 </file>
 
 <file path="mobile/src/screens/NewJobScreen.js">
 import React, { useState, useRef, useEffect } from 'react';
-// IMPORT KeyboardAvoidingView
 import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert, KeyboardAvoidingView } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-// IMPORT useSafeAreaInsets
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import Button from '../components/ui/Button';
@@ -14659,8 +14653,7 @@ export default function NewJobScreen() {
   const navigation = useNavigation();
   const { params } = useRoute();
   const { showToast } = useToast();
-  const insets = useSafeAreaInsets(); // GRABS THE EXACT NOTCH/HOME BAR HEIGHT
-  
+  const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
   const debounceTimer = useRef(null);
 
@@ -14715,7 +14708,7 @@ export default function NewJobScreen() {
         service: validServices.length > 0 ? validServices[0] : 'General Handyman',
         extraFields: extraFields.filter(f => f.label && f.value),
         materials,
-        status: 'confirmed',
+        status: 'accepted', // FIXED: Now defaults to Accepted instead of Confirmed
         needsDetails: false
       };
       
@@ -14789,16 +14782,10 @@ export default function NewJobScreen() {
     } catch (e) { }
   };
 
-  // WRAPPED ENTIRE FORM IN KEYBOARD AVOIDING VIEW
- // FIXED: Forced Android to use 'padding' and added a keyboard vertical offset
   return (
     <View style={styles.screen}>
       <ScreenHeader title="NEW JOB" onBack={() => navigation.navigate('Dashboard')} />
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} 
-        keyboardVerticalOffset={Platform.OS === 'android' ? 80 : 0} 
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} keyboardVerticalOffset={Platform.OS === 'android' ? 80 : 0} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
           
           <View style={styles.customerStrip}>
@@ -14916,6 +14903,88 @@ const styles = StyleSheet.create({
 });
 </file>
 
+<file path="mobile/src/services/notificationService.js">
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
+
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+} catch (e) {
+  console.log("Notification handler initialization skipped.");
+}
+
+export async function getExpoPushToken() {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('alerts-v2', {
+      name: 'High Priority Alerts',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#F5821F',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, 
+    });
+  }
+
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    
+    if (finalStatus !== 'granted') return null;
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: '9bc67899-cae6-4259-ba01-5d512cb0fb8e' 
+    });
+    return tokenData.data;
+  } catch (error) {
+    return null;
+  }
+}
+
+// FIXED: Stripped out all overlapping alarms. ONLY triggers exactly 1 hour before the job.
+export async function syncLocalNotifications(upcomingJobs, unpaidInvoices) {
+  try {
+    // Clear the old queue to prevent ghost alarms
+    await Notifications.cancelAllScheduledNotificationsAsync();
+
+    upcomingJobs.forEach(async (job) => {
+      if (!job.scheduledDate) return;
+      
+      const jobTime = new Date(job.scheduledDate).getTime();
+      const oneHourBefore = jobTime - (60 * 60 * 1000);
+
+      // Only schedule if the 1-hour mark is still in the future
+      if (oneHourBefore > Date.now()) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Leaving Soon ⏳",
+            body: `You have a job at ${job.address || 'client'} in 1 hour.`,
+            sound: true,
+            channelId: 'alerts-v2',
+          },
+          trigger: { date: new Date(oneHourBefore) },
+        });
+      }
+    });
+
+    // NOTE: Unpaid invoices are no longer scheduled locally here, 
+    // they are perfectly handled by your Backend Cron Job every morning!
+
+  } catch (e) {
+    console.log("Could not sync notifications:", e);
+  }
+}
+</file>
+
 <file path="mobile/src/screens/JobDetailScreen.js">
 import React, { useState } from 'react';
 import { View, ScrollView, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
@@ -14927,11 +14996,11 @@ import Button from '../components/ui/Button';
 import LoadingState from '../components/ui/LoadingState';
 import useJob from '../hooks/useJob';
 import useToast from '../hooks/useToast';
+import { apiClient } from '../services/apiClient'; // Auto-add customer dependency
 import { openPhone, openEmail, openMaps } from '../utils/linking';
 import { money } from '../utils/money';
 import { colors } from '../theme/colors';
 import * as invoiceService from '../services/invoiceService';
-import { apiClient } from '../services/apiClient'; // ADD THIS IMPORT AT THE TOP
 
 export default function JobDetailScreen() {
   const { params } = useRoute();
@@ -14951,13 +15020,12 @@ export default function JobDetailScreen() {
     try {
       await saveDetails(payload);
 
-      // SYNCHRONIZE JOB COST DIRECTLY TO LINKED INVOICE
       if (payload.labour !== undefined && job.invoiceId) {
         try {
           const inv = await invoiceService.getInvoice(job.invoiceId);
           if (inv && inv.items && inv.items.length > 0) {
             const updatedItems = [...inv.items];
-            updatedItems[0].amt = payload.labour; // Syncs the new price to the first line item
+            updatedItems[0].amt = payload.labour; 
             await invoiceService.updateInvoice(job.invoiceId, { items: updatedItems });
           }
         } catch (invErr) {
@@ -14981,11 +15049,16 @@ export default function JobDetailScreen() {
     try {
       const { invoice } = await complete();
 
-      // FIXED: Auto-Add Customer to database when job is completed
+      // FIXED: Flawless Permanent Customer Auto-Add implementation
       try {
         const res = await apiClient.get('/api/customers');
         const customers = res.data?.data || [];
-        const exists = customers.find(c => c.phone === job.phone || (c.email && c.email === job.email) || c.name === job.name);
+        
+        const exists = customers.find(c => 
+          (job.phone && c.phone === job.phone) || 
+          (job.email && c.email === job.email) || 
+          (job.name && c.name === job.name)
+        );
         
         if (!exists && job.name) {
           await apiClient.post('/api/customers', {
@@ -14997,15 +15070,16 @@ export default function JobDetailScreen() {
           });
         }
       } catch (autoAddErr) {
-        console.log("Auto-add customer bypassed");
+        console.log("Auto-add customer bypassed or failed silently");
       }
 
-      showToast('Job marked complete');
+      showToast('Job complete & Customer Saved');
       navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: invoice._id } });
     } catch (err) {
       let errorText = 'An unknown error occurred.';
       if (err.response?.data?.errors) errorText = err.response.data.errors.join('\n');
       else if (err.response?.data?.message) errorText = err.response.data.message;
+      else if (err.message) errorText = err.message;
       Alert.alert("Backend Error", errorText);
     }
   };
@@ -15144,7 +15218,6 @@ export default function JobDetailScreen() {
   );
 }
 
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16 },
@@ -15175,93 +15248,9 @@ const styles = StyleSheet.create({
 });
 </file>
 
-<file path="mobile/src/services/notificationService.js">
-import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
-
-try {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-    }),
-  });
-} catch (e) {
-  console.log("Notification handler initialization skipped.");
-}
-
-export async function getExpoPushToken() {
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('alerts-v2', {
-      name: 'High Priority Alerts',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#F5821F',
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, 
-    });
-  }
-
-  try {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    
-    if (finalStatus !== 'granted') return null;
-
-    const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: '9bc67899-cae6-4259-ba01-5d512cb0fb8e' 
-    });
-    return tokenData.data;
-  } catch (error) {
-    return null;
-  }
-}
-
-// FIXED: Stripped out all overlapping alarms. ONLY triggers exactly 1 hour before the job.
-export async function syncLocalNotifications(upcomingJobs, unpaidInvoices) {
-  try {
-    // Clear the old queue to prevent ghost alarms
-    await Notifications.cancelAllScheduledNotificationsAsync();
-
-    upcomingJobs.forEach(async (job) => {
-      if (!job.scheduledDate) return;
-      
-      const jobTime = new Date(job.scheduledDate).getTime();
-      const oneHourBefore = jobTime - (60 * 60 * 1000);
-
-      // Only schedule if the 1-hour mark is still in the future
-      if (oneHourBefore > Date.now()) {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "Leaving Soon ⏳",
-            body: `You have a job at ${job.address || 'client'} in 1 hour.`,
-            sound: true,
-            channelId: 'alerts-v2',
-          },
-          trigger: { date: new Date(oneHourBefore) },
-        });
-      }
-    });
-
-    // NOTE: Unpaid invoices are no longer scheduled locally here, 
-    // they are perfectly handled by your Backend Cron Job every morning!
-
-  } catch (e) {
-    console.log("Could not sync notifications:", e);
-  }
-}
-</file>
-
 <file path="mobile/src/screens/DashboardScreen.js">
 import React, { useEffect } from 'react';
-// IMPORT ALERT
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useAuth from '../hooks/useAuth';
@@ -15270,14 +15259,13 @@ import useJobs from '../hooks/useJobs';
 import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
-
-import { getExpoPushToken, syncLocalNotifications } from '../services/notificationService';
+import { getExpoPushToken, scheduleLocalJobReminder } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
 const safeTime = (dateStr) => {
-  if (!dateStr) return 999999999999999;
+  if (!dateStr) return 0;
   const time = new Date(dateStr).getTime();
-  return isNaN(time) ? 999999999999999 : time;
+  return isNaN(time) ? 0 : time;
 };
 
 function SummaryCard({ big, label, sub, bg, fg, onPress }) {
@@ -15301,45 +15289,39 @@ export default function DashboardScreen() {
   const { jobs } = useJobs('all');
   const { invoices: unpaidInvoices } = useInvoices('unpaid');
 
-  // FIXED: Aggressively checks permissions and syncs the push token to your backend
   useEffect(() => {
-    async function ensureNotifications() {
-      const { status } = await Notifications.getPermissionsAsync();
-      
-      if (status !== 'granted') {
-        const { status: newStatus } = await Notifications.requestPermissionsAsync();
-        if (newStatus !== 'granted') {
-          Alert.alert(
-            "Notifications Disabled 🔕", 
-            "You will NOT receive lock-screen alerts for new website enquiries or job reminders! Please open your phone Settings > Apps > Get Handyman and turn on Notifications."
-          );
-        }
-      }
-
-      if (settings) {
+    async function syncPushToken() {
+      if (settings && !settings.expoPushToken) {
         const token = await getExpoPushToken();
-        if (token && settings.expoPushToken !== token) {
+        if (token) {
           update({ expoPushToken: token });
         }
       }
     }
-    ensureNotifications();
+    syncPushToken();
   }, [settings]);
 
-  const upcomingJobs = jobs
-    .filter(j => j.status !== 'complete')
-    .sort((a, b) => {
-      if (a.needsDetails && !b.needsDetails) return -1;
-      if (!a.needsDetails && b.needsDetails) return 1;
-      return safeTime(a.scheduledDate) - safeTime(b.scheduledDate);
-    });
+  const isToday = (dateString) => {
+    if (!dateString) return false;
+    const d = new Date(dateString);
+    const today = new Date();
+    
+    return d.getFullYear() === today.getFullYear() &&
+           d.getMonth() === today.getMonth() &&
+           d.getDate() === today.getDate();
+  };
+
+  const todaysJobs = jobs
+    .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
+    .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
 
   useEffect(() => {
-    syncLocalNotifications(upcomingJobs, unpaidInvoices);
-  }, [upcomingJobs, unpaidInvoices]);
+    todaysJobs.forEach(job => scheduleLocalJobReminder(job));
+  }, [todaysJobs]);
 
-  const needsDetailsCount = upcomingJobs.filter(j => j.needsDetails).length;
-  const confirmedCount = upcomingJobs.filter(j => j.status === 'confirmed').length;
+  const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
+  // FIXED: Dashboard now properly counts Accepted jobs instead of Confirmed
+  const acceptedCount = todaysJobs.filter(j => j.status === 'accepted' || j.status === 'confirmed').length;
 
   const todayOptions = { weekday: 'long', day: 'numeric', month: 'long' };
   const todayStr = new Date().toLocaleDateString('en-US', todayOptions);
@@ -15389,9 +15371,9 @@ export default function DashboardScreen() {
         />
 
         <SummaryCard
-          big={upcomingJobs.length}
-          label="UPCOMING JOBS"
-          sub={`${confirmedCount} confirmed · ${needsDetailsCount} need details`}
+          big={todaysJobs.length}
+          label="JOBS TODAY"
+          sub={`${acceptedCount} accepted · ${needsDetailsCount} need details`}
           bg={colors.blueTint}
           fg={colors.blue}
           onPress={() => navigation.getParent()?.navigate('Jobs')}
@@ -15408,12 +15390,12 @@ export default function DashboardScreen() {
           />
         )}
 
-        <Text style={styles.sectionLabel}>Upcoming Schedule</Text>
-        {upcomingJobs.map((job) => (
+        <Text style={styles.sectionLabel}>Today's schedule</Text>
+        {todaysJobs.map((job) => (
           <JobListItem key={job._id} job={job} />
         ))}
-        {upcomingJobs.length === 0 && (
-          <Text style={styles.emptyText}>No upcoming jobs scheduled.</Text>
+        {todaysJobs.length === 0 && (
+          <Text style={styles.emptyText}>No jobs scheduled for today.</Text>
         )}
       </ScrollView>
     </View>

@@ -1,4 +1,5 @@
-import { apiClient, unwrap } from './apiClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { apiClient, unwrap, BASE_URL } from './apiClient';
 
 export const listInvoices = (status) => unwrap(apiClient.get('/api/invoices', { params: { status } }));
 export const getInvoice = (id) => unwrap(apiClient.get(`/api/invoices/${id}`));
@@ -10,30 +11,44 @@ export const setPaymentMode = (id, paymentMode) => unwrap(apiClient.put(`/api/in
 export const setInvoiceStatus = (id, status) => unwrap(apiClient.put(`/api/invoices/${id}/status`, { status }));
 export const setCostItems = (id, kind, items) => unwrap(apiClient.put(`/api/invoices/${id}/cost-items/${kind}`, { items }));
 
-// FIXED: Perfectly matches the { name, type } format from PhotoUploadButton and uses apiClient
-export const uploadCostItemPhoto = (id, kind, index, asset) => {
+// FIXED: Bypasses the FormData crash by passing the exact raw object
+export const uploadCostItemPhoto = async (id, kind, index, asset) => {
   const form = new FormData();
-  form.append('photo', {
-    uri: asset.uri,
-    name: asset.name || `receipt-${index}.jpg`,
-    type: asset.type || 'image/jpeg',
+  form.append('photo', asset); 
+  
+  const token = await AsyncStorage.getItem('gh_token');
+  
+  const response = await fetch(`${BASE_URL}/api/invoices/${id}/cost-items/${kind}/${index}/photo`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
+    },
+    body: form
   });
   
-  return unwrap(apiClient.post(`/api/invoices/${id}/cost-items/${kind}/${index}/photo`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }));
+  const data = await response.json();
+  if (!response.ok || !data.success) throw new Error(data.message || 'Upload failed');
+  return data.data;
 };
 
-// FIXED: Perfectly matches the { name, type } format and routes through apiClient
-export const uploadCompletionPhoto = (id, asset) => {
+// FIXED: Native fetch implementation for completion photos
+export const uploadCompletionPhoto = async (id, asset) => {
   const form = new FormData();
-  form.append('photo', {
-    uri: asset.uri,
-    name: asset.name || `completion-${Date.now()}.jpg`,
-    type: asset.type || 'image/jpeg',
+  form.append('photo', asset);
+
+  const token = await AsyncStorage.getItem('gh_token');
+  
+  const response = await fetch(`${BASE_URL}/api/invoices/${id}/completion-photo`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
+    },
+    body: form
   });
 
-  return unwrap(apiClient.post(`/api/invoices/${id}/completion-photo`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }));
+  const data = await response.json();
+  if (!response.ok || !data.success) throw new Error(data.message || 'Upload failed');
+  return data.data;
 };

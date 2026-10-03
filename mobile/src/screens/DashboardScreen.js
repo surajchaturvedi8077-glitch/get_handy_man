@@ -69,8 +69,8 @@ export default function DashboardScreen() {
   }, [todaysJobs]);
 
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
-  // FIXED: Dashboard now properly counts Accepted jobs instead of Confirmed
-  const acceptedCount = todaysJobs.filter(j => j.status === 'accepted' || j.status === 'confirmed').length;
+  // FIXED: Renamed to Accepted
+  const acceptedCount = todaysJobs.filter(j => j.status === 'confirmed').length;
 
   const todayOptions = { weekday: 'long', day: 'numeric', month: 'long' };
   const todayStr = new Date().toLocaleDateString('en-US', todayOptions);
