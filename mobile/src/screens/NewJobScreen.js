@@ -111,42 +111,54 @@ export default function NewJobScreen() {
     }
   };
 
+  // FIXED: Replaced Google Maps with 100% Free OpenStreetMap Autocomplete
   const searchPlaces = async (text) => {
     updateForm('address', text);
-    if (text.length < 3) { setSuggestions([]); return; }
-    
-    // Safety check for missing API Key
-    const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
-    if (!key) {
-      console.warn("Google Maps API Key is missing in .env!");
-      return;
-    }
+    if (text.length < 4) { setSuggestions([]); return; }
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(async () => {
       try {
-        const res = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&components=country:au&key=${key}`);
+        // format=json & addressdetails=1 tells OSM to give us the suburb/postcode immediately
+        // countrycodes=au keeps searches locked to Australia
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&format=json&addressdetails=1&countrycodes=au&limit=5`, 
+          {
+            headers: {
+              // OSM asks apps to provide a User-Agent so they know who is using their free tool
+              'User-Agent': 'GetHandymanWorkerApp/1.0' 
+            }
+          }
+        );
         const data = await res.json();
-        if(data.status === 'REQUEST_DENIED') console.warn("Google Maps Error:", data.error_message);
-        setSuggestions(data.predictions || []);
-      } catch (e) { }
-    }, 500);
+        setSuggestions(data || []);
+      } catch (e) { 
+        console.log("OSM Error", e);
+      }
+    }, 600); // 600ms delay protects the free API limit
   };
 
-  const handleSelectPlace = async (placeId, description) => {
-    updateForm('address', description);
+  // FIXED: Pulls data instantly from the OSM item object
+  const handleSelectPlace = (item) => {
+    // Attempt to extract the cleanest street address (ignoring the long trailing state/country text)
+    let cleanAddress = item.display_name.split(',')[0];
+    if (item.address?.house_number && item.address?.road) {
+      cleanAddress = `${item.address.house_number} ${item.address.road}`;
+    } else if (item.address?.road) {
+      cleanAddress = item.address.road;
+    }
+
+    // Attempt to extract suburb (OSM uses various terms depending on the region)
+    const suburb = item.address?.suburb || item.address?.city || item.address?.town || item.address?.village || '';
+    const postcode = item.address?.postcode || '';
+
+    updateForm('address', cleanAddress);
+    updateForm('suburb', suburb);
+    updateForm('postcode', postcode);
+    updateForm('lat', item.lat);
+    updateForm('lng', item.lon);
+    
     setSuggestions([]);
-    try {
-      const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
-      const res = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=address_components,geometry&key=${key}`);
-      const data = await res.json();
-      if (data.result) {
-        updateForm('lat', data.result.geometry.location.lat);
-        updateForm('lng', data.result.geometry.location.lng);
-        const postcodeObj = data.result.address_components.find(c => c.types.includes('postal_code'));
-        if (postcodeObj) updateForm('postcode', postcodeObj.long_name);
-      }
-    } catch (e) { }
   };
 
   return (
@@ -187,7 +199,6 @@ export default function NewJobScreen() {
             </View>
           </View>
 
-          {/* FIXED: Z-Index and Absolute Positioning applied so dropdown overlaps other fields safely */}
           <View style={[styles.fieldRow, { zIndex: 9999, elevation: 10 }]}>
             <Text style={styles.icon}>📍</Text>
             <View style={{ flex: 1 }}>
@@ -197,8 +208,8 @@ export default function NewJobScreen() {
                 <View style={styles.dropdownContainer}>
                   <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
                     {suggestions.map((item) => (
-                      <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
-                        <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
+                      <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item)}>
+                        <Text style={styles.dropdownText} numberOfLines={2}>{item.display_name}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>

@@ -1,4 +1,4 @@
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import FieldLabel from '../ui/FieldLabel';
 import Button from '../ui/Button';
@@ -6,17 +6,24 @@ import { colors } from '../../theme/colors';
 
 export default function LogoUploader({ logoUrl, onUpload }) {
   async function pickImage() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission needed", "We need camera roll permissions to upload the logo.");
+        return;
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      // FIXED: Used correct MediaType enum to clear up the warning in your logs
-      mediaTypes: ImagePicker.MediaType.Images,
-      quality: 0.2, 
-    });
-    
-    if (!result.canceled) {
-      onUpload(result.assets[0]);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        // RESTORED: Using the exact enum that successfully opens the gallery
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.2, 
+      });
+      
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        onUpload(result.assets[0]);
+      }
+    } catch (error) {
+      Alert.alert("Error", "Could not open the photo gallery.");
     }
   }
 

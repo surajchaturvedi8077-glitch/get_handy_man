@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import ScreenHeader from '../components/layout/ScreenHeader';
@@ -30,8 +29,6 @@ export default function InvoiceDetailScreen() {
   const { params } = useRoute();
   const navigation = useNavigation();
   const { showToast } = useToast();
-  const insets = useSafeAreaInsets();
-  
   const { settings, update: updateSettings } = useSettings();
   const {
     invoice, loading, error, refresh, updateItems, setDiscount, toggleGstIncluded,
@@ -111,14 +108,8 @@ export default function InvoiceDetailScreen() {
     const bankNameStr = settings?.bankName || '';
     const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
     
-    const bizNameStr = settings?.businessName || 'Get Handyman';
-    const bizCityStr = settings?.bizCityState || '';
-    const bizPhoneStr = settings?.bizPhone || '';
-    const bizWebStr = settings?.website || '';
-    
-    // FIXED: Safely builds logo URL with trailing slash check
-    const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl.startsWith('/') ? '' : '/'}${settings.logoUrl}`) : '';
-    const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${bizNameStr}</h2>`;
+    const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
+    const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : '';
     
     const invDate = new Date(invoice.date).toLocaleDateString('en-GB');
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-GB') : invDate;
@@ -159,6 +150,7 @@ export default function InvoiceDetailScreen() {
       </div>
     ` : '';
 
+    // FIXED: Formatted the HTML perfectly to match the exact Business Layout you requested.
     return `
       <html>
         <head>
@@ -167,41 +159,60 @@ export default function InvoiceDetailScreen() {
             @page { margin: 0; }
             body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
             .header { display: flex; justify-content: space-between; align-items: flex-start; }
-            .logo { max-height: 120px; max-width: 250px; object-fit: contain; }
-            .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.6; }
-            .title-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; }
-            .biz-name { font-size: 28px; font-weight: 800; color: #1F2937; margin: 0; }
-            .doc-type { font-size: 22px; font-weight: 800; color: #6B7280; margin: 0; }
-            .divider { border-top: 2px solid #111827; margin: 15px 0 25px 0; }
-            .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #374151; }
-            .bill-to-details { line-height: 1.6; }
-            .items-table { width: 100%; border-collapse: collapse; margin-top: 40px; font-size: 11px; }
+            .logo { max-height: 100px; max-width: 200px; object-fit: contain; margin-bottom: 15px; }
+            .biz-details { font-size: 12px; color: #374151; line-height: 1.6; }
+            .biz-name { font-size: 16px; font-weight: 800; color: #111827; margin-bottom: 4px; }
+            .doc-meta { text-align: right; }
+            .doc-type { font-size: 28px; font-weight: 800; color: #6B7280; margin: 0 0 15px 0; letter-spacing: 1px; }
+            .divider { border-top: 2px solid #111827; margin: 25px 0; }
+            .bill-to-section { margin-bottom: 30px; }
+            .bill-to-title { color: #9CA3AF; font-weight: 700; font-size: 11px; margin-bottom: 6px; letter-spacing: 0.5px; }
+            .bill-to-details { font-size: 12px; color: #374151; line-height: 1.5; }
+            .items-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
             .items-table th { background-color: #1D4ED8; color: #ffffff; padding: 12px 10px; font-weight: 700; text-align: left; }
-            .items-table td { padding: 12px 10px; color: #374151; }
+            .items-table td { padding: 12px 10px; border-bottom: 1px solid #E5E7EB; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
             .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid; }
             .totals { width: 260px; font-size: 11px; color: #374151; }
             .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; }
-            .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
+            .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; }
           </style>
         </head>
         <body>
-          <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${bizCityStr}</div><div>${bizPhoneStr}</div><div>${bizWebStr}</div></div></div>
-          <div class="title-row"><h1 class="biz-name">${bizNameStr}</h1><h2 class="doc-type">Invoice</h2></div>
-          <div class="divider"></div>
-          <div class="meta-row">
+          <div class="header">
             <div>
-              <div style="color: #9CA3AF; margin-bottom: 2px;">Bill To:</div>
-              <div class="bill-to-details"><div style="font-weight: 700;">${customerName}</div>${customerEmailHtml}${customerPhoneHtml}</div>
+              ${logoImg}
+              <div class="biz-details">
+                <div class="biz-name">${settings?.businessName || 'Get Handyman Pty Ltd'}</div>
+                ${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}
+                ${settings?.bizCityState ? `<div>City - ${settings.bizCityState}</div>` : ''}
+                ${settings?.bizPhone ? `<div>Phone - ${settings.bizPhone}</div>` : ''}
+                ${settings?.website ? `<div>Website - ${settings.website}</div>` : ''}
+              </div>
             </div>
-            <div style="text-align: right;">
-              <div><span style="color: #9CA3AF;">Invoice No:</span> ${invoiceNum}</div>
-              <div><span style="color: #9CA3AF;">Date:</span> ${invDate}</div>
-              <div><span style="color: #9CA3AF;">Terms:</span> ${termsStr}</div>
-              <div><span style="color: #9CA3AF;">Due Date:</span> ${dueDate}</div>
+            <div class="doc-meta">
+              <h2 class="doc-type">INVOICE</h2>
+              <div style="font-size: 11px; color: #6B7280; line-height: 1.6;">
+                <div><strong style="color: #9CA3AF;">Invoice No:</strong> ${invoiceNum}</div>
+                <div><strong style="color: #9CA3AF;">Date:</strong> ${invDate}</div>
+                <div><strong style="color: #9CA3AF;">Terms:</strong> ${termsStr}</div>
+                <div><strong style="color: #9CA3AF;">Due Date:</strong> ${dueDate}</div>
+              </div>
             </div>
           </div>
+          
+          <div class="divider"></div>
+          
+          <div class="bill-to-section">
+            <div class="bill-to-title">BILL TO:</div>
+            <div class="bill-to-details">
+              <div style="font-weight: 700; font-size: 14px; color: #111827;">${customerName}</div>
+              ${customerPhoneHtml}
+              ${customerEmailHtml}
+            </div>
+          </div>
+
           <table class="items-table">
             <tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>
             ${itemsHtml}
@@ -241,131 +252,127 @@ export default function InvoiceDetailScreen() {
     }
   };
 
-  // FIXED: Properly wraps the entire ScrollView
   return (
     <View style={styles.screen}>
       <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => navigation.navigate('InvoicesList')} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
-          
-          <FieldLabel>Customer Details</FieldLabel>
-          <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
-          <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
-          <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        
+        <FieldLabel>Customer Details</FieldLabel>
+        <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
+        <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+        <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
 
-          <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
-            {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
-          </Button>
+        <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
+          {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
+        </Button>
 
-          <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
-          <View style={{ marginBottom: 12 }}>
-            <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
-          </View>
-          
-          <View style={styles.gstBox}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: '700', fontSize: 12.5, color: invoice.gstIncluded ? colors.green : colors.red }}>
-                {invoice.gstIncluded ? 'Reported income' : 'Cash Bonus'}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                <Text style={{ fontSize: 11, color: colors.gray, marginRight: 8 }}>Include GST at</Text>
-                <TextInput
-                  style={styles.gstInput}
-                  value={localGstRate}
-                  onChangeText={setLocalGstRate}
-                  onBlur={handleSaveGstRate}
-                  keyboardType="numeric"
-                  editable={invoice.gstIncluded}
-                />
-                <Text style={{ fontSize: 11, color: colors.gray, marginLeft: 4 }}>%</Text>
-              </View>
-            </View>
-            <Toggle on={invoice.gstIncluded} onToggle={toggleGstIncluded} />
-          </View>
-
-          <InvoiceLineItemsEditor items={invoice.items} onChange={updateItems} />
-          <View style={styles.divider} />
-          <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
-          <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
-          
-          {/* COMPLETION PHOTO UI */}
-          <FieldLabel style={{ marginTop: 24 }}>Job Completion Photo (Sent with PDF Invoice)</FieldLabel>
-          {invoice.completionPhotoUrl ? (
-            <View style={styles.photoAttachedBox}>
-              <PhotoUploadButton photoUrl={invoice.completionPhotoUrl} onUpload={() => {}} />
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={{ fontSize: 11, color: colors.gray, marginBottom: 6 }}>Photo attached to PDF.</Text>
-                <Button variant="outline" style={{ borderColor: colors.red, paddingVertical: 6 }} onPress={async () => {
-                  try {
-                    await invoiceService.updateInvoice(invoice._id, { completionPhotoUrl: null });
-                    showToast('Photo removed');
-                    refresh();
-                  } catch(e) { Alert.alert('Error', e.message || 'Could not remove photo'); }
-                }}>
-                  <Text style={{ color: colors.red, fontWeight: '700', fontSize: 12 }}>🗑️ Remove Photo</Text>
-                </Button>
-              </View>
-            </View>
-          ) : (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-              <PhotoUploadButton 
-                onUpload={async (asset) => {
-                  try {
-                    await invoiceService.uploadCompletionPhoto(invoice._id, asset);
-                    showToast('Completion photo attached!');
-                    refresh();
-                  } catch (e) { Alert.alert('Upload Error', e.message || 'Upload failed'); }
-                }} 
+        <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
+        <View style={{ marginBottom: 12 }}>
+          <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
+        </View>
+        
+        <View style={styles.gstBox}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontWeight: '700', fontSize: 12.5, color: invoice.gstIncluded ? colors.green : colors.red }}>
+              {invoice.gstIncluded ? 'Reported income' : 'Cash Bonus'}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+              <Text style={{ fontSize: 11, color: colors.gray, marginRight: 8 }}>Include GST at</Text>
+              <TextInput
+                style={styles.gstInput}
+                value={localGstRate}
+                onChangeText={setLocalGstRate}
+                onBlur={handleSaveGstRate}
+                keyboardType="numeric"
+                editable={invoice.gstIncluded}
               />
-              <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Tap the icon to attach a completion photo.</Text>
+              <Text style={{ fontSize: 11, color: colors.gray, marginLeft: 4 }}>%</Text>
             </View>
-          )}
-
-          <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
-          <View style={styles.expenseCard}>
-            <Text style={styles.cardTitle}>Materials</Text>
-            <CostItemsEditor
-              items={invoice.costs?.materials}
-              kind="materials"
-              onSetItems={(items) => setCostItems('materials', items)}
-              onUploadPhoto={async (idx, asset) => {
-                try {
-                  await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset);
-                  showToast('Material photo saved!');
-                  refresh();
-                } catch (e) { Alert.alert('Upload Failed', e.message || 'Could not save the photo.'); }
-              }}
-            />
-            <View style={styles.divider} />
-            <Text style={styles.cardTitle}>Other Expenses</Text>
-            <CostItemsEditor
-              items={invoice.costs?.other}
-              kind="other"
-              onSetItems={(items) => setCostItems('other', items)}
-              onUploadPhoto={async (idx, asset) => {
-                try {
-                  await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset);
-                  showToast('Expense photo saved!');
-                  refresh();
-                } catch (e) { Alert.alert('Upload Failed', e.message || 'Could not save the photo.'); }
-              }}
-            />
           </View>
+          <Toggle on={invoice.gstIncluded} onToggle={toggleGstIncluded} />
+        </View>
 
-          <InvoiceActions
-            isPaid={isPaid}
-            customerEmail={invoice.customerEmail}
-            onUpdateInvoice={handleUpdateInvoice}
-            onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
-            onPreviewPdf={handlePreviewPdf}
-            onShare={handleSharePdf}
+        <InvoiceLineItemsEditor items={invoice.items} onChange={updateItems} />
+        <View style={styles.divider} />
+        <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
+        <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
+        
+        <FieldLabel style={{ marginTop: 24 }}>Job Completion Photo (Sent with PDF Invoice)</FieldLabel>
+        {invoice.completionPhotoUrl ? (
+          <View style={styles.photoAttachedBox}>
+            <PhotoUploadButton photoUrl={invoice.completionPhotoUrl} onUpload={() => {}} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={{ fontSize: 11, color: colors.gray, marginBottom: 6 }}>Photo attached to PDF.</Text>
+              <Button variant="outline" style={{ borderColor: colors.red, paddingVertical: 6 }} onPress={async () => {
+                try {
+                  await invoiceService.updateInvoice(invoice._id, { completionPhotoUrl: null });
+                  showToast('Photo removed');
+                  refresh();
+                } catch(e) { Alert.alert('Error', 'Could not remove photo'); }
+              }}>
+                <Text style={{ color: colors.red, fontWeight: '700', fontSize: 12 }}>🗑️️ Remove Photo</Text>
+              </Button>
+            </View>
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <PhotoUploadButton 
+              onUpload={async (asset) => {
+                try {
+                  await invoiceService.uploadCompletionPhoto(invoice._id, asset);
+                  showToast('Completion photo attached!');
+                  refresh();
+                } catch (e) { Alert.alert('Error', 'Upload failed'); }
+              }} 
+            />
+            <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Tap the icon to attach a completion photo.</Text>
+          </View>
+        )}
+
+        <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
+        <View style={styles.expenseCard}>
+          <Text style={styles.cardTitle}>Materials</Text>
+          <CostItemsEditor
+            items={invoice.costs?.materials}
+            kind="materials"
+            onSetItems={(items) => setCostItems('materials', items)}
+            onUploadPhoto={async (idx, asset) => {
+              try {
+                await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset);
+                showToast('Material photo saved!');
+                refresh();
+              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
+            }}
           />
+          <View style={styles.divider} />
+          <Text style={styles.cardTitle}>Other Expenses</Text>
+          <CostItemsEditor
+            items={invoice.costs?.other}
+            kind="other"
+            onSetItems={(items) => setCostItems('other', items)}
+            onUploadPhoto={async (idx, asset) => {
+              try {
+                await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset);
+                showToast('Expense photo saved!');
+                refresh();
+              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
+            }}
+          />
+        </View>
 
-          <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={handleDeleteInvoice}>
-            <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
-          </Button>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        <InvoiceActions
+          isPaid={isPaid}
+          customerEmail={invoice.customerEmail}
+          onUpdateInvoice={handleUpdateInvoice}
+          onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
+          onPreviewPdf={handlePreviewPdf}
+          onShare={handleSharePdf}
+        />
+
+        <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={handleDeleteInvoice}>
+          <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
+        </Button>
+      </ScrollView>
     </View>
   );
 }

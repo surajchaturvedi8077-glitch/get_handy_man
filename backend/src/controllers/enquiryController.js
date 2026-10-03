@@ -34,11 +34,17 @@ const getEnquiry = asyncHandler(async (req, res) => {
 });
 
 
-// POST /api/enquiries
 const createEnquiry = asyncHandler(async (req, res) => {
+  
+  // FIXED: Automatically combine Address, Suburb, and Postcode into a single string
+  // the exact moment the enquiry is submitted.
+  const fullAddressParts = [req.body.address, req.body.suburb, req.body.postcode].filter(Boolean);
+  if (fullAddressParts.length > 0) {
+    req.body.address = fullAddressParts.join(', ');
+  }
+
   const enquiry = await Enquiry.create(req.body);
 
-  // FIXED: Flawless backend push notification that won't crash older Hostinger servers
   try {
     const Settings = require('../models/Settings');
     const settings = await Settings.getSingleton();
@@ -73,6 +79,8 @@ const createEnquiry = asyncHandler(async (req, res) => {
 
   created(res, enquiry);
 });
+
+
 // PUT /api/enquiries/:id (Update Enquiry Details)
 const updateEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });

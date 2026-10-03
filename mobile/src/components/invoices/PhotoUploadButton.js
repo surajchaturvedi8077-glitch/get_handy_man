@@ -1,4 +1,4 @@
-import { Pressable, Image, Text, StyleSheet, Platform, Share, Alert } from 'react-native';
+import { Pressable, Image, Text, StyleSheet, Alert, Share } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../../theme/colors';
 
@@ -6,22 +6,24 @@ const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
 
 export default function PhotoUploadButton({ photoUrl, onUpload }) {
   async function pickPhoto() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Permission needed", "We need camera roll permissions to upload receipts.");
-      return;
-    }
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission needed", "We need camera roll permissions to upload receipts.");
+        return;
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      // FIXED: Used correct MediaType enum to clear up the warning in your logs
-      mediaTypes: ImagePicker.MediaType.Images,
-      quality: 0.2, // Keeps compression to prevent Hostinger size limits
-    });
-    
-    // FIXED: Pass the RAW asset object exactly like the working LogoUploader does!
-    // Do not strip or alter the object here, otherwise Android throws a Network Error.
-    if (!result.canceled) {
-      onUpload(result.assets[0]);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        // RESTORED: Using the exact enum that successfully opens the gallery
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.2, // Keeps compression to prevent Hostinger size limits
+      });
+      
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        onUpload(result.assets[0]);
+      }
+    } catch (error) {
+      Alert.alert("Error", "Could not open the photo gallery.");
     }
   }
 

@@ -32,6 +32,8 @@ export default function EnquiryDetailScreen() {
   const [localPhone, setLocalPhone] = useState('');
   const [localEmail, setLocalEmail] = useState('');
   const [localAddress, setLocalAddress] = useState('');
+  const [localSuburb, setLocalSuburb] = useState(''); 
+  const [localPostcode, setLocalPostcode] = useState(''); 
 
   useEffect(() => {
     if (enquiry) {
@@ -39,6 +41,8 @@ export default function EnquiryDetailScreen() {
       setLocalPhone(enquiry.phone || '');
       setLocalEmail(enquiry.email || '');
       setLocalAddress(enquiry.address || '');
+      setLocalSuburb(enquiry.suburb || ''); 
+      setLocalPostcode(enquiry.postcode || ''); 
     }
   }, [enquiry]);
 
@@ -48,7 +52,9 @@ export default function EnquiryDetailScreen() {
         name: localName,
         phone: localPhone,
         email: localEmail,
-        address: localAddress
+        address: localAddress,
+        suburb: localSuburb, 
+        postcode: localPostcode 
       }));
       refresh();
       showToast('Enquiry details saved');
@@ -95,9 +101,12 @@ export default function EnquiryDetailScreen() {
       const total = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
 
       const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
-      const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${settings?.businessName || 'Get Handyman'}</h2>`;
+      const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : '';
       const quoteDate = new Date().toLocaleDateString('en-GB');
 
+      const fullAddress = [localAddress, localSuburb, localPostcode].filter(Boolean).join(', ');
+
+      // FIXED: Restructured HTML to put Business Details explicitly above the Bill To section
       const html = `
         <html>
           <head>
@@ -106,48 +115,66 @@ export default function EnquiryDetailScreen() {
               @page { margin: 0; }
               body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
               .header { display: flex; justify-content: space-between; align-items: flex-start; }
-              .logo { max-height: 100px; max-width: 200px; object-fit: contain; }
-              .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.5; }
-              .title-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; }
-              .biz-name { font-size: 24px; font-weight: 800; color: #1F2937; margin: 0; }
-              .doc-type { font-size: 22px; font-weight: 800; color: #1D4ED8; margin: 0; }
-              .divider { border-top: 2px solid #111827; margin: 15px 0 25px 0; }
-              .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #374151; }
-              .bill-to-details { line-height: 1.5; }
-              .items-table { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 11px; }
-              .items-table th { background-color: #111827; color: #ffffff; padding: 10px; font-weight: 700; text-align: left; }
+              .logo { max-height: 100px; max-width: 200px; object-fit: contain; margin-bottom: 15px; }
+              .biz-details { font-size: 12px; color: #374151; line-height: 1.6; }
+              .biz-name { font-size: 16px; font-weight: 800; color: #111827; margin-bottom: 4px; }
+              .doc-meta { text-align: right; }
+              .doc-type { font-size: 28px; font-weight: 800; color: #1D4ED8; margin: 0 0 15px 0; letter-spacing: 1px; }
+              .divider { border-top: 2px solid #111827; margin: 25px 0; }
+              .bill-to-section { margin-bottom: 30px; }
+              .bill-to-title { color: #9CA3AF; font-weight: 700; font-size: 11px; margin-bottom: 6px; letter-spacing: 0.5px; }
+              .bill-to-details { font-size: 12px; color: #374151; line-height: 1.5; }
+              .items-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
+              .items-table th { background-color: #111827; color: #ffffff; padding: 12px 10px; font-weight: 700; text-align: left; }
+              .items-table td { padding: 12px 10px; border-bottom: 1px solid #E5E7EB; }
               .text-right { text-align: right; }
               .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
-              .balance-due { background-color: #1D4ED8; color: #ffffff; font-size: 14px; font-weight: 700; padding: 10px 15px; display: flex; justify-content: space-between; width: 220px; border-radius: 4px; }
+              .balance-due { background-color: #1D4ED8; color: #ffffff; font-size: 14px; font-weight: 700; padding: 12px 15px; display: flex; justify-content: space-between; width: 220px; border-radius: 4px; }
             </style>
           </head>
           <body>
-            <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${settings?.abn ? `ABN: ${settings.abn}` : ''}</div><div>${settings?.bizPhone || ''}</div><div>${settings?.bizEmail || ''}</div><div>${settings?.website || ''}</div></div></div>
-            <div class="title-row"><h1 class="biz-name">${settings?.businessName || 'Get Handyman'}</h1><h2 class="doc-type">QUOTE</h2></div>
-            <div class="divider"></div>
-            <div class="meta-row">
+            <div class="header">
               <div>
-                <div style="color: #9CA3AF; font-weight: 700; margin-bottom: 4px;">BILL TO:</div>
-                <div class="bill-to-details">
-                  <div style="font-weight: 700;">${localName}</div>
-                  <div>${localEmail}</div>
-                  <div>${localPhone}</div>
-                  ${localAddress ? `<div>${localAddress}</div>` : ''}
+                ${logoImg}
+                <div class="biz-details">
+                  <div class="biz-name">${settings?.businessName || 'Get Handyman Pty Ltd'}</div>
+                  ${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}
+                  ${settings?.bizCityState ? `<div>City - ${settings.bizCityState}</div>` : ''}
+                  ${settings?.bizPhone ? `<div>Phone - ${settings.bizPhone}</div>` : ''}
+                  ${settings?.website ? `<div>Website - ${settings.website}</div>` : ''}
                 </div>
               </div>
-              <div style="text-align: right;">
-                <div><span style="color: #9CA3AF;">Quote Date:</span> ${quoteDate}</div>
-                <div><span style="color: #9CA3AF;">Currency:</span> AUD</div>
-                <div><span style="color: #9CA3AF;">Terms:</span> Due on receipt</div>
+              <div class="doc-meta">
+                <h2 class="doc-type">QUOTE</h2>
+                <div style="font-size: 11px; color: #6B7280; line-height: 1.6;">
+                  <div><strong style="color: #9CA3AF;">Date:</strong> ${quoteDate}</div>
+                  <div><strong style="color: #9CA3AF;">Currency:</strong> AUD</div>
+                  <div><strong style="color: #9CA3AF;">Terms:</strong> 30 Days</div>
+                </div>
               </div>
             </div>
+            
+            <div class="divider"></div>
+            
+            <div class="bill-to-section">
+              <div class="bill-to-title">BILL TO:</div>
+              <div class="bill-to-details">
+                <div style="font-weight: 700; font-size: 14px; color: #111827;">${localName}</div>
+                ${localPhone ? `<div>${localPhone}</div>` : ''}
+                ${localEmail ? `<div>${localEmail}</div>` : ''}
+                ${fullAddress ? `<div style="margin-top: 4px;">${fullAddress}</div>` : ''}
+              </div>
+            </div>
+
             <table class="items-table">
               <tr><th>DESCRIPTION</th><th class="text-right">AMOUNT</th></tr>
               ${itemsHtml}
             </table>
+            
             <div class="totals-container">
               <div class="balance-due"><span>TOTAL</span><span>$${total.toFixed(2)}</span></div>
             </div>
+            
             ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #4B5563; line-height: 1.5;">${settings.quoteMessage}</div>` : ''}
           </body>
         </html>
@@ -163,7 +190,6 @@ export default function EnquiryDetailScreen() {
         });
       }
       
-      // Update Database Status
       await sendQuote(items);
       showToast('Quote sent successfully');
     } catch (err) {
@@ -172,29 +198,14 @@ export default function EnquiryDetailScreen() {
   };
 
   const handleAccept = async () => {
-  try {
-    const data = await accept();
-    showToast('Job created from enquiry');
-    
-    if (data && data.job && data.job._id) {
-      navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: data.job._id } });
-    } else {
-      navigation.goBack();
+    try {
+      const { job } = await accept();
+      showToast('Job created from enquiry');
+      navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: job._id } });
+    } catch (e) {
+      Alert.alert("Error", "Could not accept enquiry.");
     }
-  } catch (e) {
-    // Extract the exact error from the backend response
-    let errorText = 'An unknown error occurred.';
-    if (e.response?.data?.errors) {
-      errorText = e.response.data.errors.join('\n');
-    } else if (e.response?.data?.message) {
-      errorText = e.response.data.message;
-    } else if (e.message) {
-      errorText = e.message;
-    }
-    
-    Alert.alert("Backend Error", errorText);
-  }
-};
+  };
 
   return (
     <View style={styles.screen}>
@@ -214,12 +225,16 @@ export default function EnquiryDetailScreen() {
 
             {enquiry.message ? <Text style={styles.message}>{enquiry.message}</Text> : null}
 
-            {/* Editable Customer Fields */}
             <FieldLabel style={{ marginTop: 14 }}>Customer Details</FieldLabel>
             <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
             <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
             <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
-            <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Address" />
+            
+            <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Street Address" />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TextInput style={[styles.input, { flex: 1 }]} value={localSuburb} onChangeText={setLocalSuburb} placeholder="Suburb" />
+              <TextInput style={[styles.input, { flex: 1 }]} value={localPostcode} onChangeText={setLocalPostcode} placeholder="Postcode" keyboardType="numeric" />
+            </View>
             
             <Button variant="primary" style={{ marginBottom: 20 }} onPress={handleUpdateEnquiry}>
               💾 Save Customer Details
@@ -229,7 +244,7 @@ export default function EnquiryDetailScreen() {
               <>
                 <QuoteComposer initialItems={enquiry.quoteItems} onSend={handleSendQuote} />
                 <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>
-                  ✅ Accept & Move to Jobs List
+                  ✅ Accept Instantly (Confirmed on Phone)
                 </Button>
                 <Button variant="outline" onPress={handleReject} style={{ marginTop: 10 }}>
                   Reject enquiry
@@ -240,7 +255,7 @@ export default function EnquiryDetailScreen() {
             {enquiry.status === 'quoted' && (
               <>
                 <Text style={styles.quoted}>Quote Sent</Text>
-                <EnquiryActions onReject={handleReject} onAccept={handleAccept} acceptLabel="Accept & Move to Jobs List" />
+                <EnquiryActions onReject={handleReject} onAccept={handleAccept} acceptLabel="Mark accepted & create job" />
               </>
             )}
 
