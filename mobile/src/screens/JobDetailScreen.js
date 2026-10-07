@@ -18,13 +18,14 @@ export default function JobDetailScreen() {
   const { params } = useRoute();
   const navigation = useNavigation();
   const { showToast } = useToast();
-  const { job, loading, saveDetails, complete, remove } = useJob(params.id);
+  const { job, loading, saveDetails, complete, remove, changeStatus } = useJob(params.id);
   
   const [editingPrice, setEditingPrice] = useState(false);
   const [isEditingJob, setIsEditingJob] = useState(false); 
   const [priceInput, setPriceInput] = useState('0');
   const [optionsOpen, setOptionsOpen] = useState(false); 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showStatusPicker, setShowStatusPicker] = useState(false); 
 
   if (loading || !job) return <View style={styles.screen}><LoadingState /></View>;
 
@@ -53,7 +54,6 @@ export default function JobDetailScreen() {
     }
   };
 
-  // FIXED: Manual button to add old customers into the permanent database
   const handleSaveAsClient = async () => {
     try {
       const res = await apiClient.get('/api/customers');
@@ -131,6 +131,17 @@ export default function JobDetailScreen() {
     navigation.navigate('JobsList');
   };
 
+  const handleStatusChange = async (newStatus) => {
+    setShowStatusPicker(false);
+    try {
+      await changeStatus(newStatus);
+      showToast(`Job status updated successfully`);
+    } catch (err) {
+      console.log("[DEBUG] Status Change Error:", err);
+      Alert.alert("Error", err.message || "Failed to change status.");
+    }
+  };
+
   return (
     <View style={styles.screen}>
       <ScreenHeader 
@@ -148,7 +159,6 @@ export default function JobDetailScreen() {
             <Text style={styles.customerName}>{job.name}</Text>
             <JobStatusBadge job={job} />
           </View>
-          {/* NEW: Standalone Save Client Button for Old Jobs */}
           <TouchableOpacity style={[styles.actionIcon, { backgroundColor: colors.blueTint }]} onPress={handleSaveAsClient}>
             <Text>💾</Text>
           </TouchableOpacity>
@@ -237,6 +247,10 @@ export default function JobDetailScreen() {
               <View style={[styles.sheetIconBox, { backgroundColor: colors.blueTint }]}><Text>✏️</Text></View>
               <Text style={[styles.sheetText, { color: colors.blue }]}>Edit job details</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setShowStatusPicker(true); }}>
+              <View style={[styles.sheetIconBox, { backgroundColor: colors.orangeTint }]}><Text>🔄</Text></View>
+              <Text style={[styles.sheetText, { color: colors.orangeDeep }]}>Change Job Status</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setConfirmDelete(true); }}>
               <View style={[styles.sheetIconBox, { backgroundColor: colors.redTint }]}><Text>🗑️</Text></View>
               <Text style={[styles.sheetText, { color: colors.red }]}>Delete job</Text>
@@ -254,6 +268,25 @@ export default function JobDetailScreen() {
               <Button variant="outline" style={{ flex: 1 }} onPress={() => setConfirmDelete(false)}>Cancel</Button>
               <Button variant="primary" style={{ flex: 1, backgroundColor: colors.red }} onPress={handleDelete}>Delete</Button>
             </View>
+          </View>
+        </View>
+      )}
+
+      {/* FIXED: Override Status Modal - Confirmed removed, Accepted changed to Assigned */}
+      {showStatusPicker && (
+        <View style={styles.overlay}>
+          <View style={styles.confirmBox}>
+            <Text style={styles.confirmTitle}>Change Job Status</Text>
+            <Text style={styles.confirmSub}>Manually override the current status of this job. (Note: If reverting from Complete, the generated Invoice will still exist in the Invoices tab).</Text>
+            
+            <View style={{ gap: 10, marginBottom: 20 }}>
+              <Button variant="outline" onPress={() => handleStatusChange('accepted')}>🔵 Set to Assigned Job</Button>
+              <Button variant="outline" onPress={() => handleStatusChange('complete')}>🟢 Set to Complete</Button>
+            </View>
+
+            <Button variant="outline" style={{ borderColor: colors.gray }} onPress={() => setShowStatusPicker(false)}>
+              <Text style={{ color: colors.gray, fontWeight: '700' }}>Cancel</Text>
+            </Button>
           </View>
         </View>
       )}

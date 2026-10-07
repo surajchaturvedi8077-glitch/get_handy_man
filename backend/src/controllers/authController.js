@@ -51,4 +51,23 @@ const getMe = asyncHandler(async (req, res) => {
   ok(res, req.user);
 });
 
-module.exports = { register, login, getMe };
+// PUT /api/auth/password
+const changePassword = asyncHandler(async (req, res) => {
+  console.log(`[DEBUG] Changing password for user ${req.user.email}`);
+  const { oldPassword, newPassword } = req.body;
+  
+  const user = await User.findById(req.user._id).select('+password');
+  if (!(await user.comparePassword(oldPassword))) {
+    res.status(401);
+    throw new Error('Incorrect current password');
+  }
+  
+  user.password = newPassword;
+  await user.save();
+  console.log(`[DEBUG] Password successfully changed!`);
+  ok(res, { message: 'Password updated successfully' });
+});
+
+// Update the export line to include changePassword:
+module.exports = { register, login, getMe, changePassword };
+

@@ -2,17 +2,18 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Notifications from 'expo-notifications'; // FIXED: Direct Native Notifications
+import * as Notifications from 'expo-notifications'; 
 import useAuth from '../hooks/useAuth';
 import useEnquiries from '../hooks/useEnquiries';
 import useJobs from '../hooks/useJobs';
 import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
-import { getExpoPushToken } from '../services/notificationService';
+
+// FIXED: Imported the new scheduleDailyMorningBriefing function
+import { getExpoPushToken, scheduleDailyMorningBriefing } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
-// Ensure notifications show up even if the app is open
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -49,8 +50,7 @@ export default function DashboardScreen() {
   const { invoices: unpaidInvoices, refresh: refreshInvoices } = useInvoices('unpaid');
 
   const [notifiedEnquiries, setNotifiedEnquiries] = useState(new Set());
-
-  useEffect(() => {
+useEffect(() => {
     async function setupNotifications() {
       const { status } = await Notifications.requestPermissionsAsync();
       if (status !== 'granted') {
@@ -60,23 +60,29 @@ export default function DashboardScreen() {
         const token = await getExpoPushToken();
         if (token) update({ expoPushToken: token });
       }
+
+      // Schedule with your custom preference from settings (or fallback to saved local setting)
+      if (scheduleDailyMorningBriefing) {
+        await scheduleDailyMorningBriefing(
+          settings?.briefingEnabled ?? true,
+          settings?.briefingTime || '07:30'
+        );
+      }
     }
     setupNotifications();
   }, [settings]);
 
-  // FIXED: Flawless Local Fallback Notifications "No Matter What"
   useEffect(() => {
     if (newEnquiries && newEnquiries.length > 0) {
       newEnquiries.forEach(enq => {
         if (!notifiedEnquiries.has(enq._id)) {
-          // Force the phone to ring immediately
           Notifications.scheduleNotificationAsync({
             content: {
               title: '🆕 New Enquiry Received!',
               body: `${enq.name} needs a ${enq.service || 'handyman'}.`,
               sound: 'default',
             },
-            trigger: null, // trigger instantly
+            trigger: null,
           });
           setNotifiedEnquiries(prev => new Set(prev).add(enq._id));
         }
@@ -84,7 +90,6 @@ export default function DashboardScreen() {
     }
   }, [newEnquiries]);
 
-  // FRONTEND CRON JOB: Silently refreshes your dashboard every 30 seconds
   useEffect(() => {
     const frontendCron = setInterval(() => {
       refreshEnquiries();
@@ -106,7 +111,7 @@ export default function DashboardScreen() {
     .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
 
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
-  const acceptedCount = todaysJobs.filter(j => j.status === 'confirmed' || j.status === 'accepted').length;
+  const assignedCount = todaysJobs.filter(j => j.status === 'accepted').length;
 
   const todayOptions = { weekday: 'long', day: 'numeric', month: 'long' };
   const todayStr = new Date().toLocaleDateString('en-US', todayOptions);
@@ -154,7 +159,7 @@ export default function DashboardScreen() {
         <SummaryCard
           big={todaysJobs.length}
           label="JOBS TODAY"
-          sub={`${acceptedCount} accepted · ${needsDetailsCount} need details`}
+          sub={`${assignedCount} assigned · ${needsDetailsCount} need details`}
           bg={colors.blueTint}
           fg={colors.blue}
           onPress={() => navigation.getParent()?.navigate('Jobs')}

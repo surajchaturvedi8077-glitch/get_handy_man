@@ -1,9 +1,9 @@
 import React from 'react';
 import SegmentedControl from '../ui/SegmentedControl';
 
+// FIXED: Removed 'Confirmed' and renamed 'Accepted' to 'Assigned'
 const OPTIONS = [
-  // FIXED: Keeps the backend filter 'confirmed', but displays 'Accepted'
-  { value: 'confirmed', label: 'Accepted' },
+  { value: 'accepted', label: 'Assigned' }, 
   { value: 'complete', label: 'Complete' },
   { value: 'all', label: 'All' },
 ];

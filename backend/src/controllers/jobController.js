@@ -70,44 +70,43 @@ const updateMaterials = asyncHandler(async (req, res) => {
   ok(res, job);
 });
 
+// POST /api/jobs/:id/complete
 const markComplete = asyncHandler(async (req, res) => {
+  console.log(`[DEBUG] Marking Job ${req.params.id} as complete...`);
+  
   const job = await Job.findById(req.params.id);
   if (!job) {
     res.status(404);
     throw new Error('Job not found');
   }
 
-  if (job.status === 'complete') {
-    res.status(400);
-    throw new Error('Job is already marked complete');
+  // FORCE the status to complete in the database
+  job.status = 'complete';
+  
+  const Invoice = require('../models/Invoice');
+  const { nextInvoiceNumber } = require('../services/numberingService');
+
+  let invoice;
+  if (!job.invoiceId) {
+    console.log(`[DEBUG] Generating new Invoice for Job ${req.params.id}`);
+    invoice = await Invoice.create({
+      number: await nextInvoiceNumber(),
+      jobId: job._id,
+      customer: job.name,
+      customerEmail: job.email,
+      customerPhone: job.phone,
+      customerAddress: job.address, // FIXED: Address passes seamlessly to the invoice
+      items: [{ name: job.service || 'Handyman Services', amt: job.labour || 0, qty: 1 }],
+      costs: { materials: job.materials || [], other: [] }
+    });
+    job.invoiceId = invoice._id;
+  } else {
+    invoice = await Invoice.findById(job.invoiceId);
   }
 
-  const settings = await Settings.getSingleton();
-  const items = job.materials.map((m) => ({ name: m.name, qty: 1, amt: m.cost || 0 }));
-  items.push({ name: 'Labour', qty: 1, amt: job.labour || 0 });
-
-  const invoice = await Invoice.create({
-    number: await nextInvoiceNumber(),
-    jobId: job._id,
-    customer: job.name,
-    customerEmail: job.email || '',
-    customerPhone: job.phone || '',
-    terms: 'Due on receipt',
-    items,
-    paymentMode: 'online',
-    status: 'unpaid',
-    gstIncluded: settings.gstEnabled,
-    discount: { type: 'percent', value: 0 },
-    costs: {
-      materials: job.materials.map((m) => ({ name: m.name, cost: m.cost || 0, photoUrl: null })),
-      other: [],
-    },
-  });
-
-  job.status = 'complete';
-  job.invoiceId = invoice._id;
   await job.save();
-
+  console.log(`[DEBUG] Job successfully marked complete!`);
+  
   ok(res, { job, invoice });
 });
 

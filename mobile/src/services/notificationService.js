@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 try {
   Notifications.setNotificationHandler({
@@ -75,5 +76,68 @@ export async function syncLocalNotifications(upcomingJobs, unpaidInvoices) {
 
   } catch (e) {
     console.log("Could not sync notifications:", e);
+  }
+}
+
+// NEW: Programs the Android OS to ring every morning, completely bypassing the sleeping backend server.
+
+const BRIEFING_KEY = 'gh_briefing_pref';
+
+// Accepts enable toggle and custom 24-hr time string (e.g., "07:30" or "08:15")
+export async function scheduleDailyMorningBriefing(enabled = true, timeStr = '07:30') {
+  try {
+    // 1. Save preferences locally on phone as a fail-safe
+    await AsyncStorage.setItem(BRIEFING_KEY, JSON.stringify({ enabled, timeStr }));
+
+    // 2. Clear existing morning briefing alarms to avoid duplicates
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const notif of scheduled) {
+      if (notif.content.data?.type === 'morning_briefing') {
+        await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+      }
+    }
+
+    // 3. If turned off in settings, stop here
+    if (!enabled) {
+      console.log("[DEBUG] Morning briefing disabled by user. Alarm cancelled.");
+      return;
+    }
+
+    // 4. Parse custom hour & minute
+    let hour = 7;
+    let minute = 30;
+    if (timeStr && timeStr.includes(':')) {
+      const parts = timeStr.split(':');
+      hour = parseInt(parts[0], 10) || 7;
+      minute = parseInt(parts[1], 10) || 30;
+    }
+
+    // 5. Schedule repeating daily notification at your exact custom time
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "☀️ Good Morning!",
+        body: "Tap to open Get Handyman and check your jobs, route, and alerts for today.",
+        sound: 'default',
+        data: { type: 'morning_briefing' },
+      },
+      trigger: {
+        hour,
+        minute,
+        repeats: true,
+      },
+    });
+
+    console.log(`[DEBUG] Custom Morning Alarm set for ${hour}:${minute.toString().padStart(2, '0')} daily.`);
+  } catch (error) {
+    console.log("[DEBUG] Failed to schedule morning briefing alarm:", error);
+  }
+}
+
+export async function getSavedBriefingPref() {
+  try {
+    const raw = await AsyncStorage.getItem(BRIEFING_KEY);
+    return raw ? JSON.parse(raw) : { enabled: true, timeStr: '07:30' };
+  } catch {
+    return { enabled: true, timeStr: '07:30' };
   }
 }
