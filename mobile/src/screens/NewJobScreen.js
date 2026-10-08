@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert, KeyboardAvoidingView } from 'react-native';
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import Button from '../components/ui/Button';
 import FieldLabel from '../components/ui/FieldLabel';
@@ -14,7 +13,6 @@ export default function NewJobScreen() {
   const navigation = useNavigation();
   const { params } = useRoute();
   const { showToast } = useToast();
-  const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
   const debounceTimer = useRef(null);
 
@@ -25,13 +23,15 @@ export default function NewJobScreen() {
 
   const [suggestions, setSuggestions] = useState([]);
   const [form, setForm] = useState({
-    name: '', phone: '', email: '', when: '', exactTime: '', scheduledDate: null, address: '', suburb: '', postcode: '', lat: null, lng: null,
-    labour: '180', notes: ''
+    name: '', phone: '', email: '', when: '', exactTime: '', scheduledDate: null, address: '', suburb: '', postcode: '', lat: null, lng: null, notes: ''
   });
   
-  const [services, setServices] = useState(['General Handyman']);
+  // FIXED: Forces Services to be an array of Objects with Prices, preventing backend crashes!
+  const [services, setServices] = useState([{ name: 'General Handyman', amt: '180' }]);
   const [materials, setMaterials] = useState([]);
   const [extraFields, setExtraFields] = useState([]);
+
+  const labourTotal = services.reduce((sum, s) => sum + (Number(s.amt) || 0), 0);
 
   useEffect(() => {
     if (params?.customer) {
@@ -53,7 +53,7 @@ export default function NewJobScreen() {
     setSaving(true);
     try {
       const safeAddress = [form.address, form.suburb, form.postcode].filter(Boolean).join(', ') || 'Address not set';
-      const validServices = services.filter(Boolean);
+      const formattedServices = services.filter(s => s.name).map(s => ({ name: s.name, amt: Number(s.amt) || 0 }));
       
       const payload = {
         ...form,
@@ -64,12 +64,12 @@ export default function NewJobScreen() {
         address: safeAddress,
         lat: form.lat,
         lng: form.lng,
-        labour: Number(form.labour) || 0,
-        services: validServices,
-        service: validServices.length > 0 ? validServices[0] : 'General Handyman',
+        labour: labourTotal, // Auto calculates!
+        services: formattedServices,
+        service: formattedServices.length > 0 ? formattedServices[0].name : 'General Handyman',
         extraFields: extraFields.filter(f => f.label && f.value),
         materials,
-        status: 'accepted', 
+        status: 'confirmed',
         needsDetails: false
       };
       
@@ -77,7 +77,8 @@ export default function NewJobScreen() {
       showToast('Job created successfully');
       navigation.navigate('Jobs', { screen: 'JobsList' }); 
     } catch (err) {
-      Alert.alert("Cannot Create Job", err.message || 'Failed to create job');
+      const errMsg = err.response?.data?.errors ? err.response.data.errors.join('\n') : (err.response?.data?.message || 'Failed to create job');
+      Alert.alert("Cannot Create Job", errMsg);
     } finally {
       setSaving(false);
     }
@@ -111,153 +112,120 @@ export default function NewJobScreen() {
     }
   };
 
-  // FIXED: Replaced Google Maps with 100% Free OpenStreetMap Autocomplete
   const searchPlaces = async (text) => {
     updateForm('address', text);
-    if (text.length < 4) { setSuggestions([]); return; }
-
+    if (text.length < 3) { setSuggestions([]); return; }
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(async () => {
       try {
-        // format=json & addressdetails=1 tells OSM to give us the suburb/postcode immediately
-        // countrycodes=au keeps searches locked to Australia
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&format=json&addressdetails=1&countrycodes=au&limit=5`, 
-          {
-            headers: {
-              // OSM asks apps to provide a User-Agent so they know who is using their free tool
-              'User-Agent': 'GetHandymanWorkerApp/1.0' 
-            }
-          }
-        );
+        const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
+        if (!key) return;
+        const res = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&components=country:au&key=${key}`);
         const data = await res.json();
-        setSuggestions(data || []);
-      } catch (e) { 
-        console.log("OSM Error", e);
-      }
-    }, 600); // 600ms delay protects the free API limit
+        setSuggestions(data.predictions || []);
+      } catch (e) { }
+    }, 500);
   };
 
-  // FIXED: Pulls data instantly from the OSM item object
-  const handleSelectPlace = (item) => {
-    // Attempt to extract the cleanest street address (ignoring the long trailing state/country text)
-    let cleanAddress = item.display_name.split(',')[0];
-    if (item.address?.house_number && item.address?.road) {
-      cleanAddress = `${item.address.house_number} ${item.address.road}`;
-    } else if (item.address?.road) {
-      cleanAddress = item.address.road;
-    }
-
-    // Attempt to extract suburb (OSM uses various terms depending on the region)
-    const suburb = item.address?.suburb || item.address?.city || item.address?.town || item.address?.village || '';
-    const postcode = item.address?.postcode || '';
-
-    updateForm('address', cleanAddress);
-    updateForm('suburb', suburb);
-    updateForm('postcode', postcode);
-    updateForm('lat', item.lat);
-    updateForm('lng', item.lon);
-    
+  const handleSelectPlace = async (placeId, description) => {
+    updateForm('address', description);
     setSuggestions([]);
+    try {
+      const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
+      const res = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=address_components,geometry&key=${key}`);
+      const data = await res.json();
+      if (data.result) {
+        updateForm('lat', data.result.geometry.location.lat);
+        updateForm('lng', data.result.geometry.location.lng);
+        const postcodeObj = data.result.address_components.find(c => c.types.includes('postal_code'));
+        if (postcodeObj) updateForm('postcode', postcodeObj.long_name);
+      }
+    } catch (e) { }
   };
 
   return (
     <View style={styles.screen}>
       <ScreenHeader title="NEW JOB" onBack={() => navigation.navigate('Dashboard')} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} keyboardVerticalOffset={Platform.OS === 'android' ? 80 : 0} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        
+        <View style={styles.customerStrip}>
+          <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
+          <View style={{ flex: 1 }}>
+            <TextInput style={styles.nameInput} placeholder="Customer name" placeholderTextColor={colors.gray} value={form.name} onChangeText={(val) => updateForm('name', val)} />
+          </View>
+        </View>
+
+        <View style={styles.fieldRow}>
+          <Text style={styles.icon}>📞</Text>
+          <View style={{ flex: 1 }}>
+            <FieldLabel>Phone & Email</FieldLabel>
+            <TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholder="Phone Number" />
+            <TextInput style={[styles.input, { marginTop: 8 }]} value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="Email Address" />
+          </View>
+        </View>
+
+        <View style={styles.fieldRow}>
+          <Text style={styles.icon}>📅</Text>
+          <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <FieldLabel>Date</FieldLabel>
+              <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
+                <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Select"}</Text></View>
+              </TouchableOpacity>
+            </View>
+            <View style={{ flex: 1 }}>
+              <FieldLabel>Exact Time</FieldLabel>
+              <TextInput style={styles.input} value={form.exactTime} onChangeText={v => updateForm('exactTime', v)} placeholder="e.g. 10:30 AM" />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.fieldRow}>
+          <Text style={styles.icon}>📍</Text>
+          <View style={{ flex: 1, zIndex: 10 }}>
+            <FieldLabel>Street Address</FieldLabel>
+            <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
+            {suggestions.length > 0 && (
+              <View style={styles.dropdown}>
+                {suggestions.map((item) => (
+                  <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
+                    <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={[styles.detailsCard, { zIndex: -1 }]}>
+          <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
           
-          <View style={styles.customerStrip}>
-            <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
-            <View style={{ flex: 1 }}>
-              <TextInput style={styles.nameInput} placeholder="Customer name" placeholderTextColor={colors.gray} value={form.name} onChangeText={(val) => updateForm('name', val)} />
+          <FieldLabel>Line Items (Services)</FieldLabel>
+          {services.map((srv, idx) => (
+            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv.name} onChangeText={v => { const s = [...services]; s[idx].name = v; setServices(s); }} placeholder="Service Description" />
+              <TextInput style={[styles.input, { width: 80, marginTop: 0 }]} value={srv.amt} onChangeText={v => { const s = [...services]; s[idx].amt = v; setServices(s); }} placeholder="Amt" keyboardType="numeric" />
+              <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
             </View>
-          </View>
+          ))}
+          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, { name: '', amt: '' }])}>+ Add service line</Button>
 
-          <View style={styles.fieldRow}>
-            <Text style={styles.icon}>📞</Text>
-            <View style={{ flex: 1 }}>
-              <FieldLabel>Phone & Email</FieldLabel>
-              <TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholder="Phone Number" />
-              <TextInput style={[styles.input, { marginTop: 8 }]} value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="Email Address" />
-            </View>
-          </View>
-
-          <View style={styles.fieldRow}>
-            <Text style={styles.icon}>📅</Text>
-            <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
-              <View style={{ flex: 1 }}>
-                <FieldLabel>Date</FieldLabel>
-                <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
-                  <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Select"}</Text></View>
-                </TouchableOpacity>
-              </View>
-              <View style={{ flex: 1 }}>
-                <FieldLabel>Exact Time</FieldLabel>
-                <TextInput style={styles.input} value={form.exactTime} onChangeText={v => updateForm('exactTime', v)} placeholder="e.g. 10:30 AM" />
-              </View>
-            </View>
-          </View>
-
-          <View style={[styles.fieldRow, { zIndex: 9999, elevation: 10 }]}>
-            <Text style={styles.icon}>📍</Text>
-            <View style={{ flex: 1 }}>
-              <FieldLabel>Street Address</FieldLabel>
-              <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
-              {suggestions.length > 0 && (
-                <View style={styles.dropdownContainer}>
-                  <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                    {suggestions.map((item) => (
-                      <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item)}>
-                        <Text style={styles.dropdownText} numberOfLines={2}>{item.display_name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-            </View>
-          </View>
+          <FieldLabel>Total Labour Cost (A$)</FieldLabel>
+          <View style={styles.totalBox}><Text style={styles.totalText}>${labourTotal.toFixed(2)}</Text></View>
           
-          <View style={[styles.rowSplit, { zIndex: 1 }]}>
-            <View style={{ flex: 1, marginLeft: 46 }}>
-              <FieldLabel>Suburb</FieldLabel>
-              <TextInput style={styles.input} value={form.suburb} onChangeText={v => updateForm('suburb', v)} />
+          <FieldLabel>Other Details / Fields</FieldLabel>
+          {extraFields.map((f, idx) => (
+            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.label} onChangeText={v => { const e = [...extraFields]; e[idx].label = v; setExtraFields(e); }} placeholder="Label" />
+              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.value} onChangeText={v => { const e = [...extraFields]; e[idx].value = v; setExtraFields(e); }} placeholder="Value" />
+              <TouchableOpacity onPress={() => setExtraFields(extraFields.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
             </View>
-            <View style={{ flex: 1 }}>
-              <FieldLabel>Postcode</FieldLabel>
-              <TextInput style={styles.input} value={form.postcode} onChangeText={v => updateForm('postcode', v)} keyboardType="numeric" />
-            </View>
-          </View>
+          ))}
+          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setExtraFields([...extraFields, {label: '', value: ''}])}>+ Add other field</Button>
 
-          <View style={[styles.detailsCard, { zIndex: -1 }]}>
-            <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
-            
-            <FieldLabel>Services</FieldLabel>
-            {services.map((srv, idx) => (
-              <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-                <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv} onChangeText={v => { const s = [...services]; s[idx] = v; setServices(s); }} placeholder="e.g. Plumbing Repair" />
-                <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
-              </View>
-            ))}
-            <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, ''])}>+ Add another service</Button>
-
-            <FieldLabel>Labour Cost (A$)</FieldLabel>
-            <TextInput style={[styles.input, { marginBottom: 14 }]} value={form.labour} onChangeText={v => updateForm('labour', v)} keyboardType="numeric" />
-            
-            <FieldLabel>Other Details / Fields</FieldLabel>
-            {extraFields.map((f, idx) => (
-              <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-                <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.label} onChangeText={v => { const e = [...extraFields]; e[idx].label = v; setExtraFields(e); }} placeholder="Label" />
-                <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.value} onChangeText={v => { const e = [...extraFields]; e[idx].value = v; setExtraFields(e); }} placeholder="Value" />
-                <TouchableOpacity onPress={() => setExtraFields(extraFields.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
-              </View>
-            ))}
-            <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setExtraFields([...extraFields, {label: '', value: ''}])}>+ Add other field</Button>
-
-            <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
+        </View>
+      </ScrollView>
 
       {showPicker && (
         <DateTimePicker value={pickerMode === 'time' ? tempDate : dateObj} mode={pickerMode} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />
@@ -272,13 +240,14 @@ const styles = StyleSheet.create({
   customerStrip: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 14 },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.charcoal, alignItems: 'center', justifyContent: 'center' },
   nameInput: { fontWeight: '800', fontSize: 16, color: colors.charcoal, padding: 0 },
-  fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 6, alignItems: 'flex-start' },
-  rowSplit: { flexDirection: 'row', gap: 12, paddingVertical: 6 },
+  fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 6, alignItems: 'flex-start', zIndex: 10 },
   icon: { width: 34, textAlign: 'center', fontSize: 17, marginTop: 18 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, backgroundColor: '#fff', marginTop: 4, color: colors.charcoal },
-  dropdownContainer: { position: 'absolute', top: 65, left: 0, right: 0, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, maxHeight: 200, zIndex: 9999, elevation: 10 },
-  dropdownItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: colors.grayLight },
+  dropdown: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, marginTop: 4, maxHeight: 150 },
+  dropdownItem: { padding: 10, borderBottomWidth: 1, borderBottomColor: colors.grayLight },
   dropdownText: { fontSize: 12, color: colors.charcoal },
   detailsCard: { backgroundColor: colors.orangeTint, borderRadius: 10, padding: 14, marginTop: 20 },
   cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.orangeDeep, marginBottom: 10 },
+  totalBox: { backgroundColor: '#fff', padding: 12, borderRadius: 8, marginBottom: 14, alignItems: 'center', borderWidth: 1, borderColor: colors.orange },
+  totalText: { fontSize: 16, fontWeight: 'bold', color: colors.charcoal }
 });

@@ -141,6 +141,7 @@ const sendQuote = asyncHandler(async (req, res) => {
 });
 
 // POST /api/enquiries/:id/accept
+// POST /api/enquiries/:id/accept
 const acceptEnquiry = asyncHandler(async (req, res) => {
   const Enquiry = require('../models/Enquiry');
   const Job = require('../models/Job');
@@ -150,26 +151,54 @@ const acceptEnquiry = asyncHandler(async (req, res) => {
   
   const quoteTotal = enquiry.quoteItems?.reduce((sum, item) => sum + (Number(item.amt) || 0), 0) || enquiry.price || 0;
   
+  // FIXED: Provides safe fallback names so Job Creation NEVER crashes
   const job = await Job.create({
-    name: enquiry.name,
+    name: enquiry.name || 'Customer',
     phone: enquiry.phone,
     email: enquiry.email,
     address: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', '),
     service: enquiry.service || 'Handyman',
     services: enquiry.quoteItems && enquiry.quoteItems.length > 0 
-      ? enquiry.quoteItems.map(i => ({ name: i.name, amt: Number(i.amt) || 0 })) 
+      ? enquiry.quoteItems.map(i => ({ name: i.name || 'Quote Item', amt: Number(i.amt) || 0 })) 
       : [{ name: enquiry.service || 'Handyman', amt: quoteTotal }],
     labour: quoteTotal, 
     status: 'accepted'
   });
 
-  // FIXED: Permanently saves the Job ID to the Quote so it never vanishes
   enquiry.jobId = job._id;
   enquiry.status = 'accepted';
   await enquiry.save();
   
   const { ok } = require('../utils/apiResponse');
   ok(res, { enquiry, job });
+});
+
+// NEW: POST /api/enquiries/:id/invoice (Converts Quote directly to Invoice!)
+const convertToInvoice = asyncHandler(async (req, res) => {
+  const Enquiry = require('../models/Enquiry');
+  const Invoice = require('../models/Invoice');
+  const { nextInvoiceNumber } = require('../services/numberingService');
+  
+  const enquiry = await Enquiry.findById(req.params.id);
+  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
+  
+  const invoice = await Invoice.create({
+    number: await nextInvoiceNumber(),
+    customer: enquiry.name || 'Customer',
+    customerPhone: enquiry.phone,
+    customerEmail: enquiry.email,
+    customerAddress: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', '),
+    items: enquiry.quoteItems && enquiry.quoteItems.length > 0 
+      ? enquiry.quoteItems.map(i => ({ name: i.name || 'Quote Item', amt: Number(i.amt) || 0, qty: 1 }))
+      : [{ name: enquiry.service || 'Handyman Service', amt: enquiry.price || 0, qty: 1 }],
+  });
+  
+  enquiry.status = 'accepted';
+  enquiry.invoiceId = invoice._id;
+  await enquiry.save();
+  
+  const { ok } = require('../utils/apiResponse');
+  ok(res, { enquiry, invoice });
 });
 
 module.exports = {
@@ -181,14 +210,5 @@ module.exports = {
   rejectEnquiry,
   sendQuote,
   acceptEnquiry,
-};
-module.exports = {
-  listEnquiries,
-  getEnquiry,
-  createEnquiry,
-  updateEnquiry,
-  deleteEnquiry,
-  rejectEnquiry,
-  sendQuote,
-  acceptEnquiry
+  convertToInvoice
 };

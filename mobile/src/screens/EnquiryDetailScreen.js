@@ -15,6 +15,7 @@ import useEnquiry from '../hooks/useEnquiry';
 import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { apiClient, unwrap } from '../services/apiClient';
+import { convertToInvoice } from '../services/enquiryService';
 import { colors } from '../theme/colors';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
@@ -32,6 +33,7 @@ export default function EnquiryDetailScreen() {
   const [localPhone, setLocalPhone] = useState('');
   const [localEmail, setLocalEmail] = useState('');
   const [localAddress, setLocalAddress] = useState('');
+  const [localNotes, setLocalNotes] = useState(''); // NEW: Internal Notes
 
   useEffect(() => {
     if (enquiry) {
@@ -39,16 +41,14 @@ export default function EnquiryDetailScreen() {
       setLocalPhone(enquiry.phone || '');
       setLocalEmail(enquiry.email || '');
       setLocalAddress(enquiry.address || '');
+      setLocalNotes(enquiry.notes || '');
     }
   }, [enquiry]);
 
   const handleUpdateEnquiry = async () => {
     try {
       await unwrap(apiClient.put(`/api/enquiries/${params.id}`, {
-        name: localName,
-        phone: localPhone,
-        email: localEmail,
-        address: localAddress
+        name: localName, phone: localPhone, email: localEmail, address: localAddress, notes: localNotes
       }));
       refresh();
       showToast('Enquiry details saved');
@@ -72,25 +72,19 @@ export default function EnquiryDetailScreen() {
     }
   };
 
-  const handleDelete = () => {
-    Alert.alert("Delete Enquiry", "Permanently delete this enquiry?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => {
-          try {
-            await unwrap(apiClient.delete(`/api/enquiries/${params.id}`));
-            showToast('Enquiry deleted');
-            navigation.goBack();
-          } catch (e) {
-            Alert.alert("Error", "Could not delete enquiry.");
-          }
-      }}
-    ]);
+  // NEW: Skips Job and Converts straight to Invoice
+  const handleConvertToInvoice = async () => {
+    try {
+      const data = await convertToInvoice(params.id);
+      showToast('Converted Directly to Invoice!');
+      navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: data.invoice._id } });
+    } catch (e) {
+      Alert.alert('Error', 'Could not convert to Invoice');
+    }
   };
 
-  // FIXED: Exact visual clone of the Invoice HTML logic including GST and Blue headers
   const generateQuoteHTML = (items) => {
     const itemsHtml = items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">1</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`).join('') || '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
-    
     const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
     const gstRate = settings?.gstRate || 10;
     const applyGst = settings?.gstEnabled !== false;
@@ -101,10 +95,8 @@ export default function EnquiryDetailScreen() {
     const bizCityStr = settings?.bizCityState || '';
     const bizPhoneStr = settings?.bizPhone || '';
     const bizWebStr = settings?.website || '';
-    
     const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
     const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : '';
-    
     const quoteDate = new Date().toLocaleDateString('en-GB');
 
     return `
@@ -137,37 +129,14 @@ export default function EnquiryDetailScreen() {
         </head>
         <body>
           <div class="header">
-            <div>
-              ${logoImg}
-              <div class="biz-details">
-                <div class="biz-name">${bizNameStr}</div>
-                ${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}
-                ${bizCityStr ? `<div>${bizCityStr}</div>` : ''}
-                ${bizPhoneStr ? `<div>${bizPhoneStr}</div>` : ''}
-                ${bizWebStr ? `<div>${bizWebStr}</div>` : ''}
-              </div>
-            </div>
-            <div class="doc-meta">
-              <h2 class="doc-type">QUOTE</h2>
-              <div style="font-size: 11px; color: #6B7280; line-height: 1.6;">
-                <div><strong style="color: #9CA3AF;">Date:</strong> ${quoteDate}</div>
-                <div><strong style="color: #9CA3AF;">Terms:</strong> ${settings?.paymentTerms || 'Due on receipt'}</div>
-              </div>
-            </div>
+            <div>${logoImg}<div class="biz-details"><div class="biz-name">${bizNameStr}</div>${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}${bizCityStr ? `<div>${bizCityStr}</div>` : ''}${bizPhoneStr ? `<div>${bizPhoneStr}</div>` : ''}${bizWebStr ? `<div>${bizWebStr}</div>` : ''}</div></div>
+            <div class="doc-meta"><h2 class="doc-type">QUOTE</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${quoteDate}</div><div><strong style="color: #9CA3AF;">Currency:</strong> AUD</div><div><strong style="color: #9CA3AF;">Terms:</strong> ${settings?.paymentTerms || 'Due on receipt'}</div></div></div>
           </div>
-          
           <div class="divider"></div>
-          
           <div class="bill-to-section">
             <div class="bill-to-title">QUOTE TO:</div>
-            <div class="bill-to-details">
-              <div style="font-weight: 700; font-size: 14px; color: #111827;">${localName || 'Customer Name'}</div>
-              ${localPhone ? `<div>${localPhone}</div>` : ''}
-              ${localEmail ? `<div>${localEmail}</div>` : ''}
-              ${localAddress ? `<div style="margin-top: 4px;">${localAddress}</div>` : ''}
-            </div>
+            <div class="bill-to-details"><div style="font-weight: 700; font-size: 14px; color: #111827;">${localName || 'Customer Name'}</div>${localPhone ? `<div>${localPhone}</div>` : ''}${localEmail ? `<div>${localEmail}</div>` : ''}${localAddress ? `<div style="margin-top: 4px;">${localAddress}</div>` : ''}</div>
           </div>
-
           <table class="items-table">
             <tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>
             ${itemsHtml}
@@ -197,11 +166,7 @@ export default function EnquiryDetailScreen() {
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { 
-          mimeType: 'application/pdf', 
-          dialogTitle: `Share Quote for ${localName}`,
-          UTI: '.pdf' 
-        });
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' });
       }
       
       const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
@@ -225,6 +190,19 @@ export default function EnquiryDetailScreen() {
     }
   };
 
+  const handleDelete = () => {
+    Alert.alert("Delete Quote", "Permanently delete this quote?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+          try {
+            await unwrap(apiClient.delete(`/api/enquiries/${params.id}`));
+            showToast('Quote deleted');
+            navigation.goBack();
+          } catch (e) { Alert.alert("Error", "Could not delete Quote."); }
+      }}
+    ]);
+  };
+
   return (
     <View style={styles.screen}>
       <ScreenHeader title="QUOTE / ENQUIRY" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
@@ -243,30 +221,27 @@ export default function EnquiryDetailScreen() {
 
             {enquiry.message ? <Text style={styles.message}>{enquiry.message}</Text> : null}
 
-            {/* Editable Customer Fields ALWAYS Visible */}
             <FieldLabel style={{ marginTop: 14 }}>Customer Details</FieldLabel>
             <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
             <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
             <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
             <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Address" />
             
+            <FieldLabel style={{ marginTop: 10 }}>Internal Notes (Not on PDF)</FieldLabel>
+            <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Private notes for yourself..." value={localNotes} onChangeText={setLocalNotes} />
+            
             <Button variant="outline" style={{ marginBottom: 20 }} onPress={handleUpdateEnquiry}>
-              💾 Save Customer Details
+              💾 Save Customer Details & Notes
             </Button>
 
-            {/* FIXED: Quote Composer is ALWAYS visible so you can edit and resend past quotes */}
             {enquiry.status !== 'rejected' && (
-              <QuoteComposer 
-                initialItems={enquiry.quoteItems} 
-                onSend={handleSendQuote} 
-                onPreview={handlePreviewQuote} 
-              />
+              <QuoteComposer initialItems={enquiry.quoteItems} onSend={handleSendQuote} onPreview={handlePreviewQuote} />
             )}
 
             {enquiry.status === 'new' && (
               <>
                 <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>
-                  ✅ Accept Instantly (Confirmed on Phone)
+                  ✅ Accept Instantly & Create Job
                 </Button>
                 <Button variant="outline" onPress={handleReject} style={{ marginTop: 10 }}>
                   Reject enquiry
@@ -277,6 +252,9 @@ export default function EnquiryDetailScreen() {
             {enquiry.status === 'quoted' && (
               <View style={{ marginTop: 16 }}>
                 <EnquiryActions onReject={handleReject} onAccept={handleAccept} acceptLabel="Mark accepted & create job" />
+                <Button variant="outline" style={{ marginTop: 10, borderColor: colors.blue }} onPress={handleConvertToInvoice}>
+                  <Text style={{ color: colors.blue, fontWeight: '700' }}>⚡ Skip Job & Convert to Invoice</Text>
+                </Button>
               </View>
             )}
 
@@ -286,11 +264,17 @@ export default function EnquiryDetailScreen() {
               </Button>
             )}
 
+            {enquiry.status === 'accepted' && enquiry.invoiceId && (
+              <Button variant="primary" style={{ backgroundColor: colors.green, marginTop: 16 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: enquiry.invoiceId } })}>
+                💰 View Direct Invoice
+              </Button>
+            )}
+
             {enquiry.status === 'rejected' && (
               <>
                 <Text style={styles.noteError}>This enquiry was previously rejected.</Text>
                 <Button variant="primary" style={{ backgroundColor: colors.green, marginTop: 12 }} onPress={handleReactivate}>
-                  🔄 Reactivate & Edit Details
+                  🔄 Reactivate Quote
                 </Button>
               </>
             )}

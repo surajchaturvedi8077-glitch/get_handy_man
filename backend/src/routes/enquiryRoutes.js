@@ -15,6 +15,7 @@ const {
   rejectEnquiry,
   sendQuote,
   acceptEnquiry,
+  convertToInvoice
 } = require('../controllers/enquiryController');
 const { protect } = require('../middleware/auth');
 
@@ -30,5 +31,5 @@ router.delete('/:id', deleteEnquiry);
 router.post('/:id/reject', rejectEnquiry);
 router.post('/:id/send-quote', sendQuote);
 router.post('/:id/accept', acceptEnquiry);
-
+router.post('/:id/invoice', convertToInvoice); // NEW: Skip Job and go straight to Invoice
 module.exports = router;

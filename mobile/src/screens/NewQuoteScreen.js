@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -21,19 +21,13 @@ export default function NewQuoteScreen() {
   const [generating, setGenerating] = useState(false);
 
   const [form, setForm] = useState({
-    name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt'
+    name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt', notes: ''
   });
   const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150.00' }]);
 
   useEffect(() => {
     if (params?.customer) {
-      setForm(prev => ({
-        ...prev,
-        name: params.customer.name || '',
-        phone: params.customer.phone || '',
-        email: params.customer.email || '',
-        address: params.customer.address || '',
-      }));
+      setForm(prev => ({ ...prev, name: params.customer.name || '', phone: params.customer.phone || '', email: params.customer.email || '', address: params.customer.address || '' }));
     }
   }, [params?.customer]);
 
@@ -52,10 +46,8 @@ export default function NewQuoteScreen() {
     const bizCityStr = settings?.bizCityState || '';
     const bizPhoneStr = settings?.bizPhone || '';
     const bizWebStr = settings?.website || '';
-    
     const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
     const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : '';
-    
     const quoteDate = new Date().toLocaleDateString('en-GB');
 
     return `
@@ -75,7 +67,7 @@ export default function NewQuoteScreen() {
             .bill-to-section { margin-bottom: 30px; }
             .bill-to-title { color: #9CA3AF; font-weight: 700; font-size: 11px; margin-bottom: 6px; letter-spacing: 0.5px; }
             .bill-to-details { font-size: 12px; color: #374151; line-height: 1.5; }
-            .items-table { width: 100%; border-collapse: collapse; margin-top: 40px; font-size: 11px; }
+            .items-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
             .items-table th { background-color: #1D4ED8; color: #ffffff; padding: 12px 10px; font-weight: 700; text-align: left; }
             .items-table td { padding: 12px 10px; border-bottom: 1px solid #E5E7EB; }
             .text-center { text-align: center; }
@@ -107,9 +99,7 @@ export default function NewQuoteScreen() {
               </div>
             </div>
           </div>
-          
           <div class="divider"></div>
-          
           <div class="bill-to-section">
             <div class="bill-to-title">QUOTE TO:</div>
             <div class="bill-to-details">
@@ -119,7 +109,6 @@ export default function NewQuoteScreen() {
               ${form.address ? `<div style="margin-top: 4px;">${form.address}</div>` : ''}
             </div>
           </div>
-
           <table class="items-table">
             <tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>
             ${itemsHtml}
@@ -154,15 +143,10 @@ export default function NewQuoteScreen() {
       const gstAmt = applyGst ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
       const finalTotal = subtotal + gstAmt;
 
-      // Saves quote permanently to Enquiries list with final GST total
       await apiClient.post('/api/enquiries', {
-        name: form.name,
-        phone: form.phone,
-        email: form.email,
-        address: form.address,
-        status: 'quoted', 
-        quoteItems: items,
-        price: finalTotal
+        name: form.name, phone: form.phone, email: form.email, address: form.address,
+        notes: form.notes, // NEW: Saves Internal Notes
+        status: 'quoted', quoteItems: items, price: finalTotal
       });
       showToast('Quote saved permanently!');
 
@@ -170,11 +154,7 @@ export default function NewQuoteScreen() {
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { 
-          mimeType: 'application/pdf', 
-          dialogTitle: `Share Quote for ${form.name}`,
-          UTI: '.pdf' 
-        });
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${form.name}`, UTI: '.pdf' });
       }
     } catch (err) {
       Alert.alert("Error", "Failed to generate quote PDF.");
@@ -195,6 +175,9 @@ export default function NewQuoteScreen() {
         <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
         <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
         <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} placeholderTextColor={colors.gray} />
+        
+        <FieldLabel style={{ marginTop: 10 }}>Internal Notes (Not on PDF)</FieldLabel>
+        <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Private notes for yourself..." value={form.notes} onChangeText={v => updateForm('notes', v)} placeholderTextColor={colors.gray} />
 
         <FieldLabel style={{ marginTop: 10 }}>Quote Configuration</FieldLabel>
         <View style={styles.row}>
@@ -213,11 +196,9 @@ export default function NewQuoteScreen() {
         <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add line item</Button>
 
         <View style={styles.btnRow}>
-          <Button variant="dark" style={[styles.flex, { marginRight: 8 }]} onPress={handlePreviewPdf}>
-            Preview PDF
-          </Button>
+          <Button variant="dark" style={[styles.flex, { marginRight: 8 }]} onPress={handlePreviewPdf}>Preview PDF</Button>
           <Button variant="primary" style={[styles.flex, { backgroundColor: colors.orange }]} onPress={handleSaveAndShareQuote} disabled={generating}>
-            {generating ? <ActivityIndicator color="#fff" /> : 'Save & Share'}
+            {generating ? <ActivityIndicator color="#fff" /> : <Text style={{fontWeight: 'bold', color: '#fff'}}>✓ Save & Share</Text>}
           </Button>
         </View>
       </ScrollView>

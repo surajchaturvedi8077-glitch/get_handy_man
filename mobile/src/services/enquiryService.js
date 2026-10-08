@@ -22,3 +22,4 @@ export const rejectEnquiry = (id) => unwrap(apiClient.post(`/api/enquiries/${id}
 export const sendQuote = (id, items) => unwrap(apiClient.post(`/api/enquiries/${id}/send-quote`, { items }));
 
 export const acceptEnquiry = (id) => unwrap(apiClient.post(`/api/enquiries/${id}/accept`));
+export const convertToInvoice = (id) => unwrap(apiClient.post(`/api/enquiries/${id}/invoice`));

@@ -17,11 +17,13 @@ const enquirySchema = new mongoose.Schema(
     service: String,
     services: [String],
     message: String,
+    notes: { type: String, default: '' }, // NEW: Internal Notes Field
     when: String,
     status: { type: String, enum: ['new', 'quoted', 'accepted', 'rejected'], default: 'new' },
     quoteItems: [quoteItemSchema],
     price: { type: Number, default: 0 },
-    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null }, // FIXED: Permanently links the job
+    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null }, 
+    invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null }, // NEW: Direct Invoice Link
     received: { type: Date, default: Date.now }
   },
   { timestamps: true }
