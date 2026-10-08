@@ -142,32 +142,46 @@ const sendQuote = asyncHandler(async (req, res) => {
 
 // POST /api/enquiries/:id/accept
 const acceptEnquiry = asyncHandler(async (req, res) => {
-  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, { status: 'accepted' }, { new: true });
-  if (!enquiry) {
-    res.status(404);
-    throw new Error('Enquiry not found');
-  }
-
-  // Convert Enquiry into a Pending Job
-  // FIXED: Status is set to 'accepted' instead of the invalid 'pending' enum
+  const Enquiry = require('../models/Enquiry');
+  const Job = require('../models/Job');
+  
+  const enquiry = await Enquiry.findById(req.params.id);
+  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
+  
+  const quoteTotal = enquiry.quoteItems?.reduce((sum, item) => sum + (Number(item.amt) || 0), 0) || enquiry.price || 0;
+  
   const job = await Job.create({
-    name: enquiry.name || 'New Customer',
-    phone: enquiry.phone || '',
-    email: enquiry.email || '',
-    // FIXED: Combines Address, Suburb, and Postcode dynamically
-    address: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', ') || 'Address not set',
-    services: enquiry.services?.length ? enquiry.services : [enquiry.service || 'General Handyman'],
-    service: enquiry.service || 'General Handyman',
-    when: enquiry.when || 'Not scheduled yet',
-    status: 'accepted', 
-    needsDetails: true,
-    labour: 0,
-    enquiryId: enquiry._id
+    name: enquiry.name,
+    phone: enquiry.phone,
+    email: enquiry.email,
+    address: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', '),
+    service: enquiry.service || 'Handyman',
+    services: enquiry.quoteItems && enquiry.quoteItems.length > 0 
+      ? enquiry.quoteItems.map(i => ({ name: i.name, amt: Number(i.amt) || 0 })) 
+      : [{ name: enquiry.service || 'Handyman', amt: quoteTotal }],
+    labour: quoteTotal, 
+    status: 'accepted'
   });
 
+  // FIXED: Permanently saves the Job ID to the Quote so it never vanishes
+  enquiry.jobId = job._id;
+  enquiry.status = 'accepted';
+  await enquiry.save();
+  
+  const { ok } = require('../utils/apiResponse');
   ok(res, { enquiry, job });
 });
 
+module.exports = {
+  listEnquiries,
+  getEnquiry,
+  createEnquiry,
+  updateEnquiry,
+  deleteEnquiry,
+  rejectEnquiry,
+  sendQuote,
+  acceptEnquiry,
+};
 module.exports = {
   listEnquiries,
   getEnquiry,

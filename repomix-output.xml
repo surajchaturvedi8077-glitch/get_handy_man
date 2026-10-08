@@ -362,63 +362,6 @@ module.exports = {
 };
 </file>
 
-<file path="backend/src/controllers/authController.js">
-/**
- * authController.js
- * ------------------------------------------------------------------
- * Login/register/me for worker accounts. Registration is deliberately
- * simple (no email verification) since this is an internal worker
- * tool, not a public sign-up flow.
- * ------------------------------------------------------------------
- */
-const asyncHandler = require('../middleware/asyncHandler');
-const User = require('../models/User');
-const generateToken = require('../utils/generateToken');
-const { ok, created } = require('../utils/apiResponse');
-
-// POST /api/auth/register
-const register = asyncHandler(async (req, res) => {
-  const { name, email, password, role } = req.body;
-  const exists = await User.findOne({ email });
-  if (exists) {
-    res.status(409);
-    throw new Error('An account with this email already exists');
-  }
-  const user = await User.create({ name, email, password, role });
-  created(res, {
-    id: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    token: generateToken(user._id),
-  });
-});
-
-// POST /api/auth/login
-const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email }).select('+password');
-  if (!user || !(await user.comparePassword(password))) {
-    res.status(401);
-    throw new Error('Invalid email or password');
-  }
-  ok(res, {
-    id: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    token: generateToken(user._id),
-  });
-});
-
-// GET /api/auth/me
-const getMe = asyncHandler(async (req, res) => {
-  ok(res, req.user);
-});
-
-module.exports = { register, login, getMe };
-</file>
-
 <file path="backend/src/controllers/customerController.js">
 const asyncHandler = require('../middleware/asyncHandler');
 const Customer = require('../models/Customer');
@@ -678,26 +621,6 @@ userSchema.methods.comparePassword = function comparePassword(plainText) {
 };
 
 module.exports = mongoose.model('User', userSchema);
-</file>
-
-<file path="backend/src/routes/authRoutes.js">
-/**
- * authRoutes.js — /api/auth
- * ------------------------------------------------------------------
- * register/login are public; /me requires a valid token.
- * ------------------------------------------------------------------
- */
-const express = require('express');
-const { register, login, getMe } = require('../controllers/authController');
-const { protect } = require('../middleware/auth');
-
-const router = express.Router();
-
-router.post('/register', register);
-router.post('/login', login);
-router.get('/me', protect, getMe);
-
-module.exports = router;
 </file>
 
 <file path="backend/src/routes/customerRoutes.js">
@@ -3385,6 +3308,81 @@ All of this lives in `backend/src/services/gstService.js` and
   and can be deployed anywhere that runs those
 </file>
 
+<file path="backend/src/controllers/authController.js">
+/**
+ * authController.js
+ * ------------------------------------------------------------------
+ * Login/register/me for worker accounts. Registration is deliberately
+ * simple (no email verification) since this is an internal worker
+ * tool, not a public sign-up flow.
+ * ------------------------------------------------------------------
+ */
+const asyncHandler = require('../middleware/asyncHandler');
+const User = require('../models/User');
+const generateToken = require('../utils/generateToken');
+const { ok, created } = require('../utils/apiResponse');
+
+// POST /api/auth/register
+const register = asyncHandler(async (req, res) => {
+  const { name, email, password, role } = req.body;
+  const exists = await User.findOne({ email });
+  if (exists) {
+    res.status(409);
+    throw new Error('An account with this email already exists');
+  }
+  const user = await User.create({ name, email, password, role });
+  created(res, {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    token: generateToken(user._id),
+  });
+});
+
+// POST /api/auth/login
+const login = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+  const user = await User.findOne({ email }).select('+password');
+  if (!user || !(await user.comparePassword(password))) {
+    res.status(401);
+    throw new Error('Invalid email or password');
+  }
+  ok(res, {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    token: generateToken(user._id),
+  });
+});
+
+// GET /api/auth/me
+const getMe = asyncHandler(async (req, res) => {
+  ok(res, req.user);
+});
+
+// PUT /api/auth/password
+const changePassword = asyncHandler(async (req, res) => {
+  console.log(`[DEBUG] Changing password for user ${req.user.email}`);
+  const { oldPassword, newPassword } = req.body;
+  
+  const user = await User.findById(req.user._id).select('+password');
+  if (!(await user.comparePassword(oldPassword))) {
+    res.status(401);
+    throw new Error('Incorrect current password');
+  }
+  
+  user.password = newPassword;
+  await user.save();
+  console.log(`[DEBUG] Password successfully changed!`);
+  ok(res, { message: 'Password updated successfully' });
+});
+
+// Update the export line to include changePassword:
+module.exports = { register, login, getMe, changePassword };
+</file>
+
 <file path="backend/src/controllers/invoiceController.js">
 /**
  * invoiceController.js
@@ -3590,71 +3588,25 @@ const getBusinessReport = asyncHandler(async (req, res) => {
 module.exports = { getBusinessReport };
 </file>
 
-<file path="backend/src/models/Invoice.js">
+<file path="backend/src/routes/authRoutes.js">
 /**
- * Invoice.js
+ * authRoutes.js — /api/auth
  * ------------------------------------------------------------------
- * A billable document tied to a Job. Two independent things live on
- * an invoice:
- *   1) items/discount/gstIncluded -> what the CUSTOMER is charged
- *      (see services/gstService.calcInvoiceTotals)
- *   2) costs.materials / costs.other -> what the WORKER spent doing
- *      the job, each with an optional receipt photo (internal only,
- *      never shown to the customer). See services/gstService.calcCostTotals.
- *
- * gstIncluded=true  -> "Reported income" (GST charged & owed to ATO)
- * gstIncluded=false -> "Cash Bonus"      (no GST, not reported income)
- *
- * costs.materials feeds the "GST on material" report line (10% of the
- * material total) — see services/reportService.js.
+ * register/login are public; /me requires a valid token.
  * ------------------------------------------------------------------
  */
-const mongoose = require('mongoose');
+const express = require('express');
+const { register, login, getMe ,changePassword} = require('../controllers/authController');
+const { protect } = require('../middleware/auth');
 
-const lineItemSchema = new mongoose.Schema(
-  { name: String, qty: { type: Number, default: 1 }, amt: { type: Number, default: 0 } },
-  { _id: false }
-);
+const router = express.Router();
 
-const costItemSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    cost: { type: Number, default: 0 },
-    photoUrl: { type: String, default: null }, // receipt photo, uploaded via /uploads route
-  },
-  { _id: false }
-);
+router.post('/register', register);
+router.post('/login', login);
+router.get('/me', protect, getMe);
+router.put('/password', protect, changePassword); // NEW: Secure password change route
 
-const invoiceSchema = new mongoose.Schema(
-  {
-    number: { type: String, required: true, unique: true }, // e.g. "GH-0123"
-    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null },
-    customer: { type: String, required: true },
-    customerEmail: String,
-    customerPhone: String,
-    date: { type: Date, default: Date.now },
-    terms: { type: String, default: 'Due on receipt' },
-    dueDate: Date,
-
-    items: [lineItemSchema],
-    paymentMode: { type: String, enum: ['online', 'cash'], default: 'online' },
-    status: { type: String, enum: ['paid', 'unpaid'], default: 'unpaid' },
-    gstIncluded: { type: Boolean, default: true },
-    discount: {
-      type: { type: String, enum: ['amount', 'percent'], default: 'percent' },
-      value: { type: Number, default: 0 },
-    },
-
-    completionPhotoUrl: { type: String, default: null }, // NEW FIELD FOR JOB COMPLETION PHOTO
-    costs: {
-      materials: [costItemSchema],
-      other: [costItemSchema], // was "vehicle expenses" — generalised, same shape
-    },
-  },
-  { timestamps: true }
-);
-
-module.exports = mongoose.model('Invoice', invoiceSchema);
+module.exports = router;
 </file>
 
 <file path="backend/src/routes/index.js">
@@ -11648,123 +11600,6 @@ via EAS's free build service (no Android Studio required).
 </files>
 </file>
 
-<file path="backend/src/controllers/jobController.js">
-const asyncHandler = require('../middleware/asyncHandler');
-const Job = require('../models/Job');
-const Invoice = require('../models/Invoice');
-const Settings = require('../models/Settings');
-const { ok, created } = require('../utils/apiResponse');
-const { nextInvoiceNumber } = require('../services/numberingService');
-
-const listJobs = asyncHandler(async (req, res) => {
-  const { status } = req.query;
-  const filter = status && status !== 'all' ? { status } : {};
-  // FIXED: Sort by scheduledDate so jobs appear in proper chronological order
-  const jobs = await Job.find(filter).sort({ scheduledDate: 1, createdAt: -1 });
-  ok(res, jobs);
-});
-
-const getJob = asyncHandler(async (req, res) => {
-  const job = await Job.findById(req.params.id);
-  if (!job) {
-    res.status(404);
-    throw new Error('Job not found');
-  }
-  ok(res, job);
-});
-
-const createJob = asyncHandler(async (req, res) => {
-  const job = await Job.create(req.body);
-  created(res, job);
-});
-
-const updateJob = asyncHandler(async (req, res) => {
-  const job = await Job.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-  if (!job) {
-    res.status(404);
-    throw new Error('Job not found');
-  }
-  ok(res, job);
-});
-
-const deleteJob = asyncHandler(async (req, res) => {
-  const job = await Job.findByIdAndDelete(req.params.id);
-  if (!job) {
-    res.status(404);
-    throw new Error('Job not found');
-  }
-  ok(res, { deleted: true });
-});
-
-const saveJobDetails = asyncHandler(async (req, res) => {
-  const job = await Job.findById(req.params.id);
-  if (!job) {
-    res.status(404);
-    throw new Error('Job not found');
-  }
-  Object.assign(job, req.body, { needsDetails: false });
-  if (job.status === 'accepted') job.status = 'confirmed';
-  await job.save();
-  ok(res, job);
-});
-
-const updateMaterials = asyncHandler(async (req, res) => {
-  const job = await Job.findByIdAndUpdate(
-    req.params.id,
-    { materials: req.body.materials || [] },
-    { new: true, runValidators: true }
-  );
-  if (!job) {
-    res.status(404);
-    throw new Error('Job not found');
-  }
-  ok(res, job);
-});
-
-const markComplete = asyncHandler(async (req, res) => {
-  const job = await Job.findById(req.params.id);
-  if (!job) {
-    res.status(404);
-    throw new Error('Job not found');
-  }
-
-  if (job.status === 'complete') {
-    res.status(400);
-    throw new Error('Job is already marked complete');
-  }
-
-  const settings = await Settings.getSingleton();
-  const items = job.materials.map((m) => ({ name: m.name, qty: 1, amt: m.cost || 0 }));
-  items.push({ name: 'Labour', qty: 1, amt: job.labour || 0 });
-
-  const invoice = await Invoice.create({
-    number: await nextInvoiceNumber(),
-    jobId: job._id,
-    customer: job.name,
-    customerEmail: job.email || '',
-    customerPhone: job.phone || '',
-    terms: 'Due on receipt',
-    items,
-    paymentMode: 'online',
-    status: 'unpaid',
-    gstIncluded: settings.gstEnabled,
-    discount: { type: 'percent', value: 0 },
-    costs: {
-      materials: job.materials.map((m) => ({ name: m.name, cost: m.cost || 0, photoUrl: null })),
-      other: [],
-    },
-  });
-
-  job.status = 'complete';
-  job.invoiceId = invoice._id;
-  await job.save();
-
-  ok(res, { job, invoice });
-});
-
-module.exports = { listJobs, getJob, createJob, updateJob, deleteJob, saveJobDetails, updateMaterials, markComplete };
-</file>
-
 <file path="backend/src/controllers/settingsController.js">
 const asyncHandler = require('../middleware/asyncHandler');
 const Settings = require('../models/Settings');
@@ -11808,6 +11643,56 @@ const testMorningBriefing = asyncHandler(async (req, res) => {
 });
 
 module.exports = { getSettings, updateSettings, uploadLogo ,testMorningBriefing};
+</file>
+
+<file path="backend/src/models/Invoice.js">
+const mongoose = require('mongoose');
+
+const lineItemSchema = new mongoose.Schema(
+  { name: String, qty: { type: Number, default: 1 }, amt: { type: Number, default: 0 } },
+  { _id: false }
+);
+
+const costItemSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    cost: { type: Number, default: 0 },
+    photoUrl: { type: String, default: null },
+  },
+  { _id: false }
+);
+
+const invoiceSchema = new mongoose.Schema(
+  {
+    number: { type: String, required: true, unique: true },
+    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null },
+    customer: { type: String, required: true },
+    customerEmail: String,
+    customerPhone: String,
+    customerAddress: { type: String, default: '' }, // FIXED: Address now legally exists on invoices!
+    date: { type: Date, default: Date.now },
+    terms: { type: String, default: 'Due on receipt' },
+    dueDate: Date,
+
+    items: [lineItemSchema],
+    paymentMode: { type: String, enum: ['online', 'cash'], default: 'online' },
+    status: { type: String, enum: ['paid', 'unpaid'], default: 'unpaid' },
+    gstIncluded: { type: Boolean, default: true },
+    discount: {
+      type: { type: String, enum: ['amount', 'percent'], default: 'percent' },
+      value: { type: Number, default: 0 },
+    },
+
+    completionPhotoUrl: { type: String, default: null },
+    costs: {
+      materials: [costItemSchema],
+      other: [costItemSchema], 
+    },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model('Invoice', invoiceSchema);
 </file>
 
 <file path="backend/src/routes/invoiceRoutes.js">
@@ -12674,22 +12559,6 @@ const styles = StyleSheet.create({
 });
 </file>
 
-<file path="mobile/src/components/jobs/JobFilterTabs.js">
-import React from 'react';
-import SegmentedControl from '../ui/SegmentedControl';
-
-const OPTIONS = [
-  // FIXED: Keeps the backend filter 'confirmed', but displays 'Accepted'
-  { value: 'confirmed', label: 'Accepted' },
-  { value: 'complete', label: 'Complete' },
-  { value: 'all', label: 'All' },
-];
-
-export default function JobFilterTabs({ value, onChange }) {
-  return <SegmentedControl options={OPTIONS} value={value} onChange={onChange} />;
-}
-</file>
-
 <file path="mobile/src/components/settings/LogoUploader.js">
 import { View, Text, Image, StyleSheet, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -12967,6 +12836,122 @@ export default function App() {
 }
 </file>
 
+<file path="backend/src/controllers/jobController.js">
+const asyncHandler = require('../middleware/asyncHandler');
+const Job = require('../models/Job');
+const Invoice = require('../models/Invoice');
+const Settings = require('../models/Settings');
+const { ok, created } = require('../utils/apiResponse');
+const { nextInvoiceNumber } = require('../services/numberingService');
+
+const listJobs = asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const filter = status && status !== 'all' ? { status } : {};
+  // FIXED: Sort by scheduledDate so jobs appear in proper chronological order
+  const jobs = await Job.find(filter).sort({ scheduledDate: 1, createdAt: -1 });
+  ok(res, jobs);
+});
+
+const getJob = asyncHandler(async (req, res) => {
+  const job = await Job.findById(req.params.id);
+  if (!job) {
+    res.status(404);
+    throw new Error('Job not found');
+  }
+  ok(res, job);
+});
+
+const createJob = asyncHandler(async (req, res) => {
+  const job = await Job.create(req.body);
+  created(res, job);
+});
+
+const updateJob = asyncHandler(async (req, res) => {
+  const job = await Job.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  if (!job) {
+    res.status(404);
+    throw new Error('Job not found');
+  }
+  ok(res, job);
+});
+
+const deleteJob = asyncHandler(async (req, res) => {
+  const job = await Job.findByIdAndDelete(req.params.id);
+  if (!job) {
+    res.status(404);
+    throw new Error('Job not found');
+  }
+  ok(res, { deleted: true });
+});
+
+const saveJobDetails = asyncHandler(async (req, res) => {
+  const job = await Job.findById(req.params.id);
+  if (!job) {
+    res.status(404);
+    throw new Error('Job not found');
+  }
+  Object.assign(job, req.body, { needsDetails: false });
+  if (job.status === 'accepted') job.status = 'confirmed';
+  await job.save();
+  ok(res, job);
+});
+
+const updateMaterials = asyncHandler(async (req, res) => {
+  const job = await Job.findByIdAndUpdate(
+    req.params.id,
+    { materials: req.body.materials || [] },
+    { new: true, runValidators: true }
+  );
+  if (!job) {
+    res.status(404);
+    throw new Error('Job not found');
+  }
+  ok(res, job);
+});
+
+// POST /api/jobs/:id/complete
+const markComplete = asyncHandler(async (req, res) => {
+  console.log(`[DEBUG] Marking Job ${req.params.id} as complete...`);
+  
+  const job = await Job.findById(req.params.id);
+  if (!job) {
+    res.status(404);
+    throw new Error('Job not found');
+  }
+
+  // FORCE the status to complete in the database
+  job.status = 'complete';
+  
+  const Invoice = require('../models/Invoice');
+  const { nextInvoiceNumber } = require('../services/numberingService');
+
+  let invoice;
+  if (!job.invoiceId) {
+    console.log(`[DEBUG] Generating new Invoice for Job ${req.params.id}`);
+    invoice = await Invoice.create({
+      number: await nextInvoiceNumber(),
+      jobId: job._id,
+      customer: job.name,
+      customerEmail: job.email,
+      customerPhone: job.phone,
+      customerAddress: job.address, // FIXED: Address passes seamlessly to the invoice
+      items: [{ name: job.service || 'Handyman Services', amt: job.labour || 0, qty: 1 }],
+      costs: { materials: job.materials || [], other: [] }
+    });
+    job.invoiceId = invoice._id;
+  } else {
+    invoice = await Invoice.findById(job.invoiceId);
+  }
+
+  await job.save();
+  console.log(`[DEBUG] Job successfully marked complete!`);
+  
+  ok(res, { job, invoice });
+});
+
+module.exports = { listJobs, getJob, createJob, updateJob, deleteJob, saveJobDetails, updateMaterials, markComplete };
+</file>
+
 <file path="backend/src/models/Enquiry.js">
 const mongoose = require('mongoose');
 
@@ -13097,6 +13082,22 @@ export default function InvoiceLineItemRow({ item, onChange, onRemove }) {
   );
 }
 const styles = StyleSheet.create({ row: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 7 }, input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 6, paddingHorizontal: 8, fontSize: 11.5 }, remove: { color: colors.red, fontWeight: '700', fontSize: 16 }});
+</file>
+
+<file path="mobile/src/components/jobs/JobFilterTabs.js">
+import React from 'react';
+import SegmentedControl from '../ui/SegmentedControl';
+
+// FIXED: Removed 'Confirmed' and renamed 'Accepted' to 'Assigned'
+const OPTIONS = [
+  { value: 'accepted', label: 'Assigned' }, 
+  { value: 'complete', label: 'Complete' },
+  { value: 'all', label: 'All' },
+];
+
+export default function JobFilterTabs({ value, onChange }) {
+  return <SegmentedControl options={OPTIONS} value={value} onChange={onChange} />;
+}
 </file>
 
 <file path="mobile/src/components/jobs/JobListItem.js">
@@ -13466,186 +13467,6 @@ const styles = StyleSheet.create({
 });
 </file>
 
-<file path="mobile/src/screens/NewQuoteScreen.js">
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
-import ScreenHeader from '../components/layout/ScreenHeader';
-import Button from '../components/ui/Button';
-import FieldLabel from '../components/ui/FieldLabel';
-import useSettings from '../hooks/useSettings';
-import useToast from '../hooks/useToast';
-import { colors } from '../theme/colors';
-
-const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
-
-export default function NewQuoteScreen() {
-  const navigation = useNavigation();
-  const { params } = useRoute();
-  const { showToast } = useToast();
-  const { settings } = useSettings();
-  const [generating, setGenerating] = useState(false);
-
-  const [form, setForm] = useState({
-    name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt'
-  });
-  const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150.00' }]);
-
-  // Prefill if navigating from customer screen
-  useEffect(() => {
-    if (params?.customer) {
-      setForm(prev => ({
-        ...prev,
-        name: params.customer.name || '',
-        phone: params.customer.phone || '',
-        email: params.customer.email || '',
-        address: params.customer.address || '',
-      }));
-    }
-  }, [params?.customer]);
-
-  const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
-
-  const generateQuotePDF = async () => {
-    if (!form.name || !form.phone || !form.email) {
-      return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
-    }
-    
-    setGenerating(true);
-    try {
-      showToast('Generating Quote PDF...');
-      
-      const itemsHtml = items.map(i => `
-        <tr>
-          <td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td>
-          <td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td>
-        </tr>
-      `).join('');
-      
-      const total = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
-
-      const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
-      const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${settings?.businessName || 'Get Handyman'}</h2>`;
-      const quoteDate = new Date().toLocaleDateString('en-GB');
-
-      const html = `
-        <html>
-          <head>
-, initial-scale=1.0" />
-            <style>
-              @page { margin: 0; }
-              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
-              .header { display: flex; justify-content: space-between; align-items: flex-start; }
-              .logo { max-height: 100px; max-width: 200px; object-fit: contain; }
-              .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.5; }
-              .title-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; }
-              .biz-name { font-size: 24px; font-weight: 800; color: #1F2937; margin: 0; }
-              .doc-type { font-size: 22px; font-weight: 800; color: #1D4ED8; margin: 0; }
-              .divider { border-top: 2px solid #111827; margin: 15px 0 25px 0; }
-              .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #374151; }
-              .bill-to-details { line-height: 1.5; }
-              .items-table { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 11px; }
-              .items-table th { background-color: #111827; color: #ffffff; padding: 10px; font-weight: 700; text-align: left; }
-              .text-right { text-align: right; }
-              .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
-              .balance-due { background-color: #1D4ED8; color: #ffffff; font-size: 14px; font-weight: 700; padding: 10px 15px; display: flex; justify-content: space-between; width: 220px; border-radius: 4px; }
-            </style>
-          </head>
-          <body>
-            <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${settings?.abn ? `ABN: ${settings.abn}` : ''}</div><div>${settings?.bizPhone || ''}</div><div>${settings?.bizEmail || ''}</div><div>${settings?.website || ''}</div></div></div>
-            <div class="title-row"><h1 class="biz-name">${settings?.businessName || 'Get Handyman'}</h1><h2 class="doc-type">QUOTE</h2></div>
-            <div class="divider"></div>
-            <div class="meta-row">
-              <div>
-                <div style="color: #9CA3AF; font-weight: 700; margin-bottom: 4px;">BILL TO:</div>
-                <div class="bill-to-details">
-                  <div style="font-weight: 700;">${form.name}</div>
-                  <div>${form.email}</div>
-                  <div>${form.phone}</div>
-                  ${form.address ? `<div>${form.address}</div>` : ''}
-                </div>
-              </div>
-              <div style="text-align: right;">
-                <div><span style="color: #9CA3AF;">Quote Date:</span> ${quoteDate}</div>
-                <div><span style="color: #9CA3AF;">Currency:</span> ${form.currency}</div>
-                <div><span style="color: #9CA3AF;">Terms:</span> ${form.terms}</div>
-              </div>
-            </div>
-            <table class="items-table">
-              <tr><th>DESCRIPTION</th><th class="text-right">AMOUNT</th></tr>
-              ${itemsHtml}
-            </table>
-            <div class="totals-container">
-              <div class="balance-due"><span>TOTAL</span><span>$${total.toFixed(2)}</span></div>
-            </div>
-            ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #4B5563; line-height: 1.5;">${settings.quoteMessage}</div>` : ''}
-          </body>
-        </html>
-      `;
-
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
-      
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { 
-          mimeType: 'application/pdf', 
-          dialogTitle: `Share Quote for ${form.name}`,
-          UTI: '.pdf' 
-        });
-      } else {
-        Alert.alert("Sharing not available", "Sharing is not available on this device");
-      }
-    } catch (err) {
-      Alert.alert("Error", "Failed to generate quote PDF: " + err.message);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  return (
-    <View style={styles.screen}>
-      <ScreenHeader title="NEW QUOTE" onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        
-        <FieldLabel>Customer Details (Mandatory)</FieldLabel>
-        <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} placeholderTextColor={colors.gray} />
-        <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
-        <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
-        <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} placeholderTextColor={colors.gray} />
-
-        <FieldLabel style={{ marginTop: 10 }}>Quote Configuration</FieldLabel>
-        <View style={styles.row}>
-          <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} placeholder="Currency" value={form.currency} onChangeText={v => updateForm('currency', v)} />
-          <TextInput style={[styles.input, { flex: 2, marginTop: 0 }]} placeholder="Terms" value={form.terms} onChangeText={v => updateForm('terms', v)} />
-        </View>
-
-        <FieldLabel style={{ marginTop: 14 }}>Line Items (Fully Editable)</FieldLabel>
-        {items.map((it, idx) => (
-          <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-            <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={it.name} onChangeText={v => { const n = [...items]; n[idx].name = v; setItems(n); }} placeholder="Description" />
-            <TextInput style={[styles.input, { width: 90, marginTop: 0 }]} value={it.amt} onChangeText={v => { const n = [...items]; n[idx].amt = v; setItems(n); }} placeholder="Amount" keyboardType="numeric" />
-            <TouchableOpacity onPress={() => setItems(items.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
-          </View>
-        ))}
-        <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add line item</Button>
-
-        <Button variant="primary" style={{ marginTop: 12, backgroundColor: colors.orange }} onPress={generateQuotePDF} disabled={generating}>
-          {generating ? <ActivityIndicator color="#fff" /> : <Text style={{fontWeight: 'bold', color: '#fff'}}>✓ Preview & Share Quote PDF</Text>}
-        </Button>
-      </ScrollView>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
-  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 10, color: colors.charcoal },
-  row: { flexDirection: 'row', gap: 10, marginBottom: 10 }
-});
-</file>
-
 <file path="mobile/src/services/settingsService.js">
 import { apiClient, unwrap, BASE_URL } from './apiClient';
 
@@ -13966,21 +13787,229 @@ const styles = StyleSheet.create({
 });
 </file>
 
-<file path="mobile/src/components/jobs/JobStatusBadge.js">
-import React from 'react';
-import Chip from '../ui/Chip';
+<file path="mobile/src/screens/NewQuoteScreen.js">
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import ScreenHeader from '../components/layout/ScreenHeader';
+import Button from '../components/ui/Button';
+import FieldLabel from '../components/ui/FieldLabel';
+import useSettings from '../hooks/useSettings';
+import useToast from '../hooks/useToast';
+import { apiClient } from '../services/apiClient';
+import { colors } from '../theme/colors';
 
-export default function JobStatusBadge({ job }) {
-  if (job.status === 'complete') return <Chip tone="green">Complete</Chip>;
-  if (job.needsDetails) return <Chip tone="orange">Needs details</Chip>;
-  
-  // FIXED: Intercepts the backend status and forces it to display as Accepted in Red
-  if (job.status === 'confirmed' || job.status === 'accepted') {
-    return <Chip tone="red">Accepted</Chip>;
-  }
+const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
 
-  return <Chip tone="red">Pending</Chip>;
+export default function NewQuoteScreen() {
+  const navigation = useNavigation();
+  const { params } = useRoute();
+  const { showToast } = useToast();
+  const { settings } = useSettings();
+  const [generating, setGenerating] = useState(false);
+
+  const [form, setForm] = useState({
+    name: '', phone: '', email: '', address: '', suburb: '', postcode: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt'
+  });
+  const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150.00' }]);
+
+  useEffect(() => {
+    if (params?.customer) {
+      setForm(prev => ({
+        ...prev,
+        name: params.customer.name || '',
+        phone: params.customer.phone || '',
+        email: params.customer.email || '',
+        address: params.customer.address || '',
+        suburb: params.customer.suburb || '',
+        postcode: params.customer.postcode || ''
+      }));
+    }
+  }, [params?.customer]);
+
+  const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+
+  // SAFE BACK BUTTON FIX
+  const handleBack = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('Dashboard');
+  };
+
+  const generateQuotePDF = async () => {
+    if (!form.name || !form.phone || !form.email) {
+      return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
+    }
+    
+    setGenerating(true);
+    try {
+      console.log("[DEBUG] Generating Quote and Saving to Database...");
+      const total = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
+      const fullAddress = [form.address, form.suburb, form.postcode].filter(Boolean).join(', ');
+
+      // FIXED: Save the quote directly to the Enquiries database!
+      await apiClient.post('/api/enquiries', {
+        name: form.name,
+        phone: form.phone,
+        email: form.email,
+        address: fullAddress,
+        status: 'quoted', // Automatically drops it into the Quoted tab
+        quoteItems: items,
+        price: total
+      });
+      showToast('Quote saved to Enquiries list!');
+
+      const itemsHtml = items.map(i => `
+        <tr>
+          <td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td>
+          <td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td>
+        </tr>
+      `).join('');
+
+      const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
+      const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${settings?.businessName || 'Get Handyman'}</h2>`;
+      const quoteDate = new Date().toLocaleDateString('en-GB');
+
+      const html = `
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <style>
+              @page { margin: 0; }
+              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
+              .header { display: flex; justify-content: space-between; align-items: flex-start; }
+              .logo { max-height: 100px; max-width: 200px; object-fit: contain; margin-bottom: 15px; }
+              .biz-details { font-size: 12px; color: #374151; line-height: 1.6; }
+              .biz-name { font-size: 16px; font-weight: 800; color: #111827; margin-bottom: 4px; }
+              .doc-meta { text-align: right; }
+              .doc-type { font-size: 28px; font-weight: 800; color: #1D4ED8; margin: 0 0 15px 0; letter-spacing: 1px; }
+              .divider { border-top: 2px solid #111827; margin: 25px 0; }
+              .bill-to-section { margin-bottom: 30px; }
+              .bill-to-title { color: #9CA3AF; font-weight: 700; font-size: 11px; margin-bottom: 6px; letter-spacing: 0.5px; }
+              .bill-to-details { font-size: 12px; color: #374151; line-height: 1.5; }
+              .items-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
+              .items-table th { background-color: #111827; color: #ffffff; padding: 12px 10px; font-weight: 700; text-align: left; }
+              .items-table td { padding: 12px 10px; border-bottom: 1px solid #E5E7EB; }
+              .text-right { text-align: right; }
+              .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+              .balance-due { background-color: #1D4ED8; color: #ffffff; font-size: 14px; font-weight: 700; padding: 12px 15px; display: flex; justify-content: space-between; width: 220px; border-radius: 4px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <div>
+                ${logoImg}
+                <div class="biz-details">
+                  <div class="biz-name">${settings?.businessName || 'Get Handyman Pty Ltd'}</div>
+                  ${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}
+                  ${settings?.bizCityState ? `<div>City - ${settings.bizCityState}</div>` : ''}
+                  ${settings?.bizPhone ? `<div>Phone - ${settings.bizPhone}</div>` : ''}
+                  ${settings?.website ? `<div>Website - ${settings.website}</div>` : ''}
+                </div>
+              </div>
+              <div class="doc-meta">
+                <h2 class="doc-type">QUOTE</h2>
+                <div style="font-size: 11px; color: #6B7280; line-height: 1.6;">
+                  <div><strong style="color: #9CA3AF;">Date:</strong> ${quoteDate}</div>
+                  <div><strong style="color: #9CA3AF;">Currency:</strong> ${form.currency}</div>
+                  <div><strong style="color: #9CA3AF;">Terms:</strong> ${form.terms}</div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="bill-to-section">
+              <div class="bill-to-title">BILL TO:</div>
+              <div class="bill-to-details">
+                <div style="font-weight: 700; font-size: 14px; color: #111827;">${form.name}</div>
+                ${form.phone ? `<div>${form.phone}</div>` : ''}
+                ${form.email ? `<div>${form.email}</div>` : ''}
+                ${fullAddress ? `<div style="margin-top: 4px;">${fullAddress}</div>` : ''}
+              </div>
+            </div>
+
+            <table class="items-table">
+              <tr><th>DESCRIPTION</th><th class="text-right">AMOUNT</th></tr>
+              ${itemsHtml}
+            </table>
+            
+            <div class="totals-container">
+              <div class="balance-due"><span>TOTAL</span><span>$${total.toFixed(2)}</span></div>
+            </div>
+            
+            ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #4B5563; line-height: 1.5;">${settings.quoteMessage}</div>` : ''}
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { 
+          mimeType: 'application/pdf', 
+          dialogTitle: `Share Quote for ${form.name}`,
+          UTI: '.pdf' 
+        });
+      } else {
+        Alert.alert("Sharing not available", "Sharing is not available on this device");
+      }
+    } catch (err) {
+      console.log("[DEBUG] PDF Generation Error:", err);
+      Alert.alert("Error", "Failed to generate quote PDF: " + err.message);
+    } finally {
+      setGenerating(false);
+      handleBack(); // Return to previous screen after sharing
+    }
+  };
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader title="NEW QUOTE" onBack={handleBack} />
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        
+        <FieldLabel>Customer Details (Mandatory)</FieldLabel>
+        <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} placeholderTextColor={colors.gray} />
+        <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
+        <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
+        
+        <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} placeholderTextColor={colors.gray} />
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TextInput style={[styles.input, { flex: 1 }]} placeholder="Suburb" value={form.suburb} onChangeText={v => updateForm('suburb', v)} placeholderTextColor={colors.gray} />
+          <TextInput style={[styles.input, { flex: 1 }]} placeholder="Postcode" value={form.postcode} onChangeText={v => updateForm('postcode', v)} keyboardType="numeric" placeholderTextColor={colors.gray} />
+        </View>
+
+        <FieldLabel style={{ marginTop: 10 }}>Quote Configuration</FieldLabel>
+        <View style={styles.row}>
+          <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} placeholder="Currency" value={form.currency} onChangeText={v => updateForm('currency', v)} />
+          <TextInput style={[styles.input, { flex: 2, marginTop: 0 }]} placeholder="Terms" value={form.terms} onChangeText={v => updateForm('terms', v)} />
+        </View>
+
+        <FieldLabel style={{ marginTop: 14 }}>Line Items (Fully Editable)</FieldLabel>
+        {items.map((it, idx) => (
+          <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+            <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={it.name} onChangeText={v => { const n = [...items]; n[idx].name = v; setItems(n); }} placeholder="Description" />
+            <TextInput style={[styles.input, { width: 90, marginTop: 0 }]} value={it.amt} onChangeText={v => { const n = [...items]; n[idx].amt = v; setItems(n); }} placeholder="Amount" keyboardType="numeric" />
+            <TouchableOpacity onPress={() => setItems(items.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+          </View>
+        ))}
+        <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add line item</Button>
+
+        <Button variant="primary" style={{ marginTop: 12, backgroundColor: colors.orange }} onPress={generateQuotePDF} disabled={generating}>
+          {generating ? <ActivityIndicator color="#fff" /> : 'Save Quote & Generate PDF'}
+        </Button>
+      </ScrollView>
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.offwhite },
+  content: { padding: 16, paddingBottom: 40 },
+  input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 10, color: colors.charcoal },
+  row: { flexDirection: 'row', gap: 10 }
+});
 </file>
 
 <file path="mobile/src/screens/EnquiryDetailScreen.js">
@@ -14451,10 +14480,26 @@ const styles = StyleSheet.create({
 });
 </file>
 
+<file path="mobile/src/components/jobs/JobStatusBadge.js">
+import React from 'react';
+import Chip from '../ui/Chip';
+
+export default function JobStatusBadge({ job }) {
+  if (job.needsDetails) return <Chip tone="orange">Needs details</Chip>;
+  if (job.status === 'complete') return <Chip tone="green">Complete</Chip>;
+  
+  // FIXED: Maps the backend 'accepted' status to visually display 'Assigned Job'
+  if (job.status === 'accepted') return <Chip tone="blue">Assigned Job</Chip>;
+  
+  return <Chip tone="red">Pending</Chip>;
+}
+</file>
+
 <file path="mobile/src/screens/SettingsScreen.js">
 import React, { useEffect, useState } from 'react';
-import { View, ScrollView, Text, TextInput, StyleSheet, Alert } from 'react-native';
+import { View, ScrollView, Text, TextInput, StyleSheet, Alert, TouchableOpacity, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import LogoUploader from '../components/settings/LogoUploader';
 import Button from '../components/ui/Button';
@@ -14463,10 +14508,13 @@ import FieldLabel from '../components/ui/FieldLabel';
 import LoadingState from '../components/ui/LoadingState';
 import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
+import useAuth from '../hooks/useAuth';
 import * as settingsService from '../services/settingsService';
+import { apiClient } from '../services/apiClient';
+import { scheduleDailyMorningBriefing, getSavedBriefingPref } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
-function SettingInput({ label, value, onChange, placeholder, multiline = false }) {
+function SettingInput({ label, value, onChange, placeholder, multiline = false, secureTextEntry = false }) {
   return (
     <View style={{ marginBottom: 10 }}>
       <FieldLabel>{label}</FieldLabel>
@@ -14476,6 +14524,7 @@ function SettingInput({ label, value, onChange, placeholder, multiline = false }
         onChangeText={onChange}
         placeholder={placeholder}
         multiline={multiline}
+        secureTextEntry={secureTextEntry}
         placeholderTextColor={colors.gray}
       />
     </View>
@@ -14497,40 +14546,114 @@ function ToggleRow({ title, sub, value, onToggle }) {
 export default function SettingsScreen() {
   const { settings, update, refresh } = useSettings();
   const { showToast } = useToast();
+  const { logout } = useAuth();
+  
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { if (settings) setDraft(settings); }, [settings]);
+  // Password Change State
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [changingPwd, setChangingPwd] = useState(false);
+
+  // Morning Briefing Customization State
+  const [briefingEnabled, setBriefingEnabled] = useState(true);
+  const [briefingTime, setBriefingTime] = useState('07:30');
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  useEffect(() => {
+    if (settings) {
+      setDraft(settings);
+      if (settings.briefingEnabled !== undefined) setBriefingEnabled(settings.briefingEnabled);
+      if (settings.briefingTime) setBriefingTime(settings.briefingTime);
+    }
+    // Load phone fail-safe settings
+    getSavedBriefingPref().then(pref => {
+      if (pref) {
+        if (pref.enabled !== undefined) setBriefingEnabled(pref.enabled);
+        if (pref.timeStr) setBriefingTime(pref.timeStr);
+      }
+    });
+  }, [settings]);
 
   function patch(fields) { setDraft(prev => ({ ...prev, ...fields })); }
+
+  const formatDisplayTime = (time24) => {
+    if (!time24 || !time24.includes(':')) return '7:30 AM';
+    const [h, m] = time24.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h % 12 || 12;
+    const minStr = String(m).padStart(2, '0');
+    return `${hour12}:${minStr} ${ampm}`;
+  };
+
+  const onTimeChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') setShowTimePicker(false);
+    if (event.type === 'set' && selectedDate) {
+      const h = String(selectedDate.getHours()).padStart(2, '0');
+      const m = String(selectedDate.getMinutes()).padStart(2, '0');
+      const formatted = `${h}:${m}`;
+      setBriefingTime(formatted);
+      patch({ briefingTime: formatted });
+    }
+  };
 
   async function handleSave() {
     setSaving(true);
     try {
-      await update(draft);
+      const payload = {
+        ...draft,
+        briefingEnabled,
+        briefingTime,
+      };
+      await update(payload);
+      // Immediately apply the customized alarm
+      await scheduleDailyMorningBriefing(briefingEnabled, briefingTime);
       showToast('Settings saved successfully');
+    } catch (err) {
+      Alert.alert('Error', 'Could not save settings.');
     } finally {
       setSaving(false);
     }
   }
 
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword) return Alert.alert("Error", "Please enter both passwords.");
+    setChangingPwd(true);
+    try {
+      await apiClient.put('/api/auth/password', { oldPassword, newPassword });
+      showToast("✅ Password Updated Successfully!");
+      setOldPassword('');
+      setNewPassword('');
+    } catch (e) {
+      Alert.alert("Error", e.response?.data?.message || "Failed to change password. Is your current password correct?");
+    } finally {
+      setChangingPwd(false);
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert("Log Out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Log Out", style: "destructive", onPress: async () => await logout() }
+    ]);
+  };
+
   async function forceTestNotifications() {
     try {
       const { status } = await Notifications.requestPermissionsAsync();
-      
       if (status !== 'granted') {
         Alert.alert('Permission Denied', 'You must enable notifications for this app inside your phone settings.');
         return;
       }
-
       await Notifications.scheduleNotificationAsync({
         content: {
           title: "Test Alert 🔔",
           body: "Push notifications and lock screen alerts are working perfectly!",
           sound: true,
-          channelId: 'alerts-v2', 
+          channelId: 'alerts-v2',
         },
-        trigger: null, 
+        trigger: null,
       });
       showToast('Test alert sent!');
     } catch (error) {
@@ -14543,18 +14666,50 @@ export default function SettingsScreen() {
       showToast('Requesting briefing from server...');
       await settingsService.triggerMorningBriefing();
     } catch (e) {
-      // If the backend route is missing, it falls into this error!
       Alert.alert('Backend Error', 'Ensure your Node.js server is running and the /test-briefing route is saved.');
     }
   }
 
   if (!draft) return <View style={styles.screen}><ScreenHeader title="SETTINGS" /><LoadingState /></View>;
 
+  const [tHour, tMin] = briefingTime.split(':').map(Number);
+  const pickerDate = new Date();
+  pickerDate.setHours(tHour || 7, tMin || 30, 0, 0);
+
   return (
     <View style={styles.screen}>
       <ScreenHeader title="SETTINGS" />
       <ScrollView contentContainerStyle={styles.content}>
         
+        {/* Morning Briefing Settings */}
+        <FieldLabel style={styles.sectionHeader}>Daily Morning Briefing</FieldLabel>
+        <View style={styles.card}>
+          <ToggleRow
+            title="Enable Morning Briefing"
+            sub="Rings your phone every morning with today's jobs"
+            value={briefingEnabled}
+            onToggle={() => {
+              const next = !briefingEnabled;
+              setBriefingEnabled(next);
+              patch({ briefingEnabled: next });
+            }}
+          />
+          {briefingEnabled && (
+            <View style={{ marginTop: 12 }}>
+              <FieldLabel>Briefing Time</FieldLabel>
+              <TouchableOpacity
+                onPress={() => setShowTimePicker(true)}
+                activeOpacity={0.7}
+                style={[styles.input, { justifyContent: 'center', height: 42, marginTop: 4 }]}
+              >
+                <Text style={{ color: colors.charcoal, fontSize: 13, fontWeight: '700' }}>
+                  ⏰ {formatDisplayTime(briefingTime)} (Tap to change)
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
         <FieldLabel style={styles.sectionHeader}>Tax & Invoicing</FieldLabel>
         <View style={styles.card}>
           <ToggleRow title="GST on invoices" sub="Applied to online-payment invoices only" value={draft.gstEnabled} onToggle={() => patch({ gstEnabled: !draft.gstEnabled })} />
@@ -14590,22 +14745,44 @@ export default function SettingsScreen() {
           <SettingInput label="Default Intro Message" value={draft.quoteMessage} onChange={v => patch({ quoteMessage: v })} multiline />
         </View>
 
+        <FieldLabel style={styles.sectionHeader}>Security</FieldLabel>
+        <View style={styles.card}>
+          <SettingInput label="Current Password" value={oldPassword} onChange={setOldPassword} secureTextEntry placeholder="••••••••" />
+          <SettingInput label="New Password" value={newPassword} onChange={setNewPassword} secureTextEntry placeholder="••••••••" />
+          <Button variant="outline" onPress={handleChangePassword} disabled={changingPwd} style={{ marginTop: 6 }}>
+            {changingPwd ? 'Updating...' : 'Update Password'}
+          </Button>
+        </View>
+
         <FieldLabel style={styles.sectionHeader}>Troubleshooting</FieldLabel>
         <View style={[styles.card, { marginBottom: 30 }]}>
           <Button variant="outline" onPress={forceTestNotifications} style={{ marginBottom: 12 }}>
             🔔 Test & Enable Notifications
           </Button>
-          
-          {/* FIXED: Added the Morning Briefing button here */}
           <Button variant="outline" onPress={fireBackendBriefing}>
             🚀 Send Morning Briefing Now
           </Button>
         </View>
 
-        <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginBottom: 40 }}>
+        <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginBottom: 12 }}>
           {saving ? 'Saving…' : 'Save all settings'}
         </Button>
+
+        <Button variant="outline" onPress={handleLogout} style={{ borderColor: colors.red, borderWidth: 1.5, marginBottom: 40 }}>
+          <Text style={{ color: colors.red, fontWeight: '700' }}>Log out</Text>
+        </Button>
+
       </ScrollView>
+
+      {showTimePicker && (
+        <DateTimePicker
+          value={pickerDate}
+          mode="time"
+          is24Hour={false}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={onTimeChange}
+        />
+      )}
     </View>
   );
 }
@@ -14619,9 +14796,53 @@ const styles = StyleSheet.create({
 });
 </file>
 
+<file path="mobile/src/services/invoiceService.js">
+import { apiClient, unwrap } from './apiClient';
+import { Platform } from 'react-native';
+
+export const listInvoices = (status) => unwrap(apiClient.get('/api/invoices', { params: { status } }));
+export const getInvoice = (id) => unwrap(apiClient.get(`/api/invoices/${id}`));
+export const updateInvoice = (id, payload) => unwrap(apiClient.put(`/api/invoices/${id}`, payload));
+export const deleteInvoice = (id) => unwrap(apiClient.delete(`/api/invoices/${id}`));
+export const setDiscount = (id, discount) => unwrap(apiClient.put(`/api/invoices/${id}/discount`, discount));
+export const setGstIncluded = (id, gstIncluded) => unwrap(apiClient.put(`/api/invoices/${id}/gst`, { gstIncluded }));
+export const setPaymentMode = (id, paymentMode) => unwrap(apiClient.put(`/api/invoices/${id}/payment-mode`, { paymentMode }));
+export const setInvoiceStatus = (id, status) => unwrap(apiClient.put(`/api/invoices/${id}/status`, { status }));
+export const setCostItems = (id, kind, items) => unwrap(apiClient.put(`/api/invoices/${id}/cost-items/${kind}`, { items }));
+
+// FIXED: Mirrors the exact logic of the working LogoUploader
+export const uploadCostItemPhoto = (id, kind, index, asset) => {
+  const form = new FormData();
+  form.append('photo', {
+    uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
+    name: asset.fileName || asset.name || `receipt-${index}.jpg`,
+    type: asset.mimeType || asset.type || 'image/jpeg',
+  });
+  
+  return unwrap(apiClient.post(`/api/invoices/${id}/cost-items/${kind}/${index}/photo`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }));
+};
+
+// FIXED: Mirrors the exact logic of the working LogoUploader
+export const uploadCompletionPhoto = (id, asset) => {
+  const form = new FormData();
+  form.append('photo', {
+    uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
+    name: asset.fileName || asset.name || `completion-${Date.now()}.jpg`,
+    type: asset.mimeType || asset.type || 'image/jpeg',
+  });
+
+  return unwrap(apiClient.post(`/api/invoices/${id}/completion-photo`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }));
+};
+</file>
+
 <file path="mobile/src/services/notificationService.js">
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 try {
   Notifications.setNotificationHandler({
@@ -14699,49 +14920,69 @@ export async function syncLocalNotifications(upcomingJobs, unpaidInvoices) {
     console.log("Could not sync notifications:", e);
   }
 }
-</file>
 
-<file path="mobile/src/services/invoiceService.js">
-import { apiClient, unwrap } from './apiClient';
-import { Platform } from 'react-native';
+// NEW: Programs the Android OS to ring every morning, completely bypassing the sleeping backend server.
 
-export const listInvoices = (status) => unwrap(apiClient.get('/api/invoices', { params: { status } }));
-export const getInvoice = (id) => unwrap(apiClient.get(`/api/invoices/${id}`));
-export const updateInvoice = (id, payload) => unwrap(apiClient.put(`/api/invoices/${id}`, payload));
-export const deleteInvoice = (id) => unwrap(apiClient.delete(`/api/invoices/${id}`));
-export const setDiscount = (id, discount) => unwrap(apiClient.put(`/api/invoices/${id}/discount`, discount));
-export const setGstIncluded = (id, gstIncluded) => unwrap(apiClient.put(`/api/invoices/${id}/gst`, { gstIncluded }));
-export const setPaymentMode = (id, paymentMode) => unwrap(apiClient.put(`/api/invoices/${id}/payment-mode`, { paymentMode }));
-export const setInvoiceStatus = (id, status) => unwrap(apiClient.put(`/api/invoices/${id}/status`, { status }));
-export const setCostItems = (id, kind, items) => unwrap(apiClient.put(`/api/invoices/${id}/cost-items/${kind}`, { items }));
+const BRIEFING_KEY = 'gh_briefing_pref';
 
-// FIXED: Mirrors the exact logic of the working LogoUploader
-export const uploadCostItemPhoto = (id, kind, index, asset) => {
-  const form = new FormData();
-  form.append('photo', {
-    uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
-    name: asset.fileName || asset.name || `receipt-${index}.jpg`,
-    type: asset.mimeType || asset.type || 'image/jpeg',
-  });
-  
-  return unwrap(apiClient.post(`/api/invoices/${id}/cost-items/${kind}/${index}/photo`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }));
-};
+// Accepts enable toggle and custom 24-hr time string (e.g., "07:30" or "08:15")
+export async function scheduleDailyMorningBriefing(enabled = true, timeStr = '07:30') {
+  try {
+    // 1. Save preferences locally on phone as a fail-safe
+    await AsyncStorage.setItem(BRIEFING_KEY, JSON.stringify({ enabled, timeStr }));
 
-// FIXED: Mirrors the exact logic of the working LogoUploader
-export const uploadCompletionPhoto = (id, asset) => {
-  const form = new FormData();
-  form.append('photo', {
-    uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
-    name: asset.fileName || asset.name || `completion-${Date.now()}.jpg`,
-    type: asset.mimeType || asset.type || 'image/jpeg',
-  });
+    // 2. Clear existing morning briefing alarms to avoid duplicates
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const notif of scheduled) {
+      if (notif.content.data?.type === 'morning_briefing') {
+        await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+      }
+    }
 
-  return unwrap(apiClient.post(`/api/invoices/${id}/completion-photo`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }));
-};
+    // 3. If turned off in settings, stop here
+    if (!enabled) {
+      console.log("[DEBUG] Morning briefing disabled by user. Alarm cancelled.");
+      return;
+    }
+
+    // 4. Parse custom hour & minute
+    let hour = 7;
+    let minute = 30;
+    if (timeStr && timeStr.includes(':')) {
+      const parts = timeStr.split(':');
+      hour = parseInt(parts[0], 10) || 7;
+      minute = parseInt(parts[1], 10) || 30;
+    }
+
+    // 5. Schedule repeating daily notification at your exact custom time
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "☀️ Good Morning!",
+        body: "Tap to open Get Handyman and check your jobs, route, and alerts for today.",
+        sound: 'default',
+        data: { type: 'morning_briefing' },
+      },
+      trigger: {
+        hour,
+        minute,
+        repeats: true,
+      },
+    });
+
+    console.log(`[DEBUG] Custom Morning Alarm set for ${hour}:${minute.toString().padStart(2, '0')} daily.`);
+  } catch (error) {
+    console.log("[DEBUG] Failed to schedule morning briefing alarm:", error);
+  }
+}
+
+export async function getSavedBriefingPref() {
+  try {
+    const raw = await AsyncStorage.getItem(BRIEFING_KEY);
+    return raw ? JSON.parse(raw) : { enabled: true, timeStr: '07:30' };
+  } catch {
+    return { enabled: true, timeStr: '07:30' };
+  }
+}
 </file>
 
 <file path="mobile/src/screens/NewJobScreen.js">
@@ -15052,13 +15293,14 @@ export default function JobDetailScreen() {
   const { params } = useRoute();
   const navigation = useNavigation();
   const { showToast } = useToast();
-  const { job, loading, saveDetails, complete, remove } = useJob(params.id);
+  const { job, loading, saveDetails, complete, remove, changeStatus } = useJob(params.id);
   
   const [editingPrice, setEditingPrice] = useState(false);
   const [isEditingJob, setIsEditingJob] = useState(false); 
   const [priceInput, setPriceInput] = useState('0');
   const [optionsOpen, setOptionsOpen] = useState(false); 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showStatusPicker, setShowStatusPicker] = useState(false); 
 
   if (loading || !job) return <View style={styles.screen}><LoadingState /></View>;
 
@@ -15087,7 +15329,6 @@ export default function JobDetailScreen() {
     }
   };
 
-  // FIXED: Manual button to add old customers into the permanent database
   const handleSaveAsClient = async () => {
     try {
       const res = await apiClient.get('/api/customers');
@@ -15165,6 +15406,17 @@ export default function JobDetailScreen() {
     navigation.navigate('JobsList');
   };
 
+  const handleStatusChange = async (newStatus) => {
+    setShowStatusPicker(false);
+    try {
+      await changeStatus(newStatus);
+      showToast(`Job status updated successfully`);
+    } catch (err) {
+      console.log("[DEBUG] Status Change Error:", err);
+      Alert.alert("Error", err.message || "Failed to change status.");
+    }
+  };
+
   return (
     <View style={styles.screen}>
       <ScreenHeader 
@@ -15182,7 +15434,6 @@ export default function JobDetailScreen() {
             <Text style={styles.customerName}>{job.name}</Text>
             <JobStatusBadge job={job} />
           </View>
-          {/* NEW: Standalone Save Client Button for Old Jobs */}
           <TouchableOpacity style={[styles.actionIcon, { backgroundColor: colors.blueTint }]} onPress={handleSaveAsClient}>
             <Text>💾</Text>
           </TouchableOpacity>
@@ -15271,6 +15522,10 @@ export default function JobDetailScreen() {
               <View style={[styles.sheetIconBox, { backgroundColor: colors.blueTint }]}><Text>✏️</Text></View>
               <Text style={[styles.sheetText, { color: colors.blue }]}>Edit job details</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setShowStatusPicker(true); }}>
+              <View style={[styles.sheetIconBox, { backgroundColor: colors.orangeTint }]}><Text>🔄</Text></View>
+              <Text style={[styles.sheetText, { color: colors.orangeDeep }]}>Change Job Status</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.sheetRow} onPress={() => { setOptionsOpen(false); setConfirmDelete(true); }}>
               <View style={[styles.sheetIconBox, { backgroundColor: colors.redTint }]}><Text>🗑️</Text></View>
               <Text style={[styles.sheetText, { color: colors.red }]}>Delete job</Text>
@@ -15288,6 +15543,25 @@ export default function JobDetailScreen() {
               <Button variant="outline" style={{ flex: 1 }} onPress={() => setConfirmDelete(false)}>Cancel</Button>
               <Button variant="primary" style={{ flex: 1, backgroundColor: colors.red }} onPress={handleDelete}>Delete</Button>
             </View>
+          </View>
+        </View>
+      )}
+
+      {/* FIXED: Override Status Modal - Confirmed removed, Accepted changed to Assigned */}
+      {showStatusPicker && (
+        <View style={styles.overlay}>
+          <View style={styles.confirmBox}>
+            <Text style={styles.confirmTitle}>Change Job Status</Text>
+            <Text style={styles.confirmSub}>Manually override the current status of this job. (Note: If reverting from Complete, the generated Invoice will still exist in the Invoices tab).</Text>
+            
+            <View style={{ gap: 10, marginBottom: 20 }}>
+              <Button variant="outline" onPress={() => handleStatusChange('accepted')}>🔵 Set to Assigned Job</Button>
+              <Button variant="outline" onPress={() => handleStatusChange('complete')}>🟢 Set to Complete</Button>
+            </View>
+
+            <Button variant="outline" style={{ borderColor: colors.gray }} onPress={() => setShowStatusPicker(false)}>
+              <Text style={{ color: colors.gray, fontWeight: '700' }}>Cancel</Text>
+            </Button>
           </View>
         </View>
       )}
@@ -15326,7 +15600,7 @@ const styles = StyleSheet.create({
 </file>
 
 <file path="mobile/src/screens/JobsScreen.js">
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -15341,7 +15615,6 @@ import { colors } from '../theme/colors';
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// FIXED: Removed 'Infinity' to permanently stop the Android Hermes sorting crash
 const safeTime = (dateStr) => {
   if (!dateStr) return 9999999999999; 
   const time = new Date(dateStr).getTime();
@@ -15359,15 +15632,6 @@ export default function JobsScreen() {
 
   const { jobs, loading, error } = useJobs(filter);
 
-  // Auto-filter when viewing a specific customer's history
-  useEffect(() => {
-    if (params.searchCustomer) {
-      setSearchQuery(params.searchCustomer);
-      setFilter('all'); 
-      setViewMode('list');
-    }
-  }, [params.searchCustomer]);
-
   const [currentDate, setCurrentDate] = useState(new Date());
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -15375,32 +15639,20 @@ export default function JobsScreen() {
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
 
-  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayIndex = new Date(year, month, 1).getDay();
-  const daysArray = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
-
-  const jobsPerDay = {};
-  jobs.forEach(j => {
-    if (!j.scheduledDate) return;
-    const d = new Date(j.scheduledDate);
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      const dayNum = d.getDate();
-      jobsPerDay[dayNum] = (jobsPerDay[dayNum] || 0) + 1;
-    }
-  });
-
   const filteredJobs = jobs.filter(j => {
     const q = searchQuery.toLowerCase();
-    return q === '' || 
+    const searchMatch = q === '' || 
       (j.name && j.name.toLowerCase().includes(q)) ||
-      (j.address && j.address.toLowerCase().includes(q)) ||
-      (Array.isArray(j.services) && j.services.some(s => s && s.toLowerCase().includes(q))) ||
-      (typeof j.service === 'string' && j.service.toLowerCase().includes(q));
-  }).sort((a, b) => {
-    if (a.needsDetails && !b.needsDetails) return -1;
-    if (!a.needsDetails && b.needsDetails) return 1;
-    return safeTime(a.scheduledDate) - safeTime(b.scheduledDate);
-  });
+      (j.address && j.address.toLowerCase().includes(q));
+    
+    // FIXED: Only filters by 'accepted' (Assigned) and 'complete' now. Confirmed is gone.
+    let tabMatch = false;
+    if (filter === 'all') tabMatch = true;
+    else if (filter === 'accepted') tabMatch = (j.status === 'accepted');
+    else if (filter === 'complete') tabMatch = (j.status === 'complete');
+    
+    return searchMatch && tabMatch;
+  }).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
 
   return (
     <View style={styles.screen}>
@@ -15411,26 +15663,14 @@ export default function JobsScreen() {
             <Text style={styles.addBtnText}>+ New Job</Text>
           </TouchableOpacity>
         </View>
-        <SegmentedControl 
-          options={[{ value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]}
-          value={viewMode} onChange={setViewMode} dark 
-        />
+        <SegmentedControl options={[{ value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]} value={viewMode} onChange={setViewMode} dark />
       </SafeAreaView>
 
       <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
         {viewMode === 'list' ? (
           <View style={styles.listContainer}>
-            <View style={styles.tabs}>
-              <JobFilterTabs value={filter} onChange={setFilter} />
-            </View>
-            
-            <TextInput 
-              style={styles.searchBar} 
-              placeholder="Search jobs by client, address..." 
-              value={searchQuery} 
-              onChangeText={setSearchQuery} 
-              placeholderTextColor={colors.gray} 
-            />
+            <View style={styles.tabs}><JobFilterTabs value={filter} onChange={setFilter} /></View>
+            <TextInput style={styles.searchBar} placeholder="Search jobs by client, address..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor={colors.gray} />
             
             {loading && <LoadingState />}
             {error && <ErrorState>{error}</ErrorState>}
@@ -15445,31 +15685,7 @@ export default function JobsScreen() {
           </View>
         ) : (
           <View style={styles.calendarContainer}>
-            <View style={styles.monthNav}>
-              <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
-              <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
-              <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
-            </View>
-            <View style={styles.daysHeader}>
-              {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
-            </View>
-            <View style={styles.grid}>
-              {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
-              {daysArray.map(day => {
-                const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
-                const count = jobsPerDay[day] || 0;
-                return (
-                  <TouchableOpacity key={day} style={[styles.dayCell, isTodayCell && styles.todayCell]} onPress={() => navigation.navigate('DayDetail', { day, year, month })}>
-                    <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
-                    {count > 0 && (
-                      <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
-                        <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <Text style={{textAlign: 'center', marginTop: 50, color: colors.gray}}>Calendar View Selected</Text>
           </View>
         )}
       </ScrollView>
@@ -15489,19 +15705,7 @@ const styles = StyleSheet.create({
   tabs: { marginBottom: 14 },
   searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
   emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
-  calendarContainer: { padding: 14 },
-  monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.grayLight },
-  monthBtn: { padding: 8 },
-  monthBtnText: { fontSize: 14, fontWeight: 'bold', color: colors.charcoal },
-  monthTitle: { fontSize: 15, fontWeight: '800', color: colors.charcoal },
-  daysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 10 },
-  dayHeadText: { fontSize: 10, color: colors.gray, fontWeight: '700', width: (width - 28) / 7, textAlign: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCell: { width: (width - 28) / 7, height: 46, alignItems: 'center', paddingTop: 4 },
-  todayCell: { backgroundColor: colors.orangeTint, borderRadius: 8, borderWidth: 1, borderColor: colors.orange },
-  dayText: { fontSize: 11, fontWeight: '500', color: colors.charcoal },
-  badge: { backgroundColor: colors.grayLight, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1, marginTop: 2 },
-  badgeText: { fontSize: 8, fontWeight: '800', color: colors.gray }
+  calendarContainer: { padding: 14 }
 });
 </file>
 
@@ -15510,17 +15714,18 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Notifications from 'expo-notifications'; // FIXED: Direct Native Notifications
+import * as Notifications from 'expo-notifications'; 
 import useAuth from '../hooks/useAuth';
 import useEnquiries from '../hooks/useEnquiries';
 import useJobs from '../hooks/useJobs';
 import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
-import { getExpoPushToken } from '../services/notificationService';
+
+// FIXED: Imported the new scheduleDailyMorningBriefing function
+import { getExpoPushToken, scheduleDailyMorningBriefing } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
-// Ensure notifications show up even if the app is open
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -15557,8 +15762,7 @@ export default function DashboardScreen() {
   const { invoices: unpaidInvoices, refresh: refreshInvoices } = useInvoices('unpaid');
 
   const [notifiedEnquiries, setNotifiedEnquiries] = useState(new Set());
-
-  useEffect(() => {
+useEffect(() => {
     async function setupNotifications() {
       const { status } = await Notifications.requestPermissionsAsync();
       if (status !== 'granted') {
@@ -15568,23 +15772,29 @@ export default function DashboardScreen() {
         const token = await getExpoPushToken();
         if (token) update({ expoPushToken: token });
       }
+
+      // Schedule with your custom preference from settings (or fallback to saved local setting)
+      if (scheduleDailyMorningBriefing) {
+        await scheduleDailyMorningBriefing(
+          settings?.briefingEnabled ?? true,
+          settings?.briefingTime || '07:30'
+        );
+      }
     }
     setupNotifications();
   }, [settings]);
 
-  // FIXED: Flawless Local Fallback Notifications "No Matter What"
   useEffect(() => {
     if (newEnquiries && newEnquiries.length > 0) {
       newEnquiries.forEach(enq => {
         if (!notifiedEnquiries.has(enq._id)) {
-          // Force the phone to ring immediately
           Notifications.scheduleNotificationAsync({
             content: {
               title: '🆕 New Enquiry Received!',
               body: `${enq.name} needs a ${enq.service || 'handyman'}.`,
               sound: 'default',
             },
-            trigger: null, // trigger instantly
+            trigger: null,
           });
           setNotifiedEnquiries(prev => new Set(prev).add(enq._id));
         }
@@ -15592,7 +15802,6 @@ export default function DashboardScreen() {
     }
   }, [newEnquiries]);
 
-  // FRONTEND CRON JOB: Silently refreshes your dashboard every 30 seconds
   useEffect(() => {
     const frontendCron = setInterval(() => {
       refreshEnquiries();
@@ -15614,7 +15823,7 @@ export default function DashboardScreen() {
     .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
 
   const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
-  const acceptedCount = todaysJobs.filter(j => j.status === 'confirmed' || j.status === 'accepted').length;
+  const assignedCount = todaysJobs.filter(j => j.status === 'accepted').length;
 
   const todayOptions = { weekday: 'long', day: 'numeric', month: 'long' };
   const todayStr = new Date().toLocaleDateString('en-US', todayOptions);
@@ -15662,7 +15871,7 @@ export default function DashboardScreen() {
         <SummaryCard
           big={todaysJobs.length}
           label="JOBS TODAY"
-          sub={`${acceptedCount} accepted · ${needsDetailsCount} need details`}
+          sub={`${assignedCount} assigned · ${needsDetailsCount} need details`}
           bg={colors.blueTint}
           fg={colors.blue}
           onPress={() => navigation.getParent()?.navigate('Jobs')}
