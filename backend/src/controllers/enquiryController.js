@@ -1,21 +1,10 @@
-/**
- * enquiryController.js
- * ------------------------------------------------------------------
- * Handles all website enquiries, PDF quote sending, push notifications,
- * and auto-syncing customer details to linked Jobs and Invoices.
- * ------------------------------------------------------------------
- */
 const asyncHandler = require('../middleware/asyncHandler');
 const Enquiry = require('../models/Enquiry');
 const Job = require('../models/Job');
 const Invoice = require('../models/Invoice');
-const Settings = require('../models/Settings');
-const { Expo } = require('expo-server-sdk');
+const { nextInvoiceNumber } = require('../services/numberingService');
 const { ok, created } = require('../utils/apiResponse');
-const https = require('https'); // FIXED: Native Node module for bulletproof pushes
 
-
-// GET /api/enquiries
 const listEnquiries = asyncHandler(async (req, res) => {
   const { status } = req.query;
   const filter = status && status !== 'all' ? { status } : {};
@@ -23,145 +12,62 @@ const listEnquiries = asyncHandler(async (req, res) => {
   ok(res, enquiries);
 });
 
-// GET /api/enquiries/:id
 const getEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.findById(req.params.id);
-  if (!enquiry) {
-    res.status(404);
-    throw new Error('Enquiry not found');
-  }
+  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
   ok(res, enquiry);
 });
 
-
 const createEnquiry = asyncHandler(async (req, res) => {
-  
-  // FIXED: Automatically combine Address, Suburb, and Postcode into a single string
-  // the exact moment the enquiry is submitted.
-  const fullAddressParts = [req.body.address, req.body.suburb, req.body.postcode].filter(Boolean);
-  if (fullAddressParts.length > 0) {
-    req.body.address = fullAddressParts.join(', ');
-  }
-
   const enquiry = await Enquiry.create(req.body);
-
-  try {
-    const Settings = require('../models/Settings');
-    const settings = await Settings.getSingleton();
-    
-    if (settings.expoPushToken) {
-      const payload = JSON.stringify({
-        to: settings.expoPushToken,
-        sound: 'default',
-        title: '🆕 New Enquiry Received!',
-        body: `${enquiry.name} needs a ${enquiry.service || 'handyman'}.`,
-        data: { type: 'enquiry', id: enquiry._id }
-      });
-
-      const reqPush = https.request({
-        hostname: 'exp.host',
-        path: '/--/api/v2/push/send',
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        }
-      });
-      
-      reqPush.on('error', (e) => console.log('Expo Push warning:', e.message));
-      reqPush.write(payload);
-      reqPush.end();
-    }
-  } catch (err) {
-    console.log('Push notification gracefully bypassed');
-  }
-
   created(res, enquiry);
 });
 
-
-// PUT /api/enquiries/:id (Update Enquiry Details)
 const updateEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-  if (!enquiry) {
-    res.status(404);
-    throw new Error('Enquiry not found');
-  }
-
-  // AUTO-SYNC: Cascade name/phone/email/address updates to connected Jobs and Invoices
-  try {
-    const linkedJobs = await Job.find({ 
-      $or: [ { email: enquiry.email }, { phone: enquiry.phone } ] 
-    });
-
-    for (let job of linkedJobs) {
-      job.name = enquiry.name;
-      job.phone = enquiry.phone;
-      job.email = enquiry.email;
-      job.address = enquiry.address;
-      await job.save();
-
-      if (job.invoiceId) {
-        await Invoice.findByIdAndUpdate(job.invoiceId, {
-          customer: enquiry.name,
-          customerPhone: enquiry.phone,
-          customerEmail: enquiry.email
-        });
-      }
-    }
-  } catch (err) {
-    console.log("Silent sync error:", err);
-  }
-
+  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
   ok(res, enquiry);
 });
 
-// DELETE /api/enquiries/:id
 const deleteEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.findByIdAndDelete(req.params.id);
-  if (!enquiry) {
-    res.status(404);
-    throw new Error('Enquiry not found');
-  }
+  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
   ok(res, { deleted: true });
 });
 
-// POST /api/enquiries/:id/reject
 const rejectEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, { status: 'rejected' }, { new: true });
+  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
   ok(res, enquiry);
 });
 
-// POST /api/enquiries/:id/send-quote
 const sendQuote = asyncHandler(async (req, res) => {
-  const { items } = req.body;
-  const enquiry = await Enquiry.findByIdAndUpdate(req.params.id, { status: 'quoted', quoteItems: items }, { new: true });
+  const enquiry = await Enquiry.findById(req.params.id);
+  if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
+  enquiry.quoteItems = req.body.items || [];
+  enquiry.status = 'quoted';
+  await enquiry.save();
   ok(res, enquiry);
 });
 
-// POST /api/enquiries/:id/accept
-// POST /api/enquiries/:id/accept
 const acceptEnquiry = asyncHandler(async (req, res) => {
-  const Enquiry = require('../models/Enquiry');
-  const Job = require('../models/Job');
-  
   const enquiry = await Enquiry.findById(req.params.id);
   if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
   
   const quoteTotal = enquiry.quoteItems?.reduce((sum, item) => sum + (Number(item.amt) || 0), 0) || enquiry.price || 0;
   
-  // FIXED: Provides safe fallback names so Job Creation NEVER crashes
   const job = await Job.create({
     name: enquiry.name || 'Customer',
-    phone: enquiry.phone,
-    email: enquiry.email,
+    phone: enquiry.phone || '',
+    email: enquiry.email || '',
     address: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', '),
     service: enquiry.service || 'Handyman',
     services: enquiry.quoteItems && enquiry.quoteItems.length > 0 
       ? enquiry.quoteItems.map(i => ({ name: i.name || 'Quote Item', amt: Number(i.amt) || 0 })) 
       : [{ name: enquiry.service || 'Handyman', amt: quoteTotal }],
     labour: quoteTotal, 
+    advancePaid: enquiry.advancePaid || 0,
+    notes: enquiry.notes || '',
     status: 'accepted'
   });
 
@@ -169,25 +75,21 @@ const acceptEnquiry = asyncHandler(async (req, res) => {
   enquiry.status = 'accepted';
   await enquiry.save();
   
-  const { ok } = require('../utils/apiResponse');
   ok(res, { enquiry, job });
 });
 
-// NEW: POST /api/enquiries/:id/invoice (Converts Quote directly to Invoice!)
 const convertToInvoice = asyncHandler(async (req, res) => {
-  const Enquiry = require('../models/Enquiry');
-  const Invoice = require('../models/Invoice');
-  const { nextInvoiceNumber } = require('../services/numberingService');
-  
   const enquiry = await Enquiry.findById(req.params.id);
   if (!enquiry) { res.status(404); throw new Error('Enquiry not found'); }
   
   const invoice = await Invoice.create({
     number: await nextInvoiceNumber(),
     customer: enquiry.name || 'Customer',
-    customerPhone: enquiry.phone,
-    customerEmail: enquiry.email,
+    customerPhone: enquiry.phone || '',
+    customerEmail: enquiry.email || '',
     customerAddress: [enquiry.address, enquiry.suburb, enquiry.postcode].filter(Boolean).join(', '),
+    advancePaid: enquiry.advancePaid || 0,
+    notes: enquiry.notes || '',
     items: enquiry.quoteItems && enquiry.quoteItems.length > 0 
       ? enquiry.quoteItems.map(i => ({ name: i.name || 'Quote Item', amt: Number(i.amt) || 0, qty: 1 }))
       : [{ name: enquiry.service || 'Handyman Service', amt: enquiry.price || 0, qty: 1 }],
@@ -197,7 +99,6 @@ const convertToInvoice = asyncHandler(async (req, res) => {
   enquiry.invoiceId = invoice._id;
   await enquiry.save();
   
-  const { ok } = require('../utils/apiResponse');
   ok(res, { enquiry, invoice });
 });
 

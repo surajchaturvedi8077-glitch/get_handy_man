@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, ScrollView, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -12,7 +12,6 @@ import useJob from '../hooks/useJob';
 import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { openPhone, openEmail, openMaps } from '../utils/linking';
-import { money } from '../utils/money';
 import { colors } from '../theme/colors';
 import * as invoiceService from '../services/invoiceService';
 
@@ -25,9 +24,7 @@ export default function JobDetailScreen() {
   const { settings } = useSettings();
   const { job, loading, saveDetails, complete, remove, changeStatus } = useJob(params.id);
   
-  const [editingPrice, setEditingPrice] = useState(false);
   const [isEditingJob, setIsEditingJob] = useState(false); 
-  const [priceInput, setPriceInput] = useState('0');
   const [optionsOpen, setOptionsOpen] = useState(false); 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showStatusPicker, setShowStatusPicker] = useState(false); 
@@ -38,7 +35,6 @@ export default function JobDetailScreen() {
   const handleSaveDetails = async (payload) => {
     try {
       await saveDetails(payload);
-
       if (payload.labour !== undefined && job.invoiceId) {
         try {
           const inv = await invoiceService.getInvoice(job.invoiceId);
@@ -49,13 +45,9 @@ export default function JobDetailScreen() {
           }
         } catch (invErr) { }
       }
-
       setIsEditingJob(false);
-      setEditingPrice(false); 
       showToast('Job details saved');
-    } catch (err) {
-      Alert.alert("Backend Error", err.message || 'An error occurred');
-    }
+    } catch (err) { Alert.alert("Backend Error", err.message || 'An error occurred'); }
   };
 
   const handleComplete = async () => {
@@ -63,9 +55,7 @@ export default function JobDetailScreen() {
       const { invoice } = await complete();
       showToast('Job marked complete');
       navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: invoice._id } });
-    } catch (err) {
-      Alert.alert("Backend Error", err.message);
-    }
+    } catch (err) { Alert.alert("Backend Error", err.message); }
   };
 
   const handleDelete = async () => {
@@ -81,12 +71,9 @@ export default function JobDetailScreen() {
     try {
       await changeStatus(newStatus);
       showToast(`Job status updated successfully`);
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to change status.");
-    }
+    } catch (err) { Alert.alert("Error", err.message || "Failed to change status."); }
   };
 
-  // NEW: Directly generates the invoice HTML from the Job screen BEFORE completion!
   const generateDraftInvoiceHTML = () => {
     const itemsHtml = (job.services && job.services.length > 0)
       ? job.services.map(s => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${s.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">1</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(s.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(s.amt || 0).toFixed(2)}</td></tr>`).join('')
@@ -98,17 +85,23 @@ export default function JobDetailScreen() {
     const gstAmt = applyGst ? subtotal * (gstRate / 100) : 0;
     const finalTotal = subtotal + gstAmt;
 
+    const advanceAmt = parseFloat(job.advancePaid || 0);
+    const advanceHtml = advanceAmt > 0 ? `<div class="totals-row"><span>Advance/Deposit Paid</span><span>-$${advanceAmt.toFixed(2)}</span></div>` : '';
+    const balanceDue = finalTotal - advanceAmt;
+
     const bsbStr = settings?.bsb || '';
     const accountStr = settings?.account || '';
     const accountNameStr = settings?.accountName || '';
     const bankNameStr = settings?.bankName || '';
     const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
+    const paymentDetailsHtml = bankNameStr ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>` : '';
     
+    const notesHtml = job.notes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${job.notes.replace(/\n/g, '<br/>')}</div>` : '';
+
     const bizNameStr = settings?.businessName || 'Get Handyman';
     const bizCityStr = settings?.bizCityState || '';
     const bizPhoneStr = settings?.bizPhone || '';
     const bizWebStr = settings?.website || '';
-    
     const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
     const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : '';
 
@@ -158,34 +151,31 @@ export default function JobDetailScreen() {
             <div class="totals">
               <div class="totals-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>
               <div class="totals-row"><span>${applyGst ? `GST ${gstRate}%` : 'GST'}</span><span>${applyGst ? `$${gstAmt.toFixed(2)}` : '$0.00'}</span></div>
-              <div class="balance-due"><span>Balance Due</span><span>$${finalTotal.toFixed(2)}</span></div>
+              ${advanceHtml}
+              <div class="balance-due"><span>Balance Due</span><span>$${balanceDue.toFixed(2)}</span></div>
             </div>
           </div>
-          ${bankNameStr ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account:${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>` : ''}
+          ${paymentDetailsHtml}
+          ${notesHtml}
         </body>
       </html>
     `;
   };
 
   const handlePreviewDraftPdf = () => {
-    const html = generateDraftInvoiceHTML();
-    navigation.navigate('PdfPreview', { html, title: `Draft_Invoice_${job.name}.pdf` });
+    navigation.navigate('PdfPreview', { html: generateDraftInvoiceHTML(), title: `Draft_Invoice_${job.name}.pdf` });
   };
 
   const handleShareDraftPdf = async () => {
     setGenerating(true);
     try {
       showToast('Generating Document...');
-      const html = generateDraftInvoiceHTML();
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const { uri } = await Print.printToFileAsync({ html: generateDraftInvoiceHTML(), base64: false });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Draft_Invoice_${job.name}.pdf` });
       }
-    } catch (err) {
-      Alert.alert("PDF Error", "Could not share the PDF.");
-    } finally {
-      setGenerating(false);
-    }
+    } catch (err) { Alert.alert("PDF Error", "Could not share the PDF."); } 
+    finally { setGenerating(false); }
   };
 
   return (
@@ -245,26 +235,24 @@ export default function JobDetailScreen() {
                 )}
               </View>
             </View>
-
-            {(job.extraFields && job.extraFields.length > 0) && (
-              <View style={styles.fieldRow}>
-                <Text style={styles.icon}>📋</Text>
-                <View style={{ flex: 1 }}>
-                  {job.extraFields.map((f, idx) => (
-                    <View key={idx} style={{ marginBottom: 4 }}>
-                      <Text style={styles.label}>{f.label}</Text>
-                      <Text style={styles.value}>{f.value}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            <View style={styles.priceCard}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View><Text style={styles.labelOrange}>Total Labour Price</Text><Text style={styles.priceText}>{money(job.labour)}</Text></View>
+            
+            <View style={styles.fieldRow}>
+              <Text style={styles.icon}>💰</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Advance Paid</Text>
+                <Text style={styles.value}>${Number(job.advancePaid || 0).toFixed(2)}</Text>
               </View>
             </View>
+
+            {job.notes ? (
+              <View style={styles.fieldRow}>
+                <Text style={styles.icon}>📄</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Notes (Shown on PDF)</Text>
+                  <Text style={styles.value}>{job.notes}</Text>
+                </View>
+              </View>
+            ) : null}
 
             {job.status !== 'complete' && (
               <View style={[styles.buttonRow, { marginTop: 18 }]}>
@@ -352,8 +340,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 10, fontWeight: '700', color: colors.gray, textTransform: 'uppercase', marginBottom: 2 },
   labelOrange: { fontSize: 10, fontWeight: '700', color: colors.orangeDeep, textTransform: 'uppercase', marginBottom: 2 },
   value: { fontSize: 13, color: colors.charcoal, marginBottom: 4 },
-  priceCard: { backgroundColor: colors.orangeTint, borderRadius: 10, padding: 12, marginTop: 12 },
-  priceText: { fontSize: 18, fontWeight: '800', color: colors.charcoal },
   buttonRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(17,24,39,0.4)', justifyContent: 'flex-end', zIndex: 50 },
   sheet: { backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 30, paddingTop: 10 },

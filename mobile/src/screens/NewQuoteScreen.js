@@ -21,7 +21,7 @@ export default function NewQuoteScreen() {
   const [generating, setGenerating] = useState(false);
 
   const [form, setForm] = useState({
-    name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt', notes: ''
+    name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt', notes: '', advancePaid: '0'
   });
   const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150.00' }]);
 
@@ -42,12 +42,18 @@ export default function NewQuoteScreen() {
     const gstAmt = applyGst ? subtotal * (gstRate / 100) : 0;
     const finalTotal = subtotal + gstAmt;
 
-    const bizNameStr = settings?.businessName || 'Get Handyman';
-    const bizCityStr = settings?.bizCityState || '';
-    const bizPhoneStr = settings?.bizPhone || '';
-    const bizWebStr = settings?.website || '';
-    const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
-    const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : '';
+    const advanceAmt = parseFloat(form.advancePaid || 0);
+    const advanceHtml = advanceAmt > 0 ? `<div class="totals-row"><span>Advance/Deposit Paid</span><span>-$${advanceAmt.toFixed(2)}</span></div>` : '';
+    const balanceDue = finalTotal - advanceAmt;
+
+    const bsbStr = settings?.bsb || '';
+    const accountStr = settings?.account || '';
+    const accountNameStr = settings?.accountName || '';
+    const bankNameStr = settings?.bankName || '';
+    const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
+    const paymentDetailsHtml = bankNameStr ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>` : '';
+
+    const notesHtml = form.notes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${form.notes.replace(/\n/g, '<br/>')}</div>` : '';
     const quoteDate = new Date().toLocaleDateString('en-GB');
 
     return `
@@ -80,62 +86,37 @@ export default function NewQuoteScreen() {
         </head>
         <body>
           <div class="header">
-            <div>
-              ${logoImg}
-              <div class="biz-details">
-                <div class="biz-name">${bizNameStr}</div>
-                ${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}
-                ${bizCityStr ? `<div>${bizCityStr}</div>` : ''}
-                ${bizPhoneStr ? `<div>${bizPhoneStr}</div>` : ''}
-                ${bizWebStr ? `<div>${bizWebStr}</div>` : ''}
-              </div>
-            </div>
-            <div class="doc-meta">
-              <h2 class="doc-type">QUOTE</h2>
-              <div style="font-size: 11px; color: #6B7280; line-height: 1.6;">
-                <div><strong style="color: #9CA3AF;">Date:</strong> ${quoteDate}</div>
-                <div><strong style="color: #9CA3AF;">Currency:</strong> ${form.currency}</div>
-                <div><strong style="color: #9CA3AF;">Terms:</strong> ${form.terms}</div>
-              </div>
-            </div>
+            <div>${settings?.logoUrl ? `<img src="${settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`}" class="logo" />` : ''}<div class="biz-details"><div class="biz-name">${settings?.businessName || 'Get Handyman'}</div>${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}${settings?.bizCityState ? `<div>${settings.bizCityState}</div>` : ''}${settings?.bizPhone ? `<div>${settings.bizPhone}</div>` : ''}${settings?.website ? `<div>${settings.website}</div>` : ''}</div></div>
+            <div class="doc-meta"><h2 class="doc-type">QUOTE</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${quoteDate}</div><div><strong style="color: #9CA3AF;">Currency:</strong> ${form.currency}</div><div><strong style="color: #9CA3AF;">Terms:</strong> ${form.terms}</div></div></div>
           </div>
           <div class="divider"></div>
           <div class="bill-to-section">
             <div class="bill-to-title">QUOTE TO:</div>
-            <div class="bill-to-details">
-              <div style="font-weight: 700; font-size: 14px; color: #111827;">${form.name || 'Customer Name'}</div>
-              ${form.phone ? `<div>${form.phone}</div>` : ''}
-              ${form.email ? `<div>${form.email}</div>` : ''}
-              ${form.address ? `<div style="margin-top: 4px;">${form.address}</div>` : ''}
-            </div>
+            <div class="bill-to-details"><div style="font-weight: 700; font-size: 14px; color: #111827;">${form.name || 'Customer Name'}</div>${form.phone ? `<div>${form.phone}</div>` : ''}${form.email ? `<div>${form.email}</div>` : ''}${form.address ? `<div style="margin-top: 4px;">${form.address}</div>` : ''}</div>
           </div>
-          <table class="items-table">
-            <tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>
-            ${itemsHtml}
-          </table>
+          <table class="items-table"><tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>${itemsHtml}</table>
           <div class="totals-container">
             <div class="totals">
               <div class="totals-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>
               <div class="totals-row"><span>${applyGst ? `GST ${gstRate}%` : 'GST'}</span><span>${applyGst ? `$${gstAmt.toFixed(2)}` : '$0.00'}</span></div>
-              <div class="balance-due"><span>Total Quote</span><span>$${finalTotal.toFixed(2)}</span></div>
+              ${advanceHtml}
+              <div class="balance-due"><span>Total Quote</span><span>$${balanceDue.toFixed(2)}</span></div>
             </div>
           </div>
-          ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #6B7280; line-height: 1.6;">${settings.quoteMessage}</div>` : ''}
+          ${paymentDetailsHtml}
+          ${notesHtml}
+          ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #6B7280; line-height: 1.5;">${settings.quoteMessage}</div>` : ''}
         </body>
       </html>
     `;
   };
 
   const handlePreviewPdf = () => {
-    const html = generateHTMLString();
-    navigation.navigate('PdfPreview', { html, title: `Quote_${form.name || 'Preview'}.pdf` });
+    navigation.navigate('PdfPreview', { html: generateHTMLString(), title: `Quote_${form.name || 'Preview'}.pdf` });
   };
 
   const handleSaveAndShareQuote = async () => {
-    if (!form.name || !form.phone || !form.email) {
-      return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
-    }
-    
+    if (!form.name || !form.phone || !form.email) return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
     setGenerating(true);
     try {
       const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
@@ -145,45 +126,32 @@ export default function NewQuoteScreen() {
 
       await apiClient.post('/api/enquiries', {
         name: form.name, phone: form.phone, email: form.email, address: form.address,
-        notes: form.notes, // NEW: Saves Internal Notes
+        notes: form.notes, advancePaid: Number(form.advancePaid) || 0,
         status: 'quoted', quoteItems: items, price: finalTotal
       });
       showToast('Quote saved permanently!');
 
-      const html = generateHTMLString();
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
-      
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${form.name}`, UTI: '.pdf' });
-      }
-    } catch (err) {
-      Alert.alert("Error", "Failed to generate quote PDF.");
-    } finally {
-      setGenerating(false);
-      if (navigation.canGoBack()) navigation.goBack();
-      else navigation.navigate('Dashboard');
-    }
+      const { uri } = await Print.printToFileAsync({ html: generateHTMLString(), base64: false });
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${form.name}`, UTI: '.pdf' });
+    } catch (err) { Alert.alert("Error", "Failed to generate quote PDF."); } 
+    finally { setGenerating(false); navigation.navigate('Dashboard'); }
   };
 
   return (
     <View style={styles.screen}>
       <ScreenHeader title="NEW QUOTE" onBack={() => { navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Dashboard') }} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <FieldLabel>Customer Details</FieldLabel>
+        <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} />
+        <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" />
+        <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" />
+        <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} />
         
-        <FieldLabel>Customer Details (Mandatory)</FieldLabel>
-        <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} placeholderTextColor={colors.gray} />
-        <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
-        <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
-        <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} placeholderTextColor={colors.gray} />
-        
-        <FieldLabel style={{ marginTop: 10 }}>Internal Notes (Not on PDF)</FieldLabel>
-        <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Private notes for yourself..." value={form.notes} onChangeText={v => updateForm('notes', v)} placeholderTextColor={colors.gray} />
+        <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
+        <TextInput style={styles.input} value={form.advancePaid} onChangeText={v => updateForm('advancePaid', v)} keyboardType="numeric" />
 
-        <FieldLabel style={{ marginTop: 10 }}>Quote Configuration</FieldLabel>
-        <View style={styles.row}>
-          <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} placeholder="Currency" value={form.currency} onChangeText={v => updateForm('currency', v)} />
-          <TextInput style={[styles.input, { flex: 2, marginTop: 0 }]} placeholder="Terms" value={form.terms} onChangeText={v => updateForm('terms', v)} />
-        </View>
+        <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
+        <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Scope of work, terms, etc..." value={form.notes} onChangeText={v => updateForm('notes', v)} />
 
         <FieldLabel style={{ marginTop: 14 }}>Line Items (Fully Editable)</FieldLabel>
         {items.map((it, idx) => (

@@ -1,18 +1,7 @@
 const mongoose = require('mongoose');
 
-const lineItemSchema = new mongoose.Schema(
-  { name: String, qty: { type: Number, default: 1 }, amt: { type: Number, default: 0 } },
-  { _id: false }
-);
-
-const costItemSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    cost: { type: Number, default: 0 },
-    photoUrl: { type: String, default: null },
-  },
-  { _id: false }
-);
+const lineItemSchema = new mongoose.Schema({ name: String, qty: { type: Number, default: 1 }, amt: { type: Number, default: 0 } }, { _id: false });
+const costItemSchema = new mongoose.Schema({ name: { type: String, required: true }, cost: { type: Number, default: 0 }, photoUrl: { type: String, default: null } }, { _id: false });
 
 const invoiceSchema = new mongoose.Schema(
   {
@@ -21,7 +10,7 @@ const invoiceSchema = new mongoose.Schema(
     customer: { type: String, required: true },
     customerEmail: String,
     customerPhone: String,
-    customerAddress: { type: String, default: '' }, // FIXED: Address now legally exists on invoices!
+    customerAddress: { type: String, default: '' },
     date: { type: Date, default: Date.now },
     terms: { type: String, default: 'Due on receipt' },
     dueDate: Date,
@@ -30,18 +19,17 @@ const invoiceSchema = new mongoose.Schema(
     paymentMode: { type: String, enum: ['online', 'cash'], default: 'online' },
     status: { type: String, enum: ['paid', 'unpaid'], default: 'unpaid' },
     gstIncluded: { type: Boolean, default: true },
-    discount: {
-      type: { type: String, enum: ['amount', 'percent'], default: 'percent' },
-      value: { type: Number, default: 0 },
-    },
+    discount: { type: { type: String, enum: ['amount', 'percent'], default: 'percent' }, value: { type: Number, default: 0 } },
+
+    notes: { type: String, default: '' }, 
+    advancePaid: { type: Number, default: 0 },
 
     completionPhotoUrl: { type: String, default: null },
-    costs: {
-      materials: [costItemSchema],
-      other: [costItemSchema], 
-    },
+    completionPhotos: { type: [String], default: [] },
+    
+    costs: { materials: [costItemSchema], other: [costItemSchema] },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model('Invoice', invoiceSchema);
+module.exports = mongoose.models.Invoice || mongoose.model('Invoice', invoiceSchema);

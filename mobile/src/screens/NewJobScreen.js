@@ -23,26 +23,17 @@ export default function NewJobScreen() {
 
   const [suggestions, setSuggestions] = useState([]);
   const [form, setForm] = useState({
-    name: '', phone: '', email: '', when: '', exactTime: '', scheduledDate: null, address: '', suburb: '', postcode: '', lat: null, lng: null, notes: ''
+    name: '', phone: '', email: '', when: '', exactTime: '', scheduledDate: null, address: '', suburb: '', postcode: '', lat: null, lng: null, notes: '', advancePaid: '0'
   });
   
-  // FIXED: Forces Services to be an array of Objects with Prices, preventing backend crashes!
   const [services, setServices] = useState([{ name: 'General Handyman', amt: '180' }]);
-  const [materials, setMaterials] = useState([]);
-  const [extraFields, setExtraFields] = useState([]);
 
   const labourTotal = services.reduce((sum, s) => sum + (Number(s.amt) || 0), 0);
 
   useEffect(() => {
     if (params?.customer) {
       setForm(prev => ({
-        ...prev,
-        name: params.customer.name || '',
-        phone: params.customer.phone || '',
-        email: params.customer.email || '',
-        address: params.customer.address || '',
-        suburb: params.customer.suburb || '',
-        postcode: params.customer.postcode || '',
+        ...prev, name: params.customer.name || '', phone: params.customer.phone || '', email: params.customer.email || '', address: params.customer.address || ''
       }));
     }
   }, [params?.customer]);
@@ -59,16 +50,12 @@ export default function NewJobScreen() {
         ...form,
         name: form.name || 'New Customer',
         when: form.when || 'Not scheduled yet',
-        exactTime: form.exactTime,
         scheduledDate: form.scheduledDate || new Date().toISOString(),
         address: safeAddress,
-        lat: form.lat,
-        lng: form.lng,
-        labour: labourTotal, // Auto calculates!
+        labour: labourTotal,
+        advancePaid: Number(form.advancePaid) || 0, // NEW
         services: formattedServices,
         service: formattedServices.length > 0 ? formattedServices[0].name : 'General Handyman',
-        extraFields: extraFields.filter(f => f.label && f.value),
-        materials,
         status: 'confirmed',
         needsDetails: false
       };
@@ -76,12 +63,8 @@ export default function NewJobScreen() {
       await jobService.createJob(payload);
       showToast('Job created successfully');
       navigation.navigate('Jobs', { screen: 'JobsList' }); 
-    } catch (err) {
-      const errMsg = err.response?.data?.errors ? err.response.data.errors.join('\n') : (err.response?.data?.message || 'Failed to create job');
-      Alert.alert("Cannot Create Job", errMsg);
-    } finally {
-      setSaving(false);
-    }
+    } catch (err) { Alert.alert("Cannot Create Job", err.message); } 
+    finally { setSaving(false); }
   };
 
   const openPicker = () => { setPickerMode(Platform.OS === 'ios' ? 'datetime' : 'date'); setShowPicker(true); };
@@ -210,26 +193,17 @@ export default function NewJobScreen() {
           ))}
           <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, { name: '', amt: '' }])}>+ Add service line</Button>
 
-          <FieldLabel>Total Labour Cost (A$)</FieldLabel>
-          <View style={styles.totalBox}><Text style={styles.totalText}>${labourTotal.toFixed(2)}</Text></View>
-          
-          <FieldLabel>Other Details / Fields</FieldLabel>
-          {extraFields.map((f, idx) => (
-            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.label} onChangeText={v => { const e = [...extraFields]; e[idx].label = v; setExtraFields(e); }} placeholder="Label" />
-              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={f.value} onChangeText={v => { const e = [...extraFields]; e[idx].value = v; setExtraFields(e); }} placeholder="Value" />
-              <TouchableOpacity onPress={() => setExtraFields(extraFields.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
-            </View>
-          ))}
-          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setExtraFields([...extraFields, {label: '', value: ''}])}>+ Add other field</Button>
+          <FieldLabel>Advance / Deposit Paid (A$)</FieldLabel>
+          <TextInput style={styles.input} value={form.advancePaid} onChangeText={v => updateForm('advancePaid', v)} keyboardType="numeric" />
+
+          <FieldLabel>Notes (Shown on PDF)</FieldLabel>
+          <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Private notes for yourself..." value={form.notes} onChangeText={v => updateForm('notes', v)} />
 
           <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
         </View>
       </ScrollView>
 
-      {showPicker && (
-        <DateTimePicker value={pickerMode === 'time' ? tempDate : dateObj} mode={pickerMode} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />
-      )}
+      {showPicker && <DateTimePicker value={pickerMode === 'time' ? tempDate : dateObj} mode={pickerMode} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />}
     </View>
   );
 }
@@ -241,6 +215,7 @@ const styles = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.charcoal, alignItems: 'center', justifyContent: 'center' },
   nameInput: { fontWeight: '800', fontSize: 16, color: colors.charcoal, padding: 0 },
   fieldRow: { flexDirection: 'row', gap: 12, paddingVertical: 6, alignItems: 'flex-start', zIndex: 10 },
+  rowSplit: { flexDirection: 'row', gap: 12, paddingVertical: 6 },
   icon: { width: 34, textAlign: 'center', fontSize: 17, marginTop: 18 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, backgroundColor: '#fff', marginTop: 4, color: colors.charcoal },
   dropdown: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, marginTop: 4, maxHeight: 150 },
@@ -248,6 +223,4 @@ const styles = StyleSheet.create({
   dropdownText: { fontSize: 12, color: colors.charcoal },
   detailsCard: { backgroundColor: colors.orangeTint, borderRadius: 10, padding: 14, marginTop: 20 },
   cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.orangeDeep, marginBottom: 10 },
-  totalBox: { backgroundColor: '#fff', padding: 12, borderRadius: 8, marginBottom: 14, alignItems: 'center', borderWidth: 1, borderColor: colors.orange },
-  totalText: { fontSize: 16, fontWeight: 'bold', color: colors.charcoal }
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard, TouchableOpacity } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -19,7 +19,6 @@ import Button from '../components/ui/Button';
 import useInvoice from '../hooks/useInvoice';
 import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
-import { money } from '../utils/money';
 import { colors } from '../theme/colors';
 import * as invoiceService from '../services/invoiceService';
 
@@ -32,13 +31,16 @@ export default function InvoiceDetailScreen() {
   const { settings, update: updateSettings } = useSettings();
   const {
     invoice, loading, error, refresh, updateItems, setDiscount, toggleGstIncluded,
-    setPaymentMode, togglePaidStatus, setCostItems, uploadCostItemPhoto,
+    setPaymentMode, togglePaidStatus, setCostItems
   } = useInvoice(params.id);
 
   const [localGstRate, setLocalGstRate] = useState('10');
   const [localCustomer, setLocalCustomer] = useState('');
   const [localPhone, setLocalPhone] = useState('');
   const [localEmail, setLocalEmail] = useState('');
+  const [localAddress, setLocalAddress] = useState('');
+  const [localNotes, setLocalNotes] = useState('');
+  const [localAdvancePaid, setLocalAdvancePaid] = useState('0');
   const [savingInvoice, setSavingInvoice] = useState(false);
 
   useEffect(() => {
@@ -47,6 +49,9 @@ export default function InvoiceDetailScreen() {
       setLocalCustomer(invoice.customer || '');
       setLocalPhone(invoice.customerPhone || '');
       setLocalEmail(invoice.customerEmail || '');
+      setLocalAddress(invoice.customerAddress || '');
+      setLocalNotes(invoice.notes || '');
+      setLocalAdvancePaid(String(invoice.advancePaid || 0));
     }
   }, [invoice, settings]);
 
@@ -54,47 +59,34 @@ export default function InvoiceDetailScreen() {
   if (error) return <View style={styles.screen}><ErrorState>{error}</ErrorState></View>;
 
   const isPaid = invoice.status === 'paid';
-
-  const handleSaveGstRate = () => {
-    updateSettings({ gstRate: Number(localGstRate) || 0 });
-    showToast('GST Rate Updated');
-  };
+  
+  // Gathers all completion photos securely
+  const photosArray = invoice.completionPhotos?.length > 0 ? invoice.completionPhotos : (invoice.completionPhotoUrl ? [invoice.completionPhotoUrl] : []);
 
   const handleUpdateInvoice = async () => {
     Keyboard.dismiss();
     setSavingInvoice(true);
     try {
       await invoiceService.updateInvoice(invoice._id, {
-        customer: localCustomer,
-        customerPhone: localPhone,
-        customerEmail: localEmail
+        customer: localCustomer, customerPhone: localPhone, customerEmail: localEmail,
+        customerAddress: localAddress, notes: localNotes, advancePaid: Number(localAdvancePaid) || 0
       });
       refresh();
       showToast('✅ Invoice details updated successfully');
-    } catch (e) {
-      Alert.alert('Error', 'Failed to save changes');
-    } finally {
-      setSavingInvoice(false);
-    }
+    } catch (e) { Alert.alert('Error', 'Failed to save changes'); } 
+    finally { setSavingInvoice(false); }
   };
 
-  const handleDeleteInvoice = () => {
-    Alert.alert("Delete Invoice", "Are you sure you want to delete this invoice?", [
-      { text: "Cancel", style: "cancel" },
-      { 
-        text: "Delete", 
-        style: "destructive", 
-        onPress: async () => {
-          try {
-            await invoiceService.deleteInvoice(invoice._id);
-            showToast("Invoice deleted");
-            navigation.navigate('InvoicesList');
-          } catch (e) {
-            Alert.alert("Error", "Could not delete invoice");
-          }
-        }
-      }
-    ]);
+  const handleRemovePhoto = async (indexToRemove) => {
+    const newPhotos = photosArray.filter((_, idx) => idx !== indexToRemove);
+    try {
+      await invoiceService.updateInvoice(invoice._id, { 
+        completionPhotos: newPhotos,
+        completionPhotoUrl: newPhotos.length > 0 ? newPhotos[0] : null
+      });
+      showToast('Photo removed');
+      refresh();
+    } catch (e) { Alert.alert('Error', 'Could not remove photo'); }
   };
 
   const generateHTMLString = () => {
@@ -108,49 +100,35 @@ export default function InvoiceDetailScreen() {
     const bankNameStr = settings?.bankName || '';
     const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
     
+    const bizNameStr = settings?.businessName || 'Get Handyman';
+    const bizCityStr = settings?.bizCityState || '';
+    const bizPhoneStr = settings?.bizPhone || '';
+    const bizWebStr = settings?.website || '';
+    
     const logoSrc = settings?.logoUrl ? (settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`) : '';
-    const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : '';
+    const logoImg = logoSrc ? `<img src="${logoSrc}" class="logo" />` : `<h2 style="margin: 0; color: #1F2937;">${bizNameStr}</h2>`;
     
     const invDate = new Date(invoice.date).toLocaleDateString('en-GB');
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-GB') : invDate;
-    
-    const customerName = localCustomer || 'Customer Name';
-    const customerEmailHtml = localEmail ? `<div>${localEmail}</div>` : '';
-    const customerPhoneHtml = localPhone ? `<div>${localPhone}</div>` : '';
-    
-    const invoiceNum = invoice.number ? invoice.number.replace('GH-', '') : '0';
-    const termsStr = invoice.terms === 'Due on receipt' ? 'NET 0' : invoice.terms;
     
     const subtotal = parseFloat(invoice.totals?.subtotal || 0).toFixed(2);
     const discAmt = parseFloat(invoice.totals?.discAmt || 0).toFixed(2);
     const gstAmt = parseFloat(invoice.totals?.gst || 0).toFixed(2);
     const totalDue = parseFloat(invoice.totals?.total || 0).toFixed(2);
-    const gstRate = settings?.gstRate || 10;
     
-    const isPaidAmt = invoice.status === 'paid' ? totalDue : '0.00';
-    const balanceAmt = invoice.status === 'paid' ? '0.00' : totalDue;
+    const advanceAmt = parseFloat(localAdvancePaid || 0);
+    const advanceHtml = advanceAmt > 0 ? `<div class="totals-row"><span>Advance/Deposit Paid</span><span>-$${advanceAmt.toFixed(2)}</span></div>` : '';
+    const balanceAmt = isPaid ? '0.00' : Math.max(0, totalDue - advanceAmt).toFixed(2);
+    const isPaidAmt = isPaid ? (parseFloat(totalDue) - advanceAmt).toFixed(2) : '0.00';
 
-    const paymentDetailsHtml = bankNameStr ? `
-      <div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;">
-        <strong>Payment Details</strong><br/>
-        Bank: ${bankNameStr}<br/>
-        BSB: ${bsbStr}<br/>
-        Account: ${accountStr}<br/>
-        Account Name: ${accountNameStr}
-        ${payIdHtml}
-      </div>
-    ` : '';
-
+    const paymentDetailsHtml = bankNameStr ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>` : '';
     const discountHtml = invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${discAmt}</span></div>` : '';
+    const notesHtml = localNotes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${localNotes.replace(/\n/g, '<br/>')}</div>` : '';
 
-    const completionPhotoHtml = invoice.completionPhotoUrl ? `
-      <div style="margin-top: 30px; page-break-inside: avoid;">
-        <h3 style="color: #374151; font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px;">Job Completion Proof</h3>
-        <img src="${invoice.completionPhotoUrl.startsWith('http') ? invoice.completionPhotoUrl : `${BASE_URL}${invoice.completionPhotoUrl}`}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1px solid #E5E7EB;" />
-      </div>
-    ` : '';
+    // Multiple photos grid dynamically rendered in PDF
+    const multiplePhotosHtml = photosArray.map(url => `<img src="${url.startsWith('http') ? url : `${BASE_URL}${url}`}" style="max-width: 48%; max-height: 250px; border-radius: 8px; border: 1px solid #E5E7EB; margin-right: 2%; margin-bottom: 10px; object-fit: cover;" />`).join('');
+    const completionDocsHtml = photosArray.length > 0 ? `<div style="margin-top: 30px; page-break-inside: avoid;"><h3 style="color: #374151; font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px;">Job Completion Proof</h3><div style="display: flex; flex-wrap: wrap;">${multiplePhotosHtml}</div></div>` : '';
 
-    // FIXED: Formatted the HTML perfectly to match the exact Business Layout you requested.
     return `
       <html>
         <head>
@@ -159,18 +137,17 @@ export default function InvoiceDetailScreen() {
             @page { margin: 0; }
             body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
             .header { display: flex; justify-content: space-between; align-items: flex-start; }
-            .logo { max-height: 100px; max-width: 200px; object-fit: contain; margin-bottom: 15px; }
-            .biz-details { font-size: 12px; color: #374151; line-height: 1.6; }
-            .biz-name { font-size: 16px; font-weight: 800; color: #111827; margin-bottom: 4px; }
-            .doc-meta { text-align: right; }
-            .doc-type { font-size: 28px; font-weight: 800; color: #6B7280; margin: 0 0 15px 0; letter-spacing: 1px; }
-            .divider { border-top: 2px solid #111827; margin: 25px 0; }
-            .bill-to-section { margin-bottom: 30px; }
-            .bill-to-title { color: #9CA3AF; font-weight: 700; font-size: 11px; margin-bottom: 6px; letter-spacing: 0.5px; }
-            .bill-to-details { font-size: 12px; color: #374151; line-height: 1.5; }
-            .items-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
+            .logo { max-height: 120px; max-width: 250px; object-fit: contain; }
+            .biz-details { text-align: right; font-size: 11px; color: #6B7280; line-height: 1.6; }
+            .title-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; }
+            .biz-name { font-size: 28px; font-weight: 800; color: #1F2937; margin: 0; }
+            .doc-type { font-size: 22px; font-weight: 800; color: #6B7280; margin: 0; }
+            .divider { border-top: 2px solid #111827; margin: 15px 0 25px 0; }
+            .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #374151; }
+            .bill-to-details { line-height: 1.6; }
+            .items-table { width: 100%; border-collapse: collapse; margin-top: 40px; font-size: 11px; }
             .items-table th { background-color: #1D4ED8; color: #ffffff; padding: 12px 10px; font-weight: 700; text-align: left; }
-            .items-table td { padding: 12px 10px; border-bottom: 1px solid #E5E7EB; }
+            .items-table td { padding: 12px 10px; color: #374151; border-bottom: 1px solid #E5E7EB; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
             .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid; }
@@ -180,39 +157,21 @@ export default function InvoiceDetailScreen() {
           </style>
         </head>
         <body>
-          <div class="header">
-            <div>
-              ${logoImg}
-              <div class="biz-details">
-                <div class="biz-name">${settings?.businessName || 'Get Handyman Pty Ltd'}</div>
-                ${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}
-                ${settings?.bizCityState ? `<div>City - ${settings.bizCityState}</div>` : ''}
-                ${settings?.bizPhone ? `<div>Phone - ${settings.bizPhone}</div>` : ''}
-                ${settings?.website ? `<div>Website - ${settings.website}</div>` : ''}
-              </div>
-            </div>
-            <div class="doc-meta">
-              <h2 class="doc-type">INVOICE</h2>
-              <div style="font-size: 11px; color: #6B7280; line-height: 1.6;">
-                <div><strong style="color: #9CA3AF;">Invoice No:</strong> ${invoiceNum}</div>
-                <div><strong style="color: #9CA3AF;">Date:</strong> ${invDate}</div>
-                <div><strong style="color: #9CA3AF;">Terms:</strong> ${termsStr}</div>
-                <div><strong style="color: #9CA3AF;">Due Date:</strong> ${dueDate}</div>
-              </div>
-            </div>
-          </div>
-          
+          <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${bizCityStr}</div><div>${bizPhoneStr}</div><div>${bizWebStr}</div></div></div>
+          <div class="title-row"><h1 class="biz-name">${bizNameStr}</h1><h2 class="doc-type">Invoice</h2></div>
           <div class="divider"></div>
-          
-          <div class="bill-to-section">
-            <div class="bill-to-title">BILL TO:</div>
-            <div class="bill-to-details">
-              <div style="font-weight: 700; font-size: 14px; color: #111827;">${customerName}</div>
-              ${customerPhoneHtml}
-              ${customerEmailHtml}
+          <div class="meta-row">
+            <div>
+              <div style="color: #9CA3AF; margin-bottom: 2px;">Bill To:</div>
+              <div class="bill-to-details"><div style="font-weight: 700; font-size: 14px;">${localCustomer}</div>${localEmail ? `<div>${localEmail}</div>` : ''}${localPhone ? `<div>${localPhone}</div>` : ''}${localAddress ? `<div style="margin-top: 4px;">${localAddress}</div>` : ''}</div>
+            </div>
+            <div style="text-align: right;">
+              <div><span style="color: #9CA3AF;">Invoice No:</span> ${invoice.number.replace('GH-', '')}</div>
+              <div><span style="color: #9CA3AF;">Date:</span> ${invDate}</div>
+              <div><span style="color: #9CA3AF;">Terms:</span> ${invoice.terms}</div>
+              <div><span style="color: #9CA3AF;">Due Date:</span> ${dueDate}</div>
             </div>
           </div>
-
           <table class="items-table">
             <tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>
             ${itemsHtml}
@@ -221,35 +180,33 @@ export default function InvoiceDetailScreen() {
             <div class="totals">
               <div class="totals-row"><span>Subtotal</span><span>$${subtotal}</span></div>
               ${discountHtml}
-              <div class="totals-row"><span>${invoice.totals?.applyGst ? `GST ${gstRate}%` : 'GST'}</span><span>${invoice.totals?.applyGst ? `$${gstAmt}` : '$0.00'}</span></div>
+              <div class="totals-row"><span>${invoice.totals?.applyGst ? `GST ${settings?.gstRate || 10}%` : 'GST'}</span><span>${invoice.totals?.applyGst ? `$${gstAmt}` : '$0.00'}</span></div>
               <div class="totals-row"><span>Total</span><span>$${totalDue}</span></div>
+              ${advanceHtml}
               <div class="totals-row"><span>Paid</span><span>$${isPaidAmt}</span></div>
               <div class="balance-due"><span>Balance Due</span><span>$${balanceAmt}</span></div>
             </div>
           </div>
           ${paymentDetailsHtml}
-          ${completionPhotoHtml}
+          ${notesHtml}
+          ${completionDocsHtml}
         </body>
       </html>
     `;
   };
 
   const handlePreviewPdf = () => {
-    const html = generateHTMLString();
-    navigation.navigate('PdfPreview', { html, title: `Invoice_${invoice.number}.pdf` });
+    navigation.navigate('PdfPreview', { html: generateHTMLString(), title: `Invoice_${invoice.number}.pdf` });
   };
 
   const handleSharePdf = async () => {
     try {
       showToast('Generating Document...');
-      const html = generateHTMLString();
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const { uri } = await Print.printToFileAsync({ html: generateHTMLString(), base64: false });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Invoice_${invoice.number}.pdf` });
       }
-    } catch (err) {
-      Alert.alert("PDF Error", "Could not share the PDF.");
-    }
+    } catch (err) { Alert.alert("PDF Error", "Could not share the PDF."); }
   };
 
   return (
@@ -260,32 +217,28 @@ export default function InvoiceDetailScreen() {
         <FieldLabel>Customer Details</FieldLabel>
         <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
         <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
-        <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+        <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" autoCapitalize="none" />
+        <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Billing Address" />
+
+        <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
+        <TextInput style={styles.input} value={localAdvancePaid} onChangeText={setLocalAdvancePaid} keyboardType="numeric" />
+
+        <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
+        <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline value={localNotes} onChangeText={setLocalNotes} />
 
         <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
           {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
         </Button>
 
         <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
-        <View style={{ marginBottom: 12 }}>
-          <PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} />
-        </View>
+        <View style={{ marginBottom: 12 }}><PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} /></View>
         
         <View style={styles.gstBox}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontWeight: '700', fontSize: 12.5, color: invoice.gstIncluded ? colors.green : colors.red }}>
-              {invoice.gstIncluded ? 'Reported income' : 'Cash Bonus'}
-            </Text>
+            <Text style={{ fontWeight: '700', fontSize: 12.5, color: invoice.gstIncluded ? colors.green : colors.red }}>{invoice.gstIncluded ? 'Reported income' : 'Cash Bonus'}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
               <Text style={{ fontSize: 11, color: colors.gray, marginRight: 8 }}>Include GST at</Text>
-              <TextInput
-                style={styles.gstInput}
-                value={localGstRate}
-                onChangeText={setLocalGstRate}
-                onBlur={handleSaveGstRate}
-                keyboardType="numeric"
-                editable={invoice.gstIncluded}
-              />
+              <TextInput style={styles.gstInput} value={localGstRate} onChangeText={setLocalGstRate} onBlur={() => { updateSettings({ gstRate: Number(localGstRate) || 0 }); showToast('GST Rate Updated'); }} keyboardType="numeric" editable={invoice.gstIncluded} />
               <Text style={{ fontSize: 11, color: colors.gray, marginLeft: 4 }}>%</Text>
             </View>
           </View>
@@ -297,25 +250,17 @@ export default function InvoiceDetailScreen() {
         <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
         <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
         
-        <FieldLabel style={{ marginTop: 24 }}>Job Completion Photo (Sent with PDF Invoice)</FieldLabel>
-        {invoice.completionPhotoUrl ? (
-          <View style={styles.photoAttachedBox}>
-            <PhotoUploadButton photoUrl={invoice.completionPhotoUrl} onUpload={() => {}} />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={{ fontSize: 11, color: colors.gray, marginBottom: 6 }}>Photo attached to PDF.</Text>
-              <Button variant="outline" style={{ borderColor: colors.red, paddingVertical: 6 }} onPress={async () => {
-                try {
-                  await invoiceService.updateInvoice(invoice._id, { completionPhotoUrl: null });
-                  showToast('Photo removed');
-                  refresh();
-                } catch(e) { Alert.alert('Error', 'Could not remove photo'); }
-              }}>
-                <Text style={{ color: colors.red, fontWeight: '700', fontSize: 12 }}>🗑️️ Remove Photo</Text>
-              </Button>
+        <FieldLabel style={{ marginTop: 24 }}>Job Completion Photos (Sent with PDF Invoice)</FieldLabel>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+          {photosArray.map((url, idx) => (
+            <View key={idx} style={styles.photoAttachedBox}>
+              <PhotoUploadButton photoUrl={url} onUpload={() => {}} />
+              <TouchableOpacity onPress={() => handleRemovePhoto(idx)} style={styles.removePhotoBtn}>
+                <Text style={{ color: colors.red, fontSize: 16, fontWeight: 'bold' }}>×</Text>
+              </TouchableOpacity>
             </View>
-          </View>
-        ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          ))}
+          <View style={styles.photoAttachedBox}>
             <PhotoUploadButton 
               onUpload={async (asset) => {
                 try {
@@ -325,51 +270,27 @@ export default function InvoiceDetailScreen() {
                 } catch (e) { Alert.alert('Error', 'Upload failed'); }
               }} 
             />
-            <Text style={{ fontSize: 11, color: colors.gray, flex: 1 }}>Tap the icon to attach a completion photo.</Text>
           </View>
-        )}
+        </View>
 
         <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
         <View style={styles.expenseCard}>
           <Text style={styles.cardTitle}>Materials</Text>
-          <CostItemsEditor
-            items={invoice.costs?.materials}
-            kind="materials"
-            onSetItems={(items) => setCostItems('materials', items)}
-            onUploadPhoto={async (idx, asset) => {
-              try {
-                await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset);
-                showToast('Material photo saved!');
-                refresh();
-              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
-            }}
-          />
+          <CostItemsEditor items={invoice.costs?.materials} kind="materials" onSetItems={(items) => setCostItems('materials', items)} onUploadPhoto={async (idx, asset) => { await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset); refresh(); }} />
           <View style={styles.divider} />
           <Text style={styles.cardTitle}>Other Expenses</Text>
-          <CostItemsEditor
-            items={invoice.costs?.other}
-            kind="other"
-            onSetItems={(items) => setCostItems('other', items)}
-            onUploadPhoto={async (idx, asset) => {
-              try {
-                await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset);
-                showToast('Expense photo saved!');
-                refresh();
-              } catch (e) { Alert.alert('Upload Failed', 'Could not save the photo.'); }
-            }}
-          />
+          <CostItemsEditor items={invoice.costs?.other} kind="other" onSetItems={(items) => setCostItems('other', items)} onUploadPhoto={async (idx, asset) => { await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset); refresh(); }} />
         </View>
 
         <InvoiceActions
-          isPaid={isPaid}
-          customerEmail={invoice.customerEmail}
+          isPaid={isPaid} customerEmail={invoice.customerEmail}
           onUpdateInvoice={handleUpdateInvoice}
           onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
           onPreviewPdf={handlePreviewPdf}
           onShare={handleSharePdf}
         />
 
-        <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={handleDeleteInvoice}>
+        <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={() => Alert.alert("Delete", "Delete?", [{ text: "Cancel" }, { text: "Delete", onPress: async () => { await invoiceService.deleteInvoice(invoice._id); navigation.navigate('InvoicesList'); } }])}>
           <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
         </Button>
       </ScrollView>
@@ -379,12 +300,13 @@ export default function InvoiceDetailScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
+  content: { padding: 16, paddingBottom: 40 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 8, color: colors.charcoal },
   divider: { borderTopWidth: 1, borderTopColor: colors.grayLight, marginVertical: 12 },
   expenseCard: { backgroundColor: colors.blueTint, borderRadius: 10, padding: 14, marginTop: 6 },
   cardTitle: { fontWeight: '800', fontSize: 12.5, color: colors.blue, marginBottom: 10 },
   gstBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.grayLight, marginBottom: 14 },
   gstInput: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, fontSize: 12, width: 45, textAlign: 'center', backgroundColor: '#fff' },
-  photoAttachedBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.offwhite, padding: 12, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: colors.grayLight }
+  photoAttachedBox: { alignItems: 'center', backgroundColor: colors.offwhite, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.grayLight, position: 'relative' },
+  removePhotoBtn: { position: 'absolute', top: -6, right: -6, backgroundColor: '#fff', borderRadius: 12, width: 24, height: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.redTint }
 });

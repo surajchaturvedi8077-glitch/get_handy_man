@@ -7,19 +7,16 @@ import MaterialsEditor from './MaterialsEditor';
 import { colors } from '../../theme/colors';
 
 export default function JobDetailForm({ job, onSave }) {
-  const initialServices = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : ['']);
-
-  // NEW: Customer Edit State
-  const [name, setName] = useState(job.name || '');
-  const [phone, setPhone] = useState(job.phone || '');
-  const [email, setEmail] = useState(job.email || '');
+  const initialServices = (job.services && job.services.length > 0) 
+    ? job.services.map(s => typeof s === 'string' ? { name: s, amt: '0' } : { name: s.name, amt: String(s.amt || '0') }) 
+    : [{ name: job.service || 'General Handyman', amt: String(job.labour || '0') }];
 
   const [services, setServices] = useState(initialServices);
   const [when, setWhen] = useState(job.when || '');
   const [exactTime, setExactTime] = useState(job.exactTime || '');
   const [scheduledDate, setScheduledDate] = useState(job.scheduledDate || null);
   const [address, setAddress] = useState(job.address || '');
-  const [labour, setLabour] = useState(String(job.labour || 0));
+  const [advancePaid, setAdvancePaid] = useState(String(job.advancePaid || 0)); // NEW
   const [notes, setNotes] = useState(job.notes || '');
   const [materials, setMaterials] = useState(job.materials || []);
   const [saving, setSaving] = useState(false);
@@ -29,20 +26,18 @@ export default function JobDetailForm({ job, onSave }) {
   const [tempDate, setTempDate] = useState(new Date());
   const [dateObj, setDateObj] = useState(job.scheduledDate ? new Date(job.scheduledDate) : new Date());
 
+  const labourTotal = services.reduce((sum, s) => sum + (Number(s.amt) || 0), 0);
+
   const formatSafeDate = (d) => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
   };
 
-  const openPicker = () => {
-    setPickerMode(Platform.OS === 'ios' ? 'datetime' : 'date');
-    setShowPicker(true);
-  };
+  const openPicker = () => { setPickerMode(Platform.OS === 'ios' ? 'datetime' : 'date'); setShowPicker(true); };
 
   const onDateChange = (event, selectedDate) => {
     if (Platform.OS === 'android') setShowPicker(false);
-
     if (event.type === 'set' && selectedDate) {
       if (Platform.OS === 'android' && pickerMode === 'date') {
         setTempDate(selectedDate);
@@ -63,7 +58,6 @@ export default function JobDetailForm({ job, onSave }) {
         const ampm = hrs >= 12 ? 'PM' : 'AM';
         hrs = hrs % 12 || 12;
         setExactTime(`${hrs}:${mins} ${ampm}`);
-
         setScheduledDate(finalDate.toISOString());
       }
     }
@@ -72,84 +66,48 @@ export default function JobDetailForm({ job, onSave }) {
   async function handleSave() {
     setSaving(true);
     try {
-      const validServices = services.filter(Boolean);
+      const formattedServices = services.filter(s => s.name).map(s => ({ name: s.name, amt: Number(s.amt) || 0 }));
       await onSave({ 
-        name,
-        phone,
-        email,
-        services: validServices, 
-        service: validServices.length > 0 ? validServices[0] : 'General Handyman',
-        when, 
-        exactTime,
-        scheduledDate,
-        address, 
-        labour: Number(labour) || 0, 
-        notes, 
-        materials 
+        services: formattedServices, 
+        service: formattedServices.length > 0 ? formattedServices[0].name : 'General Handyman',
+        when, exactTime, scheduledDate, address, 
+        advancePaid: Number(advancePaid) || 0, // NEW
+        labour: labourTotal, notes, materials 
       });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   return (
     <View>
-      {/* NEW: Customer Details Editable Inputs */}
-      <FieldLabel>Customer Details</FieldLabel>
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Customer Name" />
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={phone} onChangeText={setPhone} placeholder="Phone Number" keyboardType="phone-pad" />
-        <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={email} onChangeText={setEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
-      </View>
-
-      <FieldLabel style={{ marginTop: 14 }}>Services</FieldLabel>
+      <FieldLabel>Line Items (Services)</FieldLabel>
       {services.map((srv, idx) => (
         <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-          <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv} onChangeText={v => { const s = [...services]; s[idx] = v; setServices(s); }} placeholder="e.g. Plumbing Repair" />
+          <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv.name} onChangeText={v => { const s = [...services]; s[idx].name = v; setServices(s); }} placeholder="Service Description" />
+          <TextInput style={[styles.input, { width: 80, marginTop: 0 }]} value={srv.amt} onChangeText={v => { const s = [...services]; s[idx].amt = v; setServices(s); }} placeholder="Amt" keyboardType="numeric" />
           <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
         </View>
       ))}
-      <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, ''])}>+ Add another service</Button>
+      <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, { name: '', amt: '' }])}>+ Add service line</Button>
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <View style={{ flex: 1 }}>
-          <FieldLabel>Schedule (Date)</FieldLabel>
-          <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
-            <View style={[styles.input, { justifyContent: 'center', height: 42, marginTop: 0 }]}>
-              <Text style={{ color: when ? colors.charcoal : colors.gray, fontSize: 13 }}>{when || "Tap to select date"}</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-        <View style={{ flex: 1 }}>
-          <FieldLabel>Exact Time</FieldLabel>
-          <TextInput value={exactTime} onChangeText={setExactTime} placeholder="e.g. 10:30 AM" style={[styles.input, { marginTop: 0 }]} />
-        </View>
+        <View style={{ flex: 1 }}><FieldLabel>Schedule (Date)</FieldLabel><TouchableOpacity onPress={openPicker} activeOpacity={0.7}><View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: when ? colors.charcoal : colors.gray, fontSize: 13 }}>{when || "Tap to select date"}</Text></View></TouchableOpacity></View>
+        <View style={{ flex: 1 }}><FieldLabel>Exact Time</FieldLabel><TextInput value={exactTime} onChangeText={setExactTime} placeholder="e.g. 10:30 AM" style={styles.input} /></View>
       </View>
 
-      <FieldLabel style={{ marginTop: 14 }}>Address</FieldLabel>
-      <TextInput value={address} onChangeText={setAddress} style={[styles.input, { marginTop: 0 }]} />
+      <FieldLabel>Address</FieldLabel>
+      <TextInput value={address} onChangeText={setAddress} style={styles.input} />
 
-      <FieldLabel style={{ marginTop: 14 }}>Labour Cost (A$)</FieldLabel>
-      <TextInput value={labour} onChangeText={setLabour} keyboardType="numeric" style={[styles.input, { marginTop: 0 }]} />
+      <FieldLabel>Advance / Deposit Paid (A$)</FieldLabel>
+      <TextInput value={advancePaid} onChangeText={setAdvancePaid} keyboardType="numeric" style={styles.input} />
 
-      <FieldLabel style={{ marginTop: 14 }}>Notes</FieldLabel>
-      <TextInput value={notes} onChangeText={setNotes} multiline style={[styles.input, styles.notesInput, { marginTop: 0 }]} />
-
-      <FieldLabel style={{ marginTop: 14 }}>Materials</FieldLabel>
-      <MaterialsEditor materials={materials} onChange={setMaterials} />
+      <FieldLabel>Notes (Shown on PDF)</FieldLabel>
+      <TextInput value={notes} onChangeText={setNotes} multiline style={[styles.input, styles.notesInput]} />
 
       <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginTop: 16 }}>
         {saving ? 'Saving…' : 'Save job details'}
       </Button>
 
-      {showPicker && (
-        <DateTimePicker 
-          value={pickerMode === 'time' ? tempDate : dateObj} 
-          mode={pickerMode} 
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'} 
-          onChange={onDateChange} 
-        />
-      )}
+      {showPicker && <DateTimePicker value={pickerMode === 'time' ? tempDate : dateObj} mode={pickerMode} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />}
     </View>
   );
 }

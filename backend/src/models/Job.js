@@ -1,32 +1,34 @@
 const mongoose = require('mongoose');
 
-const materialSchema = new mongoose.Schema({ name: String, cost: { type: Number, default: 0 } }, { _id: false });
-const extraFieldSchema = new mongoose.Schema({ label: String, value: String }, { _id: false });
+const jobServiceSchema = new mongoose.Schema({ 
+  name: { type: String, required: true }, 
+  amt: { type: Number, default: 0 } 
+}, { _id: false });
+
+const costItemSchema = new mongoose.Schema({ 
+  name: { type: String, required: true }, 
+  cost: { type: Number, default: 0 }, 
+  photoUrl: { type: String, default: null } 
+}, { _id: false });
 
 const jobSchema = new mongoose.Schema(
   {
-    enquiryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enquiry', default: null },
     name: { type: String, required: true },
     phone: String,
     email: String,
-    services: { type: [String], default: [] }, 
-    service: String, 
+    address: String,
     when: String,
     exactTime: String,
     scheduledDate: Date,
-    address: { type: String, required: true },
-    suburb: String,
-    postcode: String,
-    // NEW: Capture exact GPS coordinates for Google Maps pin-drop routing
-    lat: { type: Number, default: null },
-    lng: { type: Number, default: null },
-    attachmentUrl: String,
-    status: { type: String, enum: ['accepted', 'confirmed', 'complete'], default: 'accepted' },
-    needsDetails: { type: Boolean, default: true },
-    materials: [materialSchema],
-    extraFields: [extraFieldSchema],
+    service: String,
+    services: [jobServiceSchema], 
     labour: { type: Number, default: 0 },
+    advancePaid: { type: Number, default: 0 },
     notes: String,
+    materials: [costItemSchema],
+    extraFields: [{ label: String, value: String }],
+    status: { type: String, enum: ['pending', 'accepted', 'confirmed', 'complete'], default: 'accepted' },
+    needsDetails: { type: Boolean, default: false },
     invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
   },
   { timestamps: true }

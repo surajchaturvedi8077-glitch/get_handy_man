@@ -165,11 +165,17 @@ const uploadCompletionPhoto = asyncHandler(async (req, res) => {
     throw new Error('No photo uploaded');
   }
   const invoice = await findInvoiceOr404(res, req.params.id);
-  invoice.completionPhotoUrl = `/uploads/${req.file.filename}`;
+  
+  const newPhoto = `/uploads/${req.file.filename}`;
+  if (!invoice.completionPhotos) invoice.completionPhotos = [];
+  
+  // FIXED: Pushes new photos into an array so you can have as many as you want
+  invoice.completionPhotos.push(newPhoto);
+  invoice.completionPhotoUrl = newPhoto; 
+  
   await invoice.save();
   ok(res, await withTotals(invoice));
 });
-
 module.exports = {
   listInvoices,
   getInvoice,
