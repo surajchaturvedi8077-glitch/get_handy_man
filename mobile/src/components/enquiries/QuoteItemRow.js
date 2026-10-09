@@ -24,7 +24,7 @@ export default function QuoteItemRow({ item, onChange, onRemove }) {
         onChangeText={setName}
         onBlur={commitChanges}
         style={[styles.input, { flex: 1 }]}
-        placeholder="Item Name"
+        placeholder="Description"
       />
       <TextInput
         value={amt}

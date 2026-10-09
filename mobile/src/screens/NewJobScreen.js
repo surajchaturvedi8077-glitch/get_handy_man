@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert, KeyboardAvoidingView } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import ScreenHeader from '../components/layout/ScreenHeader';
@@ -53,7 +53,7 @@ export default function NewJobScreen() {
         scheduledDate: form.scheduledDate || new Date().toISOString(),
         address: safeAddress,
         labour: labourTotal,
-        advancePaid: Number(form.advancePaid) || 0, // NEW
+        advancePaid: Number(form.advancePaid) || 0, 
         services: formattedServices,
         service: formattedServices.length > 0 ? formattedServices[0].name : 'General Handyman',
         status: 'confirmed',
@@ -129,80 +129,81 @@ export default function NewJobScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader title="NEW JOB" onBack={() => navigation.navigate('Dashboard')} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        
-        <View style={styles.customerStrip}>
-          <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
-          <View style={{ flex: 1 }}>
-            <TextInput style={styles.nameInput} placeholder="Customer name" placeholderTextColor={colors.gray} value={form.name} onChangeText={(val) => updateForm('name', val)} />
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📞</Text>
-          <View style={{ flex: 1 }}>
-            <FieldLabel>Phone & Email</FieldLabel>
-            <TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholder="Phone Number" />
-            <TextInput style={[styles.input, { marginTop: 8 }]} value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="Email Address" />
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📅</Text>
-          <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
-            <View style={{ flex: 1 }}>
-              <FieldLabel>Date</FieldLabel>
-              <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
-                <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Select"}</Text></View>
-              </TouchableOpacity>
-            </View>
-            <View style={{ flex: 1 }}>
-              <FieldLabel>Exact Time</FieldLabel>
-              <TextInput style={styles.input} value={form.exactTime} onChangeText={v => updateForm('exactTime', v)} placeholder="e.g. 10:30 AM" />
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.fieldRow}>
-          <Text style={styles.icon}>📍</Text>
-          <View style={{ flex: 1, zIndex: 10 }}>
-            <FieldLabel>Street Address</FieldLabel>
-            <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
-            {suggestions.length > 0 && (
-              <View style={styles.dropdown}>
-                {suggestions.map((item) => (
-                  <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
-                    <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        </View>
-
-        <View style={[styles.detailsCard, { zIndex: -1 }]}>
-          <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           
-          <FieldLabel>Line Items (Services)</FieldLabel>
-          {services.map((srv, idx) => (
-            <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv.name} onChangeText={v => { const s = [...services]; s[idx].name = v; setServices(s); }} placeholder="Service Description" />
-              <TextInput style={[styles.input, { width: 80, marginTop: 0 }]} value={srv.amt} onChangeText={v => { const s = [...services]; s[idx].amt = v; setServices(s); }} placeholder="Amt" keyboardType="numeric" />
-              <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+          <View style={styles.customerStrip}>
+            <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
+            <View style={{ flex: 1 }}>
+              <TextInput style={styles.nameInput} placeholder="Customer name" placeholderTextColor={colors.gray} value={form.name} onChangeText={(val) => updateForm('name', val)} />
             </View>
-          ))}
-          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, { name: '', amt: '' }])}>+ Add service line</Button>
+          </View>
 
-          <FieldLabel>Advance / Deposit Paid (A$)</FieldLabel>
-          <TextInput style={styles.input} value={form.advancePaid} onChangeText={v => updateForm('advancePaid', v)} keyboardType="numeric" />
+          <View style={styles.fieldRow}>
+            <Text style={styles.icon}>📞</Text>
+            <View style={{ flex: 1 }}>
+              <FieldLabel>Phone & Email</FieldLabel>
+              <TextInput style={styles.input} value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholder="Phone Number" />
+              <TextInput style={[styles.input, { marginTop: 8 }]} value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholder="Email Address" />
+            </View>
+          </View>
 
-          <FieldLabel>Notes (Shown on PDF)</FieldLabel>
-          <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Private notes for yourself..." value={form.notes} onChangeText={v => updateForm('notes', v)} />
+          <View style={styles.fieldRow}>
+            <Text style={styles.icon}>📅</Text>
+            <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <FieldLabel>Date</FieldLabel>
+                <TouchableOpacity onPress={openPicker} activeOpacity={0.7}>
+                  <View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: form.when ? colors.charcoal : colors.gray, fontSize: 13 }}>{form.when || "Select"}</Text></View>
+                </TouchableOpacity>
+              </View>
+              <View style={{ flex: 1 }}>
+                <FieldLabel>Exact Time</FieldLabel>
+                <TextInput style={styles.input} value={form.exactTime} onChangeText={v => updateForm('exactTime', v)} placeholder="e.g. 10:30 AM" />
+              </View>
+            </View>
+          </View>
 
-          <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
-        </View>
-      </ScrollView>
+          <View style={styles.fieldRow}>
+            <Text style={styles.icon}>📍</Text>
+            <View style={{ flex: 1, zIndex: 10 }}>
+              <FieldLabel>Street Address</FieldLabel>
+              <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
+              {suggestions.length > 0 && (
+                <View style={styles.dropdown}>
+                  {suggestions.map((item) => (
+                    <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
+                      <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
 
+          <View style={[styles.detailsCard, { zIndex: -1 }]}>
+            <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
+            
+            <FieldLabel>Service Description / Line Items</FieldLabel>
+            {services.map((srv, idx) => (
+              <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv.name} onChangeText={v => { const s = [...services]; s[idx].name = v; setServices(s); }} placeholder="Description" />
+                <TextInput style={[styles.input, { width: 80, marginTop: 0 }]} value={srv.amt} onChangeText={v => { const s = [...services]; s[idx].amt = v; setServices(s); }} placeholder="Amt" keyboardType="numeric" />
+                <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+              </View>
+            ))}
+            <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, { name: '', amt: '' }])}>+ Add service line</Button>
+
+            <FieldLabel>Advance / Deposit Paid (A$)</FieldLabel>
+            <TextInput style={styles.input} value={form.advancePaid} onChangeText={v => updateForm('advancePaid', v)} keyboardType="numeric" />
+
+            <FieldLabel>Notes (Shown on PDF)</FieldLabel>
+            <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Private notes for yourself..." value={form.notes} onChangeText={v => updateForm('notes', v)} />
+
+            <Button variant="primary" style={{ marginTop: 12 }} onPress={handleCreateJob} disabled={saving}>{saving ? 'Saving...' : 'Create job'}</Button>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
       {showPicker && <DateTimePicker value={pickerMode === 'time' ? tempDate : dateObj} mode={pickerMode} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} />}
     </View>
   );

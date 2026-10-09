@@ -11,12 +11,16 @@ export default function JobDetailForm({ job, onSave }) {
     ? job.services.map(s => typeof s === 'string' ? { name: s, amt: '0' } : { name: s.name, amt: String(s.amt || '0') }) 
     : [{ name: job.service || 'General Handyman', amt: String(job.labour || '0') }];
 
+  const [name, setName] = useState(job.name || '');
+  const [phone, setPhone] = useState(job.phone || '');
+  const [email, setEmail] = useState(job.email || '');
+
   const [services, setServices] = useState(initialServices);
   const [when, setWhen] = useState(job.when || '');
   const [exactTime, setExactTime] = useState(job.exactTime || '');
   const [scheduledDate, setScheduledDate] = useState(job.scheduledDate || null);
   const [address, setAddress] = useState(job.address || '');
-  const [advancePaid, setAdvancePaid] = useState(String(job.advancePaid || 0)); // NEW
+  const [advancePaid, setAdvancePaid] = useState(String(job.advancePaid || 0)); 
   const [notes, setNotes] = useState(job.notes || '');
   const [materials, setMaterials] = useState(job.materials || []);
   const [saving, setSaving] = useState(false);
@@ -68,10 +72,11 @@ export default function JobDetailForm({ job, onSave }) {
     try {
       const formattedServices = services.filter(s => s.name).map(s => ({ name: s.name, amt: Number(s.amt) || 0 }));
       await onSave({ 
+        name, phone, email, // FIXED: Now passes editable customer info!
         services: formattedServices, 
         service: formattedServices.length > 0 ? formattedServices[0].name : 'General Handyman',
         when, exactTime, scheduledDate, address, 
-        advancePaid: Number(advancePaid) || 0, // NEW
+        advancePaid: Number(advancePaid) || 0,
         labour: labourTotal, notes, materials 
       });
     } finally { setSaving(false); }
@@ -79,15 +84,20 @@ export default function JobDetailForm({ job, onSave }) {
 
   return (
     <View>
-      <FieldLabel>Line Items (Services)</FieldLabel>
+      <FieldLabel>Customer Details</FieldLabel>
+      <TextInput value={name} onChangeText={setName} style={styles.input} placeholder="Customer Name" />
+      <TextInput value={phone} onChangeText={setPhone} style={styles.input} placeholder="Phone Number" keyboardType="phone-pad" />
+      <TextInput value={email} onChangeText={setEmail} style={styles.input} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+
+      <FieldLabel style={{ marginTop: 10 }}>Description (Services)</FieldLabel>
       {services.map((srv, idx) => (
         <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-          <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv.name} onChangeText={v => { const s = [...services]; s[idx].name = v; setServices(s); }} placeholder="Service Description" />
+          <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={srv.name} onChangeText={v => { const s = [...services]; s[idx].name = v; setServices(s); }} placeholder="Description" />
           <TextInput style={[styles.input, { width: 80, marginTop: 0 }]} value={srv.amt} onChangeText={v => { const s = [...services]; s[idx].amt = v; setServices(s); }} placeholder="Amt" keyboardType="numeric" />
           <TouchableOpacity onPress={() => setServices(services.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
         </View>
       ))}
-      <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, { name: '', amt: '' }])}>+ Add service line</Button>
+      <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setServices([...services, { name: '', amt: '' }])}>+ Add description line</Button>
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <View style={{ flex: 1 }}><FieldLabel>Schedule (Date)</FieldLabel><TouchableOpacity onPress={openPicker} activeOpacity={0.7}><View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: when ? colors.charcoal : colors.gray, fontSize: 13 }}>{when || "Tap to select date"}</Text></View></TouchableOpacity></View>

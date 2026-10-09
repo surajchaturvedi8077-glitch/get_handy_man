@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard, TouchableOpacity } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, Alert, TextInput, Keyboard, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -59,8 +59,6 @@ export default function InvoiceDetailScreen() {
   if (error) return <View style={styles.screen}><ErrorState>{error}</ErrorState></View>;
 
   const isPaid = invoice.status === 'paid';
-  
-  // Gathers all completion photos securely
   const photosArray = invoice.completionPhotos?.length > 0 ? invoice.completionPhotos : (invoice.completionPhotoUrl ? [invoice.completionPhotoUrl] : []);
 
   const handleUpdateInvoice = async () => {
@@ -125,7 +123,6 @@ export default function InvoiceDetailScreen() {
     const discountHtml = invoice.totals?.discAmt > 0 ? `<div class="totals-row"><span>Discount</span><span>-$${discAmt}</span></div>` : '';
     const notesHtml = localNotes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${localNotes.replace(/\n/g, '<br/>')}</div>` : '';
 
-    // Multiple photos grid dynamically rendered in PDF
     const multiplePhotosHtml = photosArray.map(url => `<img src="${url.startsWith('http') ? url : `${BASE_URL}${url}`}" style="max-width: 48%; max-height: 250px; border-radius: 8px; border: 1px solid #E5E7EB; margin-right: 2%; margin-bottom: 10px; object-fit: cover;" />`).join('');
     const completionDocsHtml = photosArray.length > 0 ? `<div style="margin-top: 30px; page-break-inside: avoid;"><h3 style="color: #374151; font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px;">Job Completion Proof</h3><div style="display: flex; flex-wrap: wrap;">${multiplePhotosHtml}</div></div>` : '';
 
@@ -195,105 +192,91 @@ export default function InvoiceDetailScreen() {
     `;
   };
 
-  const handlePreviewPdf = () => {
-    navigation.navigate('PdfPreview', { html: generateHTMLString(), title: `Invoice_${invoice.number}.pdf` });
-  };
-
-  const handleSharePdf = async () => {
-    try {
-      showToast('Generating Document...');
-      const { uri } = await Print.printToFileAsync({ html: generateHTMLString(), base64: false });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Invoice_${invoice.number}.pdf` });
-      }
-    } catch (err) { Alert.alert("PDF Error", "Could not share the PDF."); }
-  };
-
   return (
     <View style={styles.screen}>
-      <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => navigation.navigate('InvoicesList')} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        
-        <FieldLabel>Customer Details</FieldLabel>
-        <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
-        <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
-        <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" autoCapitalize="none" />
-        <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Billing Address" />
+      {/* FIXED: Check navigation history before falling back to InvoiceList */}
+      <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => { navigation.canGoBack() ? navigation.goBack() : navigation.navigate('InvoicesList') }} />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          
+          <FieldLabel>Customer Details</FieldLabel>
+          <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
+          <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+          <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" autoCapitalize="none" />
+          <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Billing Address" />
 
-        <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
-        <TextInput style={styles.input} value={localAdvancePaid} onChangeText={setLocalAdvancePaid} keyboardType="numeric" />
+          <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
+          <TextInput style={styles.input} value={localAdvancePaid} onChangeText={setLocalAdvancePaid} keyboardType="numeric" />
 
-        <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
-        <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline value={localNotes} onChangeText={setLocalNotes} />
+          <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
+          <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline value={localNotes} onChangeText={setLocalNotes} />
 
-        <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
-          {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
-        </Button>
+          <Button variant="outline" style={{ marginTop: 4, marginBottom: 16 }} onPress={handleUpdateInvoice} disabled={savingInvoice}>
+            {savingInvoice ? "Saving..." : "💾 Save Customer Details"}
+          </Button>
 
-        <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
-        <View style={{ marginBottom: 12 }}><PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} /></View>
-        
-        <View style={styles.gstBox}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontWeight: '700', fontSize: 12.5, color: invoice.gstIncluded ? colors.green : colors.red }}>{invoice.gstIncluded ? 'Reported income' : 'Cash Bonus'}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-              <Text style={{ fontSize: 11, color: colors.gray, marginRight: 8 }}>Include GST at</Text>
-              <TextInput style={styles.gstInput} value={localGstRate} onChangeText={setLocalGstRate} onBlur={() => { updateSettings({ gstRate: Number(localGstRate) || 0 }); showToast('GST Rate Updated'); }} keyboardType="numeric" editable={invoice.gstIncluded} />
-              <Text style={{ fontSize: 11, color: colors.gray, marginLeft: 4 }}>%</Text>
+          <FieldLabel style={{ marginBottom: 6 }}>Payment mode</FieldLabel>
+          <View style={{ marginBottom: 12 }}><PaymentModeSelector value={invoice.paymentMode} onChange={setPaymentMode} /></View>
+          
+          <View style={styles.gstBox}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: '700', fontSize: 12.5, color: invoice.gstIncluded ? colors.green : colors.red }}>{invoice.gstIncluded ? 'Reported income' : 'Cash Bonus'}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <Text style={{ fontSize: 11, color: colors.gray, marginRight: 8 }}>Include GST at</Text>
+                <TextInput style={styles.gstInput} value={localGstRate} onChangeText={setLocalGstRate} onBlur={() => { updateSettings({ gstRate: Number(localGstRate) || 0 }); showToast('GST Rate Updated'); }} keyboardType="numeric" editable={invoice.gstIncluded} />
+                <Text style={{ fontSize: 11, color: colors.gray, marginLeft: 4 }}>%</Text>
+              </View>
             </View>
+            <Toggle on={invoice.gstIncluded} onToggle={toggleGstIncluded} />
           </View>
-          <Toggle on={invoice.gstIncluded} onToggle={toggleGstIncluded} />
-        </View>
 
-        <InvoiceLineItemsEditor items={invoice.items} onChange={updateItems} />
-        <View style={styles.divider} />
-        <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
-        <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
-        
-        <FieldLabel style={{ marginTop: 24 }}>Job Completion Photos (Sent with PDF Invoice)</FieldLabel>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
-          {photosArray.map((url, idx) => (
-            <View key={idx} style={styles.photoAttachedBox}>
-              <PhotoUploadButton photoUrl={url} onUpload={() => {}} />
-              <TouchableOpacity onPress={() => handleRemovePhoto(idx)} style={styles.removePhotoBtn}>
-                <Text style={{ color: colors.red, fontSize: 16, fontWeight: 'bold' }}>×</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-          <View style={styles.photoAttachedBox}>
-            <PhotoUploadButton 
-              onUpload={async (asset) => {
-                try {
-                  await invoiceService.uploadCompletionPhoto(invoice._id, asset);
-                  showToast('Completion photo attached!');
-                  refresh();
-                } catch (e) { Alert.alert('Error', 'Upload failed'); }
-              }} 
-            />
-          </View>
-        </View>
-
-        <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
-        <View style={styles.expenseCard}>
-          <Text style={styles.cardTitle}>Materials</Text>
-          <CostItemsEditor items={invoice.costs?.materials} kind="materials" onSetItems={(items) => setCostItems('materials', items)} onUploadPhoto={async (idx, asset) => { await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset); refresh(); }} />
+          <InvoiceLineItemsEditor items={invoice.items} onChange={updateItems} />
           <View style={styles.divider} />
-          <Text style={styles.cardTitle}>Other Expenses</Text>
-          <CostItemsEditor items={invoice.costs?.other} kind="other" onSetItems={(items) => setCostItems('other', items)} onUploadPhoto={async (idx, asset) => { await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset); refresh(); }} />
-        </View>
+          <DiscountEditor discount={invoice.discount} onChange={setDiscount} />
+          <InvoiceTotals totals={invoice.totals} discount={invoice.discount} gstRate={settings?.gstRate || 10} />
+          
+          <FieldLabel style={{ marginTop: 24 }}>Job Completion Photos (Sent with PDF Invoice)</FieldLabel>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+            {photosArray.map((url, idx) => (
+              <View key={idx} style={styles.photoAttachedBox}>
+                <PhotoUploadButton photoUrl={url} onUpload={() => {}} />
+                <TouchableOpacity onPress={async () => {
+                  const newPhotos = photosArray.filter((_, i) => i !== idx);
+                  await invoiceService.updateInvoice(invoice._id, { completionPhotos: newPhotos, completionPhotoUrl: newPhotos.length > 0 ? newPhotos[0] : null });
+                  refresh();
+                }} style={styles.removePhotoBtn}><Text style={{ color: colors.red, fontSize: 16, fontWeight: 'bold' }}>×</Text></TouchableOpacity>
+              </View>
+            ))}
+            <View style={styles.photoAttachedBox}>
+              <PhotoUploadButton onUpload={async (asset) => { await invoiceService.uploadCompletionPhoto(invoice._id, asset); refresh(); }} />
+            </View>
+          </View>
 
-        <InvoiceActions
-          isPaid={isPaid} customerEmail={invoice.customerEmail}
-          onUpdateInvoice={handleUpdateInvoice}
-          onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
-          onPreviewPdf={handlePreviewPdf}
-          onShare={handleSharePdf}
-        />
+          <FieldLabel style={{ marginTop: 20 }}>Internal Tracking (Not on PDF)</FieldLabel>
+          <View style={styles.expenseCard}>
+            <Text style={styles.cardTitle}>Materials</Text>
+            <CostItemsEditor items={invoice.costs?.materials} kind="materials" onSetItems={(items) => setCostItems('materials', items)} onUploadPhoto={async (idx, asset) => { await invoiceService.uploadCostItemPhoto(invoice._id, 'materials', idx, asset); refresh(); }} />
+            <View style={styles.divider} />
+            <Text style={styles.cardTitle}>Other Expenses</Text>
+            <CostItemsEditor items={invoice.costs?.other} kind="other" onSetItems={(items) => setCostItems('other', items)} onUploadPhoto={async (idx, asset) => { await invoiceService.uploadCostItemPhoto(invoice._id, 'other', idx, asset); refresh(); }} />
+          </View>
 
-        <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={() => Alert.alert("Delete", "Delete?", [{ text: "Cancel" }, { text: "Delete", onPress: async () => { await invoiceService.deleteInvoice(invoice._id); navigation.navigate('InvoicesList'); } }])}>
-          <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
-        </Button>
-      </ScrollView>
+          <InvoiceActions
+            isPaid={isPaid} customerEmail={invoice.customerEmail}
+            onUpdateInvoice={handleUpdateInvoice}
+            onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
+            onPreviewPdf={() => navigation.navigate('PdfPreview', { html: generateHTMLString(), title: `Invoice_${invoice.number}.pdf` })}
+            onShare={async () => {
+              const { uri } = await Print.printToFileAsync({ html: generateHTMLString(), base64: false });
+              Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Invoice_${invoice.number}.pdf` });
+            }}
+          />
+
+          <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={() => Alert.alert("Delete", "Delete?", [{ text: "Cancel" }, { text: "Delete", onPress: async () => { await invoiceService.deleteInvoice(invoice._id); navigation.navigate('InvoicesList'); } }])}>
+            <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Invoice</Text>
+          </Button>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

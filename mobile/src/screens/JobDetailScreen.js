@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, ScrollView, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -12,6 +12,7 @@ import useJob from '../hooks/useJob';
 import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { openPhone, openEmail, openMaps } from '../utils/linking';
+import { money } from '../utils/money';
 import { colors } from '../theme/colors';
 import * as invoiceService from '../services/invoiceService';
 
@@ -182,98 +183,100 @@ export default function JobDetailScreen() {
     <View style={styles.screen}>
       <ScreenHeader 
         title="JOB DETAILS" 
-        onBack={() => navigation.navigate('JobsList')} 
+        onBack={() => { navigation.canGoBack() ? navigation.goBack() : navigation.navigate('JobsList') }} 
         rightAction={
           <TouchableOpacity onPress={() => setOptionsOpen(true)} style={{ padding: 4 }}><Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>⋮</Text></TouchableOpacity>
         } 
       />
-      <ScrollView contentContainerStyle={styles.content}>
-        
-        <View style={styles.customerStrip}>
-          <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.customerName}>{job.name}</Text>
-            <JobStatusBadge job={job} />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          
+          <View style={styles.customerStrip}>
+            <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.customerName}>{job.name}</Text>
+              <JobStatusBadge job={job} />
+            </View>
+            <TouchableOpacity style={styles.actionIcon} onPress={() => openPhone(job.phone)}><Text>📞</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.actionIcon} onPress={() => openEmail(job.email)}><Text>✉️</Text></TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.actionIcon} onPress={() => openPhone(job.phone)}><Text>📞</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.actionIcon} onPress={() => openEmail(job.email)}><Text>✉️</Text></TouchableOpacity>
-        </View>
 
-        <View style={styles.divider} />
+          <View style={styles.divider} />
 
-        {job.needsDetails || isEditingJob ? (
-          <JobDetailForm job={job} onSave={handleSaveDetails} />
-        ) : (
-          <>
-            <View style={styles.fieldRow}>
-              <Text style={styles.icon}>📅</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Date & time</Text>
-                <Text style={styles.value}>{job.when || 'Not set'} {job.exactTime ? ` at ${job.exactTime}` : ''}</Text>
-              </View>
-            </View>
-
-            <View style={styles.fieldRow}>
-              <Text style={styles.icon}>📍</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Location</Text>
-                <Text style={styles.value}>{job.address}</Text>
-              </View>
-              <Button variant="outline" style={{ paddingVertical: 6, paddingHorizontal: 12 }} onPress={() => openMaps(job.address)}>Locate</Button>
-            </View>
-
-            <View style={styles.fieldRow}>
-              <Text style={styles.icon}>📝</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Services & Line Items</Text>
-                {job.services && job.services.length > 0 ? (
-                  job.services.map((s, i) => (
-                    <Text key={i} style={styles.value}>• {s.name} (${s.amt})</Text>
-                  ))
-                ) : (
-                  <Text style={styles.value}>{job.service || 'None'}</Text>
-                )}
-              </View>
-            </View>
-            
-            <View style={styles.fieldRow}>
-              <Text style={styles.icon}>💰</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Advance Paid</Text>
-                <Text style={styles.value}>${Number(job.advancePaid || 0).toFixed(2)}</Text>
-              </View>
-            </View>
-
-            {job.notes ? (
+          {job.needsDetails || isEditingJob ? (
+            <JobDetailForm job={job} onSave={handleSaveDetails} />
+          ) : (
+            <>
               <View style={styles.fieldRow}>
-                <Text style={styles.icon}>📄</Text>
+                <Text style={styles.icon}>📅</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Notes (Shown on PDF)</Text>
-                  <Text style={styles.value}>{job.notes}</Text>
+                  <Text style={styles.label}>Date & time</Text>
+                  <Text style={styles.value}>{job.when || 'Not set'} {job.exactTime ? ` at ${job.exactTime}` : ''}</Text>
                 </View>
               </View>
-            ) : null}
 
-            {job.status !== 'complete' && (
-              <View style={[styles.buttonRow, { marginTop: 18 }]}>
-                <Button variant="outline" style={{ flex: 1 }} onPress={handlePreviewDraftPdf}>📄 Preview Invoice</Button>
-                <Button variant="primary" style={{ flex: 1 }} onPress={handleShareDraftPdf} disabled={generating}>
-                  {generating ? <ActivityIndicator color="#fff" /> : '📤 Share Invoice'}
-                </Button>
+              <View style={styles.fieldRow}>
+                <Text style={styles.icon}>📍</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Location</Text>
+                  <Text style={styles.value}>{job.address}</Text>
+                </View>
+                <Button variant="outline" style={{ paddingVertical: 6, paddingHorizontal: 12 }} onPress={() => openMaps(job.address)}>Locate</Button>
               </View>
-            )}
 
-            <View style={styles.buttonRow}>
-              <Button variant="outline" style={{ flex: 1 }} onPress={() => setIsEditingJob(true)}>Edit Details</Button>
-              {job.status === 'complete' ? (
-                <Button variant="dark" style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: job.invoiceId } })}>View Final Invoice</Button>
-              ) : (
-                <Button variant="green" style={{ flex: 1 }} onPress={handleComplete}>Mark Complete & Invoice</Button>
+              <View style={styles.fieldRow}>
+                <Text style={styles.icon}>📝</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Description</Text>
+                  {job.services && job.services.length > 0 ? (
+                    job.services.map((s, i) => (
+                      <Text key={i} style={styles.value}>• {s.name} (${s.amt})</Text>
+                    ))
+                  ) : (
+                    <Text style={styles.value}>{job.service || 'None'}</Text>
+                  )}
+                </View>
+              </View>
+              
+              <View style={styles.fieldRow}>
+                <Text style={styles.icon}>💰</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Advance Paid</Text>
+                  <Text style={styles.value}>${Number(job.advancePaid || 0).toFixed(2)}</Text>
+                </View>
+              </View>
+
+              {job.notes ? (
+                <View style={styles.fieldRow}>
+                  <Text style={styles.icon}>📄</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>Notes (Shown on PDF)</Text>
+                    <Text style={styles.value}>{job.notes}</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {job.status !== 'complete' && (
+                <View style={[styles.buttonRow, { marginTop: 18 }]}>
+                  <Button variant="outline" style={{ flex: 1 }} onPress={handlePreviewDraftPdf}>📄 Preview Invoice</Button>
+                  <Button variant="primary" style={{ flex: 1 }} onPress={handleShareDraftPdf} disabled={generating}>
+                    {generating ? <ActivityIndicator color="#fff" /> : '📤 Share Invoice'}
+                  </Button>
+                </View>
               )}
-            </View>
-          </>
-        )}
-      </ScrollView>
+
+              <View style={styles.buttonRow}>
+                <Button variant="outline" style={{ flex: 1 }} onPress={() => setIsEditingJob(true)}>Edit Details</Button>
+                {job.status === 'complete' ? (
+                  <Button variant="dark" style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: job.invoiceId } })}>View Final Invoice</Button>
+                ) : (
+                  <Button variant="green" style={{ flex: 1 }} onPress={handleComplete}>Mark Complete & Invoice</Button>
+                )}
+              </View>
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {optionsOpen && (
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOptionsOpen(false)}>

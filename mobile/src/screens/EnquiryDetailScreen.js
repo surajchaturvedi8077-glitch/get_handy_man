@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, Alert, Text, TextInput } from 'react-native';
+import { View, ScrollView, StyleSheet, Alert, Text, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -147,15 +147,20 @@ export default function EnquiryDetailScreen() {
 
   const handleSendQuote = async (items) => {
     try {
-      showToast('Generating Quote PDF...');
-      const { uri } = await Print.printToFileAsync({ html: generateQuoteHTML(items), base64: false });
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' });
+      showToast('Saving & Generating Quote...');
       
+      // FIXED: Save to DB First! This guarantees it updates even if Sharing is cancelled.
       const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
       const gstAmt = (settings?.gstEnabled !== false) ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
       await unwrap(apiClient.put(`/api/enquiries/${params.id}`, { price: subtotal + gstAmt }));
+      await sendQuote(items); // Updates status to 'quoted'
       
-      await sendQuote(items);
+      // THEN open PDF
+      const { uri } = await Print.printToFileAsync({ html: generateQuoteHTML(items), base64: false });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' });
+      }
+      
       showToast('Quote sent successfully');
     } catch (err) { Alert.alert("Error", "Failed to generate or share quote."); }
   };
@@ -172,73 +177,75 @@ export default function EnquiryDetailScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="QUOTE / ENQUIRY" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {loading && <LoadingState />}
-        {error && <ErrorState>{error}</ErrorState>}
-        
-        {enquiry && (
-          <>
-            <View style={styles.top}>
-              <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>{enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}</Chip>
-            </View>
-
-            <FieldLabel style={{ marginTop: 14 }}>Customer Details</FieldLabel>
-            <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
-            <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
-            <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
-            <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Address" />
-            
-            <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
-            <TextInput style={styles.input} value={localAdvancePaid} onChangeText={setLocalAdvancePaid} keyboardType="numeric" />
-
-            <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
-            <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Scope of work, terms, etc..." value={localNotes} onChangeText={setLocalNotes} />
-            
-            <Button variant="outline" style={{ marginBottom: 20 }} onPress={handleUpdateEnquiry}>
-              💾 Save Customer Details & Notes
-            </Button>
-
-            {enquiry.status !== 'rejected' && (
-              <QuoteComposer initialItems={enquiry.quoteItems} onSend={handleSendQuote} onPreview={handlePreviewQuote} />
-            )}
-
-            {enquiry.status === 'new' && (
-              <>
-                <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>
-                  ✅ Accept Instantly & Create Job
-                </Button>
-                <Button variant="outline" onPress={() => reject()} style={{ marginTop: 10 }}>Reject enquiry</Button>
-              </>
-            )}
-
-            {enquiry.status === 'quoted' && (
-              <View style={{ marginTop: 16 }}>
-                <EnquiryActions onReject={() => reject()} onAccept={handleAccept} acceptLabel="Mark accepted & create job" />
-                <Button variant="outline" style={{ marginTop: 10, borderColor: colors.blue }} onPress={handleConvertToInvoice}>
-                  <Text style={{ color: colors.blue, fontWeight: '700' }}>⚡ Skip Job & Convert to Invoice</Text>
-                </Button>
+      <ScreenHeader title="QUOTE / ENQUIRY" subtitle={enquiry?.name} onBack={() => { navigation.canGoBack() ? navigation.goBack() : navigation.navigate('EnquiriesList') }} />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {loading && <LoadingState />}
+          {error && <ErrorState>{error}</ErrorState>}
+          
+          {enquiry && (
+            <>
+              <View style={styles.top}>
+                <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>{enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}</Chip>
               </View>
-            )}
 
-            {enquiry.status === 'accepted' && enquiry.jobId && (
-              <Button variant="primary" style={{ backgroundColor: colors.blue, marginTop: 16 }} onPress={() => navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: enquiry.jobId } })}>
-                🚀 View Linked Job
+              <FieldLabel style={{ marginTop: 14 }}>Customer Details</FieldLabel>
+              <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
+              <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+              <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+              <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Address" />
+              
+              <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
+              <TextInput style={styles.input} value={localAdvancePaid} onChangeText={setLocalAdvancePaid} keyboardType="numeric" />
+
+              <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
+              <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Scope of work, terms, etc..." value={localNotes} onChangeText={setLocalNotes} />
+              
+              <Button variant="outline" style={{ marginBottom: 20 }} onPress={handleUpdateEnquiry}>
+                💾 Save Customer Details & Notes
               </Button>
-            )}
 
-            {enquiry.status === 'accepted' && enquiry.invoiceId && (
-              <Button variant="primary" style={{ backgroundColor: colors.green, marginTop: 16 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: enquiry.invoiceId } })}>
-                💰 View Direct Invoice
+              {enquiry.status !== 'rejected' && (
+                <QuoteComposer initialItems={enquiry.quoteItems} onSend={handleSendQuote} onPreview={handlePreviewQuote} />
+              )}
+
+              {enquiry.status === 'new' && (
+                <>
+                  <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>
+                    ✅ Accept Instantly & Create Job
+                  </Button>
+                  <Button variant="outline" onPress={() => reject()} style={{ marginTop: 10 }}>Reject enquiry</Button>
+                </>
+              )}
+
+              {enquiry.status === 'quoted' && (
+                <View style={{ marginTop: 16 }}>
+                  <EnquiryActions onReject={() => reject()} onAccept={handleAccept} acceptLabel="Mark accepted & create job" />
+                  <Button variant="outline" style={{ marginTop: 10, borderColor: colors.blue }} onPress={handleConvertToInvoice}>
+                    <Text style={{ color: colors.blue, fontWeight: '700' }}>⚡ Skip Job & Convert to Invoice</Text>
+                  </Button>
+                </View>
+              )}
+
+              {enquiry.status === 'accepted' && enquiry.jobId && (
+                <Button variant="primary" style={{ backgroundColor: colors.blue, marginTop: 16 }} onPress={() => navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: enquiry.jobId } })}>
+                  🚀 View Linked Job
+                </Button>
+              )}
+
+              {enquiry.status === 'accepted' && enquiry.invoiceId && (
+                <Button variant="primary" style={{ backgroundColor: colors.green, marginTop: 16 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: enquiry.invoiceId } })}>
+                  💰 View Direct Invoice
+                </Button>
+              )}
+
+              <Button variant="outline" style={{ borderColor: colors.red, marginTop: 20 }} onPress={() => Alert.alert("Delete", "Delete?", [{ text: "Cancel" }, { text: "Delete", onPress: async () => { await unwrap(apiClient.delete(`/api/enquiries/${params.id}`)); navigation.goBack(); } }])}>
+                <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Quote/Enquiry</Text>
               </Button>
-            )}
-
-            <Button variant="outline" style={{ borderColor: colors.red, marginTop: 20 }} onPress={() => Alert.alert("Delete", "Delete?", [{ text: "Cancel" }, { text: "Delete", onPress: async () => { await unwrap(apiClient.delete(`/api/enquiries/${params.id}`)); navigation.goBack(); } }])}>
-              <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Quote/Enquiry</Text>
-            </Button>
-          </>
-        )}
-      </ScrollView>
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
