@@ -9,10 +9,21 @@ import { colors } from '../../theme/colors';
 export default function JobListItem({ job }) {
   const navigation = useNavigation();
   
-  // Safely extracts string name whether service is a string, object, or array of objects
-  const serviceText = (Array.isArray(job.services) && job.services.length > 0) 
-    ? job.services.map(s => (typeof s === 'string' ? s : s?.name || '')).filter(Boolean).join(', ') 
-    : (typeof job.service === 'string' ? job.service : job.service?.name || 'None');
+  // FIXED: Ultimate bulletproof check. Always produces a valid string, never [object Object].
+  let serviceText = 'Service Details';
+  try {
+    if (Array.isArray(job.services) && job.services.length > 0) {
+      serviceText = job.services.map(s => {
+        if (typeof s === 'string') return s;
+        if (s && typeof s.name === 'string') return s.name;
+        return 'Item';
+      }).join(', ');
+    } else if (job.service) {
+      serviceText = typeof job.service === 'string' ? job.service : (job.service.name || 'Service');
+    }
+  } catch(e) { 
+    serviceText = 'Service Details'; 
+  }
 
   return (
     <Card
@@ -23,10 +34,10 @@ export default function JobListItem({ job }) {
         <Text style={styles.when}>{job.when} {job.exactTime ? `· ${job.exactTime}` : ''}</Text>
         <JobStatusBadge job={job} />
       </View>
-      <Text style={styles.customer}>{job.name} — {serviceText}</Text>
+      <Text style={styles.customer}>{job.name || 'Customer'} — {serviceText}</Text>
       
       <View style={styles.bottomRow}>
-        <Text style={styles.address}>{job.address}</Text>
+        <Text style={styles.address}>{job.address || 'No Address'}</Text>
         {job.email ? (
           <TouchableOpacity onPress={() => openEmail(job.email)} style={styles.emailBtn}>
             <Text style={styles.emailText}>✉️ Email</Text>

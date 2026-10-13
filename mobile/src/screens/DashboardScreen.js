@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -52,14 +52,19 @@ export default function DashboardScreen() {
     return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
   };
 
-  const todaysJobs = jobs.filter(j => j.status !== 'complete' && isToday(j.scheduledDate)).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
-  const upcomingJobs = jobs.filter(j => j.status !== 'complete' && safeTime(j.scheduledDate) > new Date().setHours(23,59,59,999)).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)).slice(0, 3);
+  // FIXED: useMemo prevents the array from recreating infinitely and crashing the phone
+  const todaysJobs = useMemo(() => {
+    return jobs.filter(j => j.status !== 'complete' && isToday(j.scheduledDate)).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
+  }, [jobs]);
+  
+  const upcomingJobs = useMemo(() => {
+    return jobs.filter(j => j.status !== 'complete' && safeTime(j.scheduledDate) > new Date().setHours(23,59,59,999)).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)).slice(0, 3);
+  }, [jobs]);
 
   useEffect(() => {
     todaysJobs.forEach(job => scheduleLocalJobReminder(job));
   }, [todaysJobs]);
 
-  // Set timeout morning briefing
   useEffect(() => {
     const timer = setupMorningBriefingTimeout(settings?.briefingEnabled, settings?.briefingTime, () => todaysJobs.length);
     return () => { if (timer) clearTimeout(timer); };

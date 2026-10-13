@@ -3,9 +3,21 @@ import { money } from '../../utils/money';
 import { colors } from '../../theme/colors';
 
 export default function JobSummaryCard({ job }) {
-  const serviceText = (Array.isArray(job.services) && job.services.length > 0) 
-    ? job.services.map(s => (typeof s === 'string' ? s : s?.name || '')).filter(Boolean).join(', ') 
-    : (typeof job.service === 'string' ? job.service : job.service?.name || 'None');
+  
+  let serviceText = 'Service Details';
+  try {
+    if (Array.isArray(job.services) && job.services.length > 0) {
+      serviceText = job.services.map(s => {
+        if (typeof s === 'string') return s;
+        if (s && typeof s.name === 'string') return s.name;
+        return 'Item';
+      }).join(', ');
+    } else if (job.service) {
+      serviceText = typeof job.service === 'string' ? job.service : (job.service.name || 'Service');
+    }
+  } catch(e) { 
+    serviceText = 'Service Details'; 
+  }
 
   return (
     <View style={styles.wrap}>

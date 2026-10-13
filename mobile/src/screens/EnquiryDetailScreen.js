@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, Alert, Text, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, ScrollView, StyleSheet, Alert, Text, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -67,6 +67,7 @@ export default function EnquiryDetailScreen() {
     const bankNameStr = settings?.bankName || '';
     const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
     const paymentDetailsHtml = bankNameStr ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>` : '';
+
     const notesHtml = localNotes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${localNotes.replace(/\n/g, '<br/>')}</div>` : '';
 
     return `
@@ -138,7 +139,7 @@ export default function EnquiryDetailScreen() {
     try {
       await saveToDatabase(items);
       refresh();
-      showToast('Quote details saved');
+      showToast('Quote details safely saved!');
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes');
     }
@@ -156,21 +157,17 @@ export default function EnquiryDetailScreen() {
   const handleSendQuote = async (items) => {
     setGenerating(true);
     try {
-      // Save data first
       await saveToDatabase(items);
-      await sendQuote(items); // Updates status to 'quoted'
+      await sendQuote(items); // Updates status to 'quoted' in DB
       
       const { uri } = await Print.printToFileAsync({ html: generateQuoteHTML(items), base64: false });
       
-      // Share dialog wrapped safely
       if (await Sharing.isAvailableAsync()) {
         try {
           await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' });
-        } catch (shareErr) {
-          // If user cancels or dismisses share sheet, state remains saved
-        }
+        } catch (shareErr) {}
       }
-      showToast('Quote saved and sent!');
+      showToast('Quote marked as sent!');
       refresh();
     } catch (err) {
       Alert.alert("Error", err?.response?.data?.message || err?.message || "Failed to generate or share quote.");
@@ -209,7 +206,7 @@ export default function EnquiryDetailScreen() {
                 <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>{enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}</Chip>
               </View>
 
-              {/* Explicit FieldLabels for every single field */}
+              {/* FIXED: Explicit FieldLabels so they never vanish */}
               <FieldLabel style={{ marginTop: 14 }}>Customer Name</FieldLabel>
               <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
               
@@ -228,6 +225,7 @@ export default function EnquiryDetailScreen() {
               <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
               <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Scope of work, terms, etc..." value={localNotes} onChangeText={setLocalNotes} />
 
+              {/* Explicitly passing Save, Preview, and Send handlers */}
               <QuoteComposer 
                 initialItems={enquiry.quoteItems} 
                 onSave={handleManualSave}
