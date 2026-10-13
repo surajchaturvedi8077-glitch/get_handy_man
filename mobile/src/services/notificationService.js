@@ -45,11 +45,15 @@ export async function getExpoPushToken() {
   }
 }
 
-// FIXED: Stripped out all overlapping alarms. ONLY triggers exactly 1 hour before the job.
 export async function syncLocalNotifications(upcomingJobs, unpaidInvoices) {
   try {
-    // Clear the old queue to prevent ghost alarms
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    // FIXED: Only clear job reminders, NEVER clear the morning briefing!
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const notif of scheduled) {
+      if (notif.identifier.startsWith('job-remind-')) {
+        await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+      }
+    }
 
     upcomingJobs.forEach(async (job) => {
       if (!job.scheduledDate) return;
@@ -60,6 +64,7 @@ export async function syncLocalNotifications(upcomingJobs, unpaidInvoices) {
       // Only schedule if the 1-hour mark is still in the future
       if (oneHourBefore > Date.now()) {
         await Notifications.scheduleNotificationAsync({
+          identifier: `job-remind-${job._id}`,
           content: {
             title: "Leaving Soon ⏳",
             body: `You have a job at ${job.address || 'client'} in 1 hour.`,
@@ -76,16 +81,13 @@ export async function syncLocalNotifications(upcomingJobs, unpaidInvoices) {
   }
 }
 
-// NEW: Programs the Android OS to ring every morning, completely bypassing the sleeping backend server.
+// Programs the Android OS to ring every morning, completely bypassing the sleeping backend server.
 const BRIEFING_KEY = 'gh_briefing_pref';
 
-// Accepts enable toggle and custom 24-hr time string (e.g., "07:30" or "08:15")
 export async function scheduleDailyMorningBriefing(enabled = true, timeStr = '07:30') {
   try {
-    // 1. Save preferences locally on phone as a fail-safe
     await AsyncStorage.setItem(BRIEFING_KEY, JSON.stringify({ enabled, timeStr }));
 
-    // 2. Clear existing morning briefing alarms to avoid duplicates
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     for (const notif of scheduled) {
       if (notif.content.data?.type === 'morning_briefing') {
@@ -93,13 +95,8 @@ export async function scheduleDailyMorningBriefing(enabled = true, timeStr = '07
       }
     }
 
-    // 3. If turned off in settings, stop here
-    if (!enabled) {
-      console.log("[DEBUG] Morning briefing disabled by user. Alarm cancelled.");
-      return;
-    }
+    if (!enabled) return;
 
-    // 4. Parse custom hour & minute
     let hour = 7;
     let minute = 30;
     if (timeStr && timeStr.includes(':')) {
@@ -108,7 +105,6 @@ export async function scheduleDailyMorningBriefing(enabled = true, timeStr = '07
       minute = parseInt(parts[1], 10) || 30;
     }
 
-    // 5. Schedule repeating daily notification at your exact custom time
     await Notifications.scheduleNotificationAsync({
       content: {
         title: "☀️ Good Morning!",
@@ -123,7 +119,6 @@ export async function scheduleDailyMorningBriefing(enabled = true, timeStr = '07
       },
     });
 
-    console.log(`[DEBUG] Custom Morning Alarm set for ${hour}:${minute.toString().padStart(2, '0')} daily.`);
   } catch (error) {
     console.log("[DEBUG] Failed to schedule morning briefing alarm:", error);
   }

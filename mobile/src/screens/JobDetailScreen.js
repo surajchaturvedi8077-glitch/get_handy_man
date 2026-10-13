@@ -172,23 +172,33 @@ export default function JobDetailScreen() {
     try {
       showToast('Generating Document...');
       const { uri } = await Print.printToFileAsync({ html: generateDraftInvoiceHTML(), base64: false });
-      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Draft_Tax_Invoice_${job.name}.pdf` });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Draft_Tax_Invoice_${job.name}.pdf` });
+      }
     } catch (err) { Alert.alert("PDF Error", "Could not share the PDF."); } 
     finally { setGenerating(false); }
   };
 
   return (
     <View style={styles.screen}>
-      {/* EXPLICIT BACK NAVIGATION FIX */}
       <ScreenHeader 
         title="JOB DETAILS" 
-        onBack={() => navigation.navigate('JobsList')} 
+        onBack={() => { navigation.navigate('JobsList') }} 
         rightAction={
           <TouchableOpacity onPress={() => setOptionsOpen(true)} style={{ padding: 4 }}><Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>⋮</Text></TouchableOpacity>
         } 
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {/* KEYBOARD AVOIDING VIEW WITH OFFSET */}
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+      >
+        <ScrollView 
+          contentContainerStyle={[styles.content, { paddingBottom: 150 }]} 
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={true}
+        >
           
           <View style={styles.customerStrip}>
             <View style={styles.avatar}><Text style={{ color: '#fff', fontSize: 18 }}>👤</Text></View>
@@ -331,7 +341,7 @@ export default function JobDetailScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16, paddingBottom: 40 },
+  content: { padding: 16 },
   customerStrip: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.charcoal, alignItems: 'center', justifyContent: 'center' },
   customerName: { fontWeight: '800', fontSize: 14, marginBottom: 4 },

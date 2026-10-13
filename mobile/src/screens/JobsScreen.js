@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -14,20 +14,22 @@ const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const safeTime = (dateStr) => {
-  if (!dateStr) return Number.MAX_SAFE_INTEGER;
+  if (!dateStr) return Number.MAX_SAFE_INTEGER; 
   const time = new Date(dateStr).getTime();
   return isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
 };
 
 export default function JobsScreen() {
   const navigation = useNavigation();
-  const [viewMode, setViewMode] = useState('list'); 
-  const [filter, setFilter] = useState('accepted'); // Assigned | Complete | All
-  const [searchQuery, setSearchQuery] = useState('');
+  const scrollViewRef = useRef(null);
   
+  const [viewMode, setViewMode] = useState('list'); 
+  const [filter, setFilter] = useState('accepted');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [scrolledToToday, setScrolledToToday] = useState(false);
+
   const { jobs, loading, error } = useJobs('all');
 
-  // Calendar State
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const year = currentDate.getFullYear();
@@ -40,7 +42,6 @@ export default function JobsScreen() {
   const firstDayIndex = new Date(year, month, 1).getDay();
   const daysArray = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
 
-  // Map Job Counts for Calendar Badges
   const jobsPerDay = {};
   jobs.forEach(j => {
     if (!j.scheduledDate) return;
@@ -51,7 +52,6 @@ export default function JobsScreen() {
     }
   });
 
-  // Base Filter (Search & Status)
   const baseFilteredJobs = useMemo(() => {
     return jobs.filter(j => {
       const q = searchQuery.toLowerCase();
@@ -73,7 +73,6 @@ export default function JobsScreen() {
     });
   }, [jobs, searchQuery, filter]);
 
-  // Calendar View Filter (Strictly matches selected day)
   const calendarJobs = useMemo(() => {
     return baseFilteredJobs.filter(j => {
       if (!j.scheduledDate) return false;
@@ -84,7 +83,6 @@ export default function JobsScreen() {
     });
   }, [baseFilteredJobs, selectedDate]);
 
-  // List View Timeline Split (Past vs Today/Future)
   const { pastJobs, upcomingJobs } = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -94,7 +92,7 @@ export default function JobsScreen() {
 
     baseFilteredJobs.forEach(job => {
       if (!job.scheduledDate) {
-        upcoming.push(job); // Unscheduled jobs sink to the bottom of upcoming
+        upcoming.push(job);
         return;
       }
       const jd = new Date(job.scheduledDate);
@@ -106,13 +104,19 @@ export default function JobsScreen() {
       }
     });
 
-    // Sort Past: Most recent first (closest to today)
     past.sort((a, b) => safeTime(b.scheduledDate) - safeTime(a.scheduledDate));
-    // Sort Upcoming: Earliest first (today at the very top)
     upcoming.sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
 
     return { pastJobs: past, upcomingJobs: upcoming };
   }, [baseFilteredJobs]);
+
+  useEffect(() => { setScrolledToToday(false); }, [filter, viewMode, searchQuery]);
+
+  const firstTodayJobId = useMemo(() => {
+    const todayTimestamp = new Date().setHours(0, 0, 0, 0);
+    const job = upcomingJobs.find(j => safeTime(j.scheduledDate) >= todayTimestamp);
+    return job ? job._id : null;
+  }, [upcomingJobs]);
 
   return (
     <View style={styles.screen}>
@@ -124,13 +128,7 @@ export default function JobsScreen() {
           </TouchableOpacity>
         </View>
         
-        {/* VIEW TOGGLE */}
-        <SegmentedControl 
-          options={[{ value: 'list', label: 'Timeline List' }, { value: 'calendar', label: 'Calendar' }]} 
-          value={viewMode} 
-          onChange={setViewMode} 
-          dark 
-        />
+        <SegmentedControl options={[{ value: 'list', label: 'Timeline List' }, { value: 'calendar', label: 'Calendar' }]} value={viewMode} onChange={setViewMode} dark />
         
         {viewMode === 'calendar' && (
           <View style={styles.calendarContainer}>
@@ -167,15 +165,15 @@ export default function JobsScreen() {
       {error && <View style={{padding: 20}}><ErrorState>{error}</ErrorState></View>}
 
       {!loading && !error && (
-        <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={scrollViewRef} style={styles.content} keyboardShouldPersistTaps="handled">
           
           <View style={styles.listContainer}>
-            <View style={styles.tabs}>
-              <JobFilterTabs value={filter} onChange={setFilter} />
-            </View>
+            {/* TABS & SEARCH (Scrolls freely with the list) */}
+            {viewMode === 'calendar' && <Text style={styles.selectedDateTitle}>{selectedDate.toDateString()}</Text>}
+            <View style={styles.tabs}><JobFilterTabs value={filter} onChange={setFilter} /></View>
             <TextInput style={styles.searchBar} placeholder="Search jobs by client, address..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor={colors.gray} />
 
-            {/* TIMELINE LIST VIEW */}
+            {/* TIMELINE LIST */}
             {viewMode === 'list' && (
               <>
                 {pastJobs.length > 0 && (
@@ -187,17 +185,28 @@ export default function JobsScreen() {
                 
                 <Text style={[styles.timelineLabel, { color: colors.blue }]}>Today & Upcoming</Text>
                 {upcomingJobs.length > 0 ? (
-                  upcomingJobs.map(j => <JobListItem key={j._id} job={j} />)
+                  upcomingJobs.map(j => (
+                    <View 
+                      key={j._id}
+                      onLayout={(event) => {
+                        if (j._id === firstTodayJobId && !scrolledToToday && scrollViewRef.current) {
+                          scrollViewRef.current.scrollTo({ y: event.nativeEvent.layout.y, animated: false });
+                          setScrolledToToday(true);
+                        }
+                      }}
+                    >
+                      <JobListItem job={j} />
+                    </View>
+                  ))
                 ) : (
                   <Text style={styles.emptyText}>No upcoming jobs in this category.</Text>
                 )}
               </>
             )}
 
-            {/* CALENDAR DATE LIST VIEW */}
+            {/* CALENDAR LIST */}
             {viewMode === 'calendar' && (
               <>
-                <Text style={styles.selectedDateTitle}>{selectedDate.toDateString()}</Text>
                 {calendarJobs.length > 0 ? (
                   calendarJobs.map(j => <JobListItem key={j._id} job={j} />)
                 ) : (

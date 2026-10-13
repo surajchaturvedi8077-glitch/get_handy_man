@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, Alert, Text, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, ScrollView, StyleSheet, Alert, Text, TextInput, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -35,6 +35,9 @@ export default function EnquiryDetailScreen() {
   const [localAddress, setLocalAddress] = useState('');
   const [localNotes, setLocalNotes] = useState('');
   const [localAdvancePaid, setLocalAdvancePaid] = useState('0');
+  
+  const [savingCustomer, setSavingCustomer] = useState(false);
+  const [savingQuote, setSavingQuote] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
@@ -82,17 +85,42 @@ export default function EnquiryDetailScreen() {
     }));
   };
 
+  const handleUpdateCustomer = async () => {
+    Keyboard.dismiss();
+    setSavingCustomer(true);
+    try {
+      await unwrap(apiClient.put(`/api/enquiries/${params.id}`, {
+        name: localName, phone: localPhone, email: localEmail, address: localAddress,
+        notes: localNotes, advancePaid: Number(localAdvancePaid) || 0
+      }));
+      showToast('✅ Customer details saved!');
+      refresh();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save customer details');
+    } finally {
+      setSavingCustomer(false);
+    }
+  };
+
   const handleManualSave = async (items) => {
-    try { await saveToDatabase(items); refresh(); showToast('Quote details saved!'); } 
-    catch (e) { Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes'); }
+    Keyboard.dismiss();
+    setSavingQuote(true);
+    try { 
+      await saveToDatabase(items); 
+      refresh(); 
+      showToast('✅ Quote data saved!'); 
+    } catch (e) { Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes'); } 
+    finally { setSavingQuote(false); }
   };
 
   const handlePreviewQuote = async (items) => {
+    Keyboard.dismiss();
     try { await saveToDatabase(items); navigation.navigate('PdfPreview', { html: generateQuoteHTML(items), title: `Quote_${localName || 'Preview'}.pdf` }); } 
     catch (e) { Alert.alert('Error', 'Failed to generate preview'); }
   };
 
   const handleSendQuote = async (items) => {
+    Keyboard.dismiss();
     setGenerating(true);
     try {
       await saveToDatabase(items);
@@ -123,7 +151,6 @@ export default function EnquiryDetailScreen() {
     } catch (e) { Alert.alert("Backend Error", e?.response?.data?.message || "Could not accept enquiry."); }
   };
 
-  // MAPPING: Ensure services requested on website seamlessly port into Quote form
   const getInitialQuoteItems = () => {
     if (enquiry?.quoteItems?.length > 0) return enquiry.quoteItems;
     if (enquiry?.services?.length > 0) return enquiry.services.map(s => ({ name: s, amt: 0, qty: 1 }));
@@ -134,8 +161,16 @@ export default function EnquiryDetailScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader title="QUOTE / ENQUIRY" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+      >
+        <ScrollView 
+          contentContainerStyle={[styles.content, { paddingBottom: 150 }]} 
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={true}
+        >
           {loading && <LoadingState />}
           {error && <ErrorState>{error}</ErrorState>}
           
@@ -145,7 +180,6 @@ export default function EnquiryDetailScreen() {
                 <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>{enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}</Chip>
               </View>
 
-              {/* FIXED: Expose user messages from the website distinctly! */}
               {enquiry.message ? (
                 <View style={styles.messageBox}>
                   <Text style={styles.messageTitle}>Message from customer:</Text>
@@ -171,11 +205,16 @@ export default function EnquiryDetailScreen() {
               <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
               <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Scope of work, terms, etc..." value={localNotes} onChangeText={setLocalNotes} />
 
+              <Button variant="outline" style={{ marginTop: 4, marginBottom: 14 }} onPress={handleUpdateCustomer} disabled={savingCustomer}>
+                {savingCustomer ? "Saving..." : "💾 Save Customer Details"}
+              </Button>
+
               <QuoteComposer 
                 initialItems={getInitialQuoteItems()} 
                 onSave={handleManualSave}
                 onPreview={handlePreviewQuote}
                 onSend={handleSendQuote}
+                savingQuote={savingQuote}
                 generating={generating}
               />
 

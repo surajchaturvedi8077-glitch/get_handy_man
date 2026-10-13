@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, ScrollView, Text, TextInput, StyleSheet, Alert, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -116,7 +116,7 @@ export default function SettingsScreen() {
       showToast("✅ Password Updated Successfully!");
       setOldPassword('');
       setNewPassword('');
-    } catch (e) { Alert.alert("Error", e.response?.data?.message || "Failed to change password."); } 
+    } catch (e) { Alert.alert("Error", e.response?.data?.message || "Failed to change password. Is your current password correct?"); } 
     finally { setChangingPwd(false); }
   };
 
@@ -142,6 +142,13 @@ export default function SettingsScreen() {
     } catch (error) { Alert.alert('Error', 'Could not fire notification.'); }
   }
 
+  async function fireBackendBriefing() {
+    try {
+      showToast('Requesting briefing from server...');
+      await settingsService.triggerMorningBriefing();
+    } catch (e) { Alert.alert('Backend Error', 'Ensure your Node.js server is running and the /test-briefing route is saved.'); }
+  }
+
   if (!draft) return <View style={styles.screen}><ScreenHeader title="SETTINGS" /><LoadingState /></View>;
 
   const [tHour, tMin] = briefingTime.split(':').map(Number);
@@ -151,8 +158,17 @@ export default function SettingsScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader title="SETTINGS" />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {/* KEYBOARD AVOIDING VIEW WITH OFFSET */}
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+      >
+        <ScrollView 
+          contentContainerStyle={[styles.content, { paddingBottom: 150 }]} 
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={true}
+        >
           
           <FieldLabel style={styles.sectionHeader}>Daily Morning Briefing</FieldLabel>
           <View style={styles.card}>
@@ -180,6 +196,7 @@ export default function SettingsScreen() {
           <View style={styles.card}>
             <ToggleRow title="GST on invoices" sub="Applied to online-payment invoices only" value={draft.gstEnabled} onToggle={() => patch({ gstEnabled: !draft.gstEnabled })} />
             {draft.gstEnabled && <SettingInput label="GST Rate (%)" value={String(draft.gstRate)} onChange={v => patch({ gstRate: Number(v) || 0 })} />}
+            <SettingInput label="Invoice Number Prefix" value={draft.invoicePrefix} onChange={v => patch({ invoicePrefix: v })} />
             <SettingInput label="Default Payment Terms" value={draft.paymentTerms} onChange={v => patch({ paymentTerms: v })} />
           </View>
 
@@ -222,15 +239,29 @@ export default function SettingsScreen() {
           <FieldLabel style={styles.sectionHeader}>Troubleshooting</FieldLabel>
           <View style={[styles.card, { marginBottom: 30 }]}>
             <Button variant="outline" onPress={forceTestNotifications} style={{ marginBottom: 12 }}>🔔 Test & Enable Notifications</Button>
+            <Button variant="outline" onPress={fireBackendBriefing}>🚀 Send Morning Briefing Now</Button>
           </View>
 
-          <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginBottom: 12 }}>{saving ? 'Saving…' : 'Save all settings'}</Button>
-          <Button variant="outline" onPress={handleLogout} style={{ borderColor: colors.red, borderWidth: 1.5, marginBottom: 40 }}><Text style={{ color: colors.red, fontWeight: '700' }}>Log out</Text></Button>
+          <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginBottom: 12 }}>
+            {saving ? 'Saving…' : 'Save all settings'}
+          </Button>
+
+          <Button variant="outline" onPress={handleLogout} style={{ borderColor: colors.red, borderWidth: 1.5, marginBottom: 40 }}>
+            <Text style={{ color: colors.red, fontWeight: '700' }}>Log out</Text>
+          </Button>
 
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {showTimePicker && <DateTimePicker value={pickerDate} mode="time" is24Hour={false} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onTimeChange} />}
+      {showTimePicker && (
+        <DateTimePicker
+          value={pickerDate}
+          mode="time"
+          is24Hour={false}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={onTimeChange}
+        />
+      )}
     </View>
   );
 }

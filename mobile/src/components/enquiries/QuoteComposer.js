@@ -6,7 +6,7 @@ import FieldLabel from '../ui/FieldLabel';
 import { money } from '../../utils/money';
 import { colors } from '../../theme/colors';
 
-export default function QuoteComposer({ initialItems = [], onSave, onPreview, onSend, generating }) {
+export default function QuoteComposer({ initialItems = [], onSave, onPreview, onSend, savingQuote, generating }) {
   const [items, setItems] = useState(
     initialItems.length ? initialItems : [{ name: 'New item', qty: 1, amt: 0 }]
   );
@@ -34,7 +34,10 @@ export default function QuoteComposer({ initialItems = [], onSave, onPreview, on
         <Text style={styles.totalValue}>{money(total)}</Text>
       </View>
 
-      <Button variant="outline" style={{ marginBottom: 10 }} onPress={() => onSave(items)}>💾 Save Quote Data</Button>
+      {/* Instant visual feedback when clicked */}
+      <Button variant="outline" style={{ marginBottom: 10 }} onPress={() => onSave(items)} disabled={savingQuote}>
+        {savingQuote ? "Saving..." : "💾 Save Quote Data"}
+      </Button>
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <Button variant="dark" style={{ flex: 1 }} onPress={() => onPreview(items)}>📄 Preview PDF</Button>

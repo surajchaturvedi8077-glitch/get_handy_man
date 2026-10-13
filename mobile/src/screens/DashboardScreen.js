@@ -2,6 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
 import useAuth from '../hooks/useAuth';
 import useEnquiries from '../hooks/useEnquiries';
 import useJobs from '../hooks/useJobs';
@@ -35,14 +36,18 @@ export default function DashboardScreen() {
   const { jobs } = useJobs('all');
   const { invoices: unpaidInvoices } = useInvoices('unpaid');
 
+  // Request Permissions & Sync Push Token on Load
   useEffect(() => {
-    async function syncPushToken() {
-      if (settings && !settings.expoPushToken) {
+    async function setupNotifications() {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status === 'granted') {
         const token = await getExpoPushToken();
-        if (token) update({ expoPushToken: token });
+        if (token && settings && !settings.expoPushToken) {
+          update({ expoPushToken: token });
+        }
       }
     }
-    syncPushToken();
+    setupNotifications();
   }, [settings]);
 
   const isToday = (dateString) => {
@@ -60,13 +65,21 @@ export default function DashboardScreen() {
     return jobs.filter(j => j.status !== 'complete' && safeTime(j.scheduledDate) > new Date().setHours(23,59,59,999)).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)).slice(0, 3);
   }, [jobs]);
 
-  // Sync Notifications securely into the background
+  const totalPendingJobs = jobs.filter(j => j.status !== 'complete').length;
+
+  // FIXED: Sync Job Alarms ONLY when Jobs change
   useEffect(() => {
     if (jobs.length > 0) {
       syncLocalNotifications(todaysJobs.concat(upcomingJobs), unpaidInvoices);
-      scheduleDailyMorningBriefing(settings?.briefingEnabled, settings?.briefingTime);
     }
-  }, [jobs, settings]);
+  }, [jobs]);
+
+  // FIXED: Sync Morning Briefing ONLY when Settings change (Stops Android from blocking spam alarms)
+  useEffect(() => {
+    if (settings) {
+      scheduleDailyMorningBriefing(settings.briefingEnabled, settings.briefingTime);
+    }
+  }, [settings?.briefingEnabled, settings?.briefingTime]);
 
   return (
     <View style={styles.screen}>
@@ -85,10 +98,25 @@ export default function DashboardScreen() {
       </SafeAreaView>
 
       <ScrollView style={styles.content} contentContainerStyle={{ padding: 14 }}>
-        <SummaryCard big={newEnquiries.length} label={newEnquiries.length === 1 ? 'NEW ENQUIRY' : 'NEW ENQUIRIES'} sub="From website or directly" bg={colors.orangeTint} fg={colors.orangeDeep} onPress={() => navigation.getParent()?.navigate('Enquiries')} />
-        <SummaryCard big={todaysJobs.length} label="JOBS TODAY" sub={`${todaysJobs.length} scheduled for today`} bg={colors.blueTint} fg={colors.blue} onPress={() => navigation.getParent()?.navigate('Jobs')} />
-        {unpaidInvoices.length > 0 && <SummaryCard big={unpaidInvoices.length} label={unpaidInvoices.length === 1 ? 'UNPAID INVOICE' : 'UNPAID INVOICES'} sub="Tap to review & follow up" bg={colors.redTint} fg={colors.red} onPress={() => navigation.getParent()?.navigate('Invoices')} />}
         
+        <SummaryCard 
+          big={totalPendingJobs} 
+          label="OVERALL PENDING JOBS" 
+          sub={`${unpaidInvoices.length} total unpaid invoices`} 
+          bg={colors.charcoal2} 
+          fg="#fff" 
+          onPress={() => navigation.getParent()?.navigate('Jobs')} 
+        />
+
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <SummaryCard big={newEnquiries.length} label={newEnquiries.length === 1 ? 'NEW ENQUIRY' : 'NEW ENQUIRIES'} sub="Awaiting quote" bg={colors.orangeTint} fg={colors.orangeDeep} onPress={() => navigation.getParent()?.navigate('Enquiries')} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <SummaryCard big={todaysJobs.length} label="JOBS TODAY" sub="Currently scheduled" bg={colors.blueTint} fg={colors.blue} onPress={() => navigation.getParent()?.navigate('Jobs')} />
+          </View>
+        </View>
+
         <Text style={styles.sectionLabel}>Today's schedule</Text>
         {todaysJobs.length > 0 ? ( todaysJobs.map((job) => <JobListItem key={job._id} job={job} />) ) : (
           <View>

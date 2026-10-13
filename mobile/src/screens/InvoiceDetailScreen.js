@@ -75,18 +75,6 @@ export default function InvoiceDetailScreen() {
     finally { setSavingInvoice(false); }
   };
 
-  const handleRemovePhoto = async (indexToRemove) => {
-    const newPhotos = photosArray.filter((_, idx) => idx !== indexToRemove);
-    try {
-      await invoiceService.updateInvoice(invoice._id, { 
-        completionPhotos: newPhotos,
-        completionPhotoUrl: newPhotos.length > 0 ? newPhotos[0] : null
-      });
-      showToast('Photo removed');
-      refresh();
-    } catch (e) { Alert.alert('Error', 'Could not remove photo'); }
-  };
-
   const generateHTMLString = () => {
     const itemsHtml = invoice.items && invoice.items.length 
       ? invoice.items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name ? i.name : ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.qty ? i.qty : 1}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt ? i.amt : 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${(parseFloat(i.amt ? i.amt : 0) * parseInt(i.qty ? i.qty : 1)).toFixed(2)}</td></tr>`).join('')
@@ -193,13 +181,15 @@ export default function InvoiceDetailScreen() {
   };
 
   const handlePreviewPdf = () => {
-    navigation.navigate('PdfPreview', { html: generateHTMLString(), title: `Tax_Invoice_${invoice.number}.pdf` });
+    const html = generateHTMLString();
+    navigation.navigate('PdfPreview', { html, title: `Tax_Invoice_${invoice.number}.pdf` });
   };
 
   const handleSharePdf = async () => {
     try {
       showToast('Generating Document...');
-      const { uri } = await Print.printToFileAsync({ html: generateHTMLString(), base64: false });
+      const html = generateHTMLString();
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Tax_Invoice_${invoice.number}.pdf` });
       }
@@ -208,14 +198,18 @@ export default function InvoiceDetailScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* EXPLICIT BACK NAVIGATION FIX */}
-      <ScreenHeader 
-        title={`INVOICE #${invoice.number}`} 
-        subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} 
-        onBack={() => navigation.navigate('InvoicesList')} 
-      />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => { navigation.navigate('InvoicesList') }} />
+      {/* KEYBOARD AVOIDING VIEW WITH OFFSET */}
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+      >
+        <ScrollView 
+          contentContainerStyle={[styles.content, { paddingBottom: 150 }]} 
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={true}
+        >
           
           <FieldLabel>Customer Details</FieldLabel>
           <TextInput style={styles.input} value={localCustomer} onChangeText={setLocalCustomer} placeholder="Customer Name" />
