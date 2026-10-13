@@ -137,7 +137,7 @@ export default function JobDetailScreen() {
         <body>
           <div class="header">
             <div>${logoImg}<div class="biz-details"><div class="biz-name">${bizNameStr}</div>${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}${bizCityStr ? `<div>${bizCityStr}</div>` : ''}${bizPhoneStr ? `<div>${bizPhoneStr}</div>` : ''}${bizWebStr ? `<div>${bizWebStr}</div>` : ''}</div></div>
-            <div class="doc-meta"><h2 class="doc-type">INVOICE (DRAFT)</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${new Date().toLocaleDateString('en-GB')}</div></div></div>
+            <div class="doc-meta"><h2 class="doc-type">DRAFT TAX INVOICE</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${new Date().toLocaleDateString('en-GB')}</div></div></div>
           </div>
           <div class="divider"></div>
           <div class="bill-to-section">
@@ -164,7 +164,7 @@ export default function JobDetailScreen() {
   };
 
   const handlePreviewDraftPdf = () => {
-    navigation.navigate('PdfPreview', { html: generateDraftInvoiceHTML(), title: `Draft_Invoice_${job.name}.pdf` });
+    navigation.navigate('PdfPreview', { html: generateDraftInvoiceHTML(), title: `Draft_Tax_Invoice_${job.name}.pdf` });
   };
 
   const handleShareDraftPdf = async () => {
@@ -172,18 +172,17 @@ export default function JobDetailScreen() {
     try {
       showToast('Generating Document...');
       const { uri } = await Print.printToFileAsync({ html: generateDraftInvoiceHTML(), base64: false });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Draft_Invoice_${job.name}.pdf` });
-      }
+      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Draft_Tax_Invoice_${job.name}.pdf` });
     } catch (err) { Alert.alert("PDF Error", "Could not share the PDF."); } 
     finally { setGenerating(false); }
   };
 
   return (
     <View style={styles.screen}>
+      {/* EXPLICIT BACK NAVIGATION FIX */}
       <ScreenHeader 
         title="JOB DETAILS" 
-        onBack={() => { navigation.canGoBack() ? navigation.goBack() : navigation.navigate('JobsList') }} 
+        onBack={() => navigation.navigate('JobsList')} 
         rightAction={
           <TouchableOpacity onPress={() => setOptionsOpen(true)} style={{ padding: 4 }}><Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>⋮</Text></TouchableOpacity>
         } 
@@ -230,7 +229,7 @@ export default function JobDetailScreen() {
                   <Text style={styles.label}>Description</Text>
                   {job.services && job.services.length > 0 ? (
                     job.services.map((s, i) => (
-                      <Text key={i} style={styles.value}>• {s.name} (${s.amt})</Text>
+                      <Text key={i} style={styles.value}>• {typeof s === 'string' ? s : s.name} (${s.amt || 0})</Text>
                     ))
                   ) : (
                     <Text style={styles.value}>{job.service || 'None'}</Text>

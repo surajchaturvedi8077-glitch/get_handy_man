@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import JobFilterTabs from '../components/jobs/JobFilterTabs';
 import JobListItem from '../components/jobs/JobListItem';
 import SegmentedControl from '../components/ui/SegmentedControl';
 import LoadingState from '../components/ui/LoadingState';
@@ -12,9 +13,18 @@ import { colors } from '../theme/colors';
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+const safeTime = (dateStr) => {
+  if (!dateStr) return Number.MAX_SAFE_INTEGER;
+  const time = new Date(dateStr).getTime();
+  return isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
+};
+
 export default function JobsScreen() {
   const navigation = useNavigation();
+  const [viewMode, setViewMode] = useState('list'); 
   const [filter, setFilter] = useState('accepted'); // Assigned | Complete | All
+  const [searchQuery, setSearchQuery] = useState('');
+  
   const { jobs, loading, error } = useJobs('all');
 
   // Calendar State
@@ -30,7 +40,7 @@ export default function JobsScreen() {
   const firstDayIndex = new Date(year, month, 1).getDay();
   const daysArray = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
 
-  // Map Job Counts per day
+  // Map Job Counts for Calendar Badges
   const jobsPerDay = {};
   jobs.forEach(j => {
     if (!j.scheduledDate) return;
@@ -41,23 +51,68 @@ export default function JobsScreen() {
     }
   });
 
-  // Filter Jobs based on selected calendar date AND tab filter
-  const filteredJobs = jobs.filter(j => {
-    let dateMatch = false;
-    if (j.scheduledDate) {
-      const jd = new Date(j.scheduledDate);
-      dateMatch = jd.getFullYear() === selectedDate.getFullYear() && 
-                  jd.getMonth() === selectedDate.getMonth() && 
-                  jd.getDate() === selectedDate.getDate();
-    }
+  // Base Filter (Search & Status)
+  const baseFilteredJobs = useMemo(() => {
+    return jobs.filter(j => {
+      const q = searchQuery.toLowerCase();
+      const searchMatch = q === '' || 
+        (j.name && j.name.toLowerCase().includes(q)) ||
+        (j.address && j.address.toLowerCase().includes(q)) ||
+        (Array.isArray(j.services) && j.services.some(s => {
+          const sName = typeof s === 'string' ? s : s?.name || '';
+          return sName.toLowerCase().includes(q);
+        })) ||
+        (typeof j.service === 'string' && j.service.toLowerCase().includes(q));
 
-    let tabMatch = false;
-    if (filter === 'all') tabMatch = true;
-    else if (filter === 'accepted') tabMatch = (j.status === 'accepted' || j.status === 'pending');
-    else if (filter === 'complete') tabMatch = (j.status === 'complete');
-    
-    return dateMatch && tabMatch;
-  });
+      let tabMatch = false;
+      if (filter === 'all') tabMatch = true;
+      else if (filter === 'accepted') tabMatch = (j.status === 'accepted' || j.status === 'pending');
+      else if (filter === 'complete') tabMatch = (j.status === 'complete');
+      
+      return searchMatch && tabMatch;
+    });
+  }, [jobs, searchQuery, filter]);
+
+  // Calendar View Filter (Strictly matches selected day)
+  const calendarJobs = useMemo(() => {
+    return baseFilteredJobs.filter(j => {
+      if (!j.scheduledDate) return false;
+      const jd = new Date(j.scheduledDate);
+      return jd.getFullYear() === selectedDate.getFullYear() && 
+             jd.getMonth() === selectedDate.getMonth() && 
+             jd.getDate() === selectedDate.getDate();
+    });
+  }, [baseFilteredJobs, selectedDate]);
+
+  // List View Timeline Split (Past vs Today/Future)
+  const { pastJobs, upcomingJobs } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const past = [];
+    const upcoming = [];
+
+    baseFilteredJobs.forEach(job => {
+      if (!job.scheduledDate) {
+        upcoming.push(job); // Unscheduled jobs sink to the bottom of upcoming
+        return;
+      }
+      const jd = new Date(job.scheduledDate);
+      jd.setHours(0, 0, 0, 0);
+      if (jd.getTime() < today.getTime()) {
+        past.push(job);
+      } else {
+        upcoming.push(job);
+      }
+    });
+
+    // Sort Past: Most recent first (closest to today)
+    past.sort((a, b) => safeTime(b.scheduledDate) - safeTime(a.scheduledDate));
+    // Sort Upcoming: Earliest first (today at the very top)
+    upcoming.sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
+
+    return { pastJobs: past, upcomingJobs: upcoming };
+  }, [baseFilteredJobs]);
 
   return (
     <View style={styles.screen}>
@@ -69,60 +124,91 @@ export default function JobsScreen() {
           </TouchableOpacity>
         </View>
         
-        {/* COMBINED CALENDAR TOP HALF */}
-        <View style={styles.calendarContainer}>
-          <View style={styles.monthNav}>
-            <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
-            <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
-            <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
+        {/* VIEW TOGGLE */}
+        <SegmentedControl 
+          options={[{ value: 'list', label: 'Timeline List' }, { value: 'calendar', label: 'Calendar' }]} 
+          value={viewMode} 
+          onChange={setViewMode} 
+          dark 
+        />
+        
+        {viewMode === 'calendar' && (
+          <View style={styles.calendarContainer}>
+            <View style={styles.monthNav}>
+              <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
+              <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
+              <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
+            </View>
+            <View style={styles.daysHeader}>
+              {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
+            </View>
+            <View style={styles.grid}>
+              {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
+              {daysArray.map(day => {
+                const isSelectedCell = selectedDate.getFullYear() === year && selectedDate.getMonth() === month && selectedDate.getDate() === day;
+                const count = jobsPerDay[day] || 0;
+                return (
+                  <TouchableOpacity key={day} style={[styles.dayCell, isSelectedCell && styles.selectedCell]} onPress={() => setSelectedDate(new Date(year, month, day))}>
+                    <Text style={[styles.dayText, isSelectedCell && { color: '#fff', fontWeight: '800' }]}>{day}</Text>
+                    {count > 0 && (
+                      <View style={[styles.badge, count >= 2 ? { backgroundColor: isSelectedCell ? '#fff' : colors.charcoal2 } : {}]}>
+                        <Text style={[styles.badgeText, count >= 2 ? { color: isSelectedCell ? colors.orangeDeep : '#fff' } : {}]}>{count}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
-          <View style={styles.daysHeader}>
-            {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
-          </View>
-          <View style={styles.grid}>
-            {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
-            {daysArray.map(day => {
-              const isSelectedCell = selectedDate.getFullYear() === year && selectedDate.getMonth() === month && selectedDate.getDate() === day;
-              const count = jobsPerDay[day] || 0;
-              return (
-                <TouchableOpacity key={day} style={[styles.dayCell, isSelectedCell && styles.selectedCell]} onPress={() => setSelectedDate(new Date(year, month, day))}>
-                  <Text style={[styles.dayText, isSelectedCell && { color: '#fff', fontWeight: '800' }]}>{day}</Text>
-                  {count > 0 && (
-                    <View style={[styles.badge, count >= 2 ? { backgroundColor: isSelectedCell ? '#fff' : colors.charcoal2 } : {}]}>
-                      <Text style={[styles.badgeText, count >= 2 ? { color: isSelectedCell ? colors.orangeDeep : '#fff' } : {}]}>{count}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
+        )}
       </SafeAreaView>
 
-      {/* COMBINED LIST BOTTOM HALF */}
-      <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.listContainer}>
-          <Text style={styles.selectedDateTitle}>{selectedDate.toDateString()}</Text>
-          <View style={styles.tabs}>
-            <SegmentedControl 
-              options={[{ value: 'accepted', label: 'Assigned' }, { value: 'complete', label: 'Completed' }, { value: 'all', label: 'All' }]} 
-              value={filter} 
-              onChange={setFilter} 
-            />
-          </View>
-          
-          {loading && <LoadingState />}
-          {error && <ErrorState>{error}</ErrorState>}
-          
-          {!loading && !error && filteredJobs.length > 0 && ( 
-            filteredJobs.map(j => <JobListItem key={j._id} job={j} />) 
-          )}
+      {loading && <View style={{padding: 20}}><LoadingState /></View>}
+      {error && <View style={{padding: 20}}><ErrorState>{error}</ErrorState></View>}
 
-          {!loading && !error && filteredJobs.length === 0 && (
-            <Text style={styles.emptyText}>No jobs assigned for this day.</Text>
-          )}
-        </View>
-      </ScrollView>
+      {!loading && !error && (
+        <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+          
+          <View style={styles.listContainer}>
+            <View style={styles.tabs}>
+              <JobFilterTabs value={filter} onChange={setFilter} />
+            </View>
+            <TextInput style={styles.searchBar} placeholder="Search jobs by client, address..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor={colors.gray} />
+
+            {/* TIMELINE LIST VIEW */}
+            {viewMode === 'list' && (
+              <>
+                {pastJobs.length > 0 && (
+                  <View style={styles.pastSection}>
+                    <Text style={styles.timelineLabel}>⇧ Past Jobs (Scroll Up)</Text>
+                    {pastJobs.map(j => <JobListItem key={j._id} job={j} />)}
+                  </View>
+                )}
+                
+                <Text style={[styles.timelineLabel, { color: colors.blue }]}>Today & Upcoming</Text>
+                {upcomingJobs.length > 0 ? (
+                  upcomingJobs.map(j => <JobListItem key={j._id} job={j} />)
+                ) : (
+                  <Text style={styles.emptyText}>No upcoming jobs in this category.</Text>
+                )}
+              </>
+            )}
+
+            {/* CALENDAR DATE LIST VIEW */}
+            {viewMode === 'calendar' && (
+              <>
+                <Text style={styles.selectedDateTitle}>{selectedDate.toDateString()}</Text>
+                {calendarJobs.length > 0 ? (
+                  calendarJobs.map(j => <JobListItem key={j._id} job={j} />)
+                ) : (
+                  <Text style={styles.emptyText}>No jobs assigned for this day.</Text>
+                )}
+              </>
+            )}
+
+          </View>
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -130,13 +216,13 @@ export default function JobsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.offwhite },
   header: { backgroundColor: colors.charcoal, paddingHorizontal: 16, paddingBottom: 14 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 4 },
   title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1 },
   addBtn: { backgroundColor: colors.orange, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
   addBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   content: { flex: 1 },
   
-  calendarContainer: { paddingBottom: 10 },
+  calendarContainer: { paddingTop: 16, paddingBottom: 4 },
   monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   monthBtn: { padding: 4 },
   monthBtnText: { fontSize: 14, fontWeight: 'bold', color: '#C7CCD4' },
@@ -151,7 +237,11 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 8, fontWeight: '800', color: '#C7CCD4' },
 
   listContainer: { padding: 16 },
-  selectedDateTitle: { fontSize: 14, fontWeight: '800', color: colors.charcoal, marginBottom: 12 },
   tabs: { marginBottom: 14 },
+  searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
+  
+  timelineLabel: { fontSize: 11, fontWeight: '800', color: colors.gray, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10, marginTop: 4 },
+  pastSection: { opacity: 0.85, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: colors.grayLight, marginBottom: 14 },
+  selectedDateTitle: { fontSize: 14, fontWeight: '800', color: colors.charcoal, marginBottom: 12 },
   emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
 });

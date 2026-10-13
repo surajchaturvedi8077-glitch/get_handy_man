@@ -150,12 +150,12 @@ export default function InvoiceDetailScreen() {
             .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid; }
             .totals { width: 260px; font-size: 11px; color: #374151; }
             .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; }
-            .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; }
+            .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
           </style>
         </head>
         <body>
           <div class="header"><div>${logoImg}</div><div class="biz-details"><div>${bizCityStr}</div><div>${bizPhoneStr}</div><div>${bizWebStr}</div></div></div>
-          <div class="title-row"><h1 class="biz-name">${bizNameStr}</h1><h2 class="doc-type">Invoice</h2></div>
+          <div class="title-row"><h1 class="biz-name">${bizNameStr}</h1><h2 class="doc-type">TAX INVOICE</h2></div>
           <div class="divider"></div>
           <div class="meta-row">
             <div>
@@ -192,10 +192,28 @@ export default function InvoiceDetailScreen() {
     `;
   };
 
+  const handlePreviewPdf = () => {
+    navigation.navigate('PdfPreview', { html: generateHTMLString(), title: `Tax_Invoice_${invoice.number}.pdf` });
+  };
+
+  const handleSharePdf = async () => {
+    try {
+      showToast('Generating Document...');
+      const { uri } = await Print.printToFileAsync({ html: generateHTMLString(), base64: false });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Tax_Invoice_${invoice.number}.pdf` });
+      }
+    } catch (err) { Alert.alert("PDF Error", "Could not share the PDF."); }
+  };
+
   return (
     <View style={styles.screen}>
-      {/* FIXED: Check navigation history before falling back to InvoiceList */}
-      <ScreenHeader title={`INVOICE #${invoice.number}`} subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} onBack={() => { navigation.canGoBack() ? navigation.goBack() : navigation.navigate('InvoicesList') }} />
+      {/* EXPLICIT BACK NAVIGATION FIX */}
+      <ScreenHeader 
+        title={`INVOICE #${invoice.number}`} 
+        subtitle={`${invoice.customer} · ${new Date(invoice.date).toLocaleDateString()}`} 
+        onBack={() => navigation.navigate('InvoicesList')} 
+      />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           
@@ -265,11 +283,8 @@ export default function InvoiceDetailScreen() {
             isPaid={isPaid} customerEmail={invoice.customerEmail}
             onUpdateInvoice={handleUpdateInvoice}
             onTogglePaid={async () => { await togglePaidStatus(); showToast(isPaid ? 'Marked as unpaid' : 'Marked as paid'); }}
-            onPreviewPdf={() => navigation.navigate('PdfPreview', { html: generateHTMLString(), title: `Invoice_${invoice.number}.pdf` })}
-            onShare={async () => {
-              const { uri } = await Print.printToFileAsync({ html: generateHTMLString(), base64: false });
-              Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: `Invoice_${invoice.number}.pdf` });
-            }}
+            onPreviewPdf={handlePreviewPdf}
+            onShare={handleSharePdf}
           />
 
           <Button variant="outline" style={{ borderColor: colors.red, marginTop: 16 }} onPress={() => Alert.alert("Delete", "Delete?", [{ text: "Cancel" }, { text: "Delete", onPress: async () => { await invoiceService.deleteInvoice(invoice._id); navigation.navigate('InvoicesList'); } }])}>
