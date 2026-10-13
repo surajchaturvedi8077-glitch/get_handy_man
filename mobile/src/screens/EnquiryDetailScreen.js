@@ -35,6 +35,7 @@ export default function EnquiryDetailScreen() {
   const [localAddress, setLocalAddress] = useState('');
   const [localNotes, setLocalNotes] = useState('');
   const [localAdvancePaid, setLocalAdvancePaid] = useState('0');
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (enquiry) {
@@ -46,24 +47,6 @@ export default function EnquiryDetailScreen() {
       setLocalAdvancePaid(String(enquiry.advancePaid || 0));
     }
   }, [enquiry]);
-
-  const handleUpdateEnquiry = async () => {
-    try {
-      await unwrap(apiClient.put(`/api/enquiries/${params.id}`, {
-        name: localName, phone: localPhone, email: localEmail, address: localAddress, notes: localNotes, advancePaid: Number(localAdvancePaid) || 0
-      }));
-      refresh();
-      showToast('Enquiry details saved');
-    } catch (e) { Alert.alert('Backend Error', e?.response?.data?.message || 'Failed to save changes'); }
-  };
-
-  const handleConvertToInvoice = async () => {
-    try {
-      const data = await convertToInvoice(params.id);
-      showToast('Converted Directly to Invoice!');
-      navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: data.invoice._id } });
-    } catch (e) { Alert.alert('Backend Error', e?.response?.data?.message || 'Could not convert to Invoice'); }
-  };
 
   const generateQuoteHTML = (items) => {
     const itemsHtml = items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">1</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`).join('') || '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
@@ -84,7 +67,6 @@ export default function EnquiryDetailScreen() {
     const bankNameStr = settings?.bankName || '';
     const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
     const paymentDetailsHtml = bankNameStr ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>` : '';
-
     const notesHtml = localNotes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${localNotes.replace(/\n/g, '<br/>')}</div>` : '';
 
     return `
@@ -118,7 +100,7 @@ export default function EnquiryDetailScreen() {
         <body>
           <div class="header">
             <div>${settings?.logoUrl ? `<img src="${settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`}" class="logo" />` : ''}<div class="biz-details"><div class="biz-name">${settings?.businessName || 'Get Handyman'}</div>${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}${settings?.bizCityState ? `<div>${settings.bizCityState}</div>` : ''}${settings?.bizPhone ? `<div>${settings.bizPhone}</div>` : ''}${settings?.website ? `<div>${settings.website}</div>` : ''}</div></div>
-            <div class="doc-meta"><h2 class="doc-type">QUOTE</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${quoteDate}</div><div><strong style="color: #9CA3AF;">Currency:</strong> AUD</div><div><strong style="color: #9CA3AF;">Terms:</strong> ${settings?.paymentTerms || 'Due on receipt'}</div></div></div>
+            <div class="doc-meta"><h2 class="doc-type">QUOTE</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${new Date().toLocaleDateString('en-GB')}</div><div><strong style="color: #9CA3AF;">Currency:</strong> AUD</div><div><strong style="color: #9CA3AF;">Terms:</strong> ${settings?.paymentTerms || 'Due on receipt'}</div></div></div>
           </div>
           <div class="divider"></div>
           <div class="bill-to-section">
@@ -141,28 +123,68 @@ export default function EnquiryDetailScreen() {
     `;
   };
 
-  const handlePreviewQuote = (items) => {
-    navigation.navigate('PdfPreview', { html: generateQuoteHTML(items), title: `Quote_${localName || 'Preview'}.pdf` });
+  const saveToDatabase = async (items) => {
+    const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
+    const gstAmt = (settings?.gstEnabled !== false) ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
+    
+    await unwrap(apiClient.put(`/api/enquiries/${params.id}`, {
+      name: localName, phone: localPhone, email: localEmail, address: localAddress,
+      notes: localNotes, advancePaid: Number(localAdvancePaid) || 0,
+      quoteItems: items, price: subtotal + gstAmt
+    }));
+  };
+
+  const handleManualSave = async (items) => {
+    try {
+      await saveToDatabase(items);
+      refresh();
+      showToast('Quote details saved');
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes');
+    }
+  };
+
+  const handlePreviewQuote = async (items) => {
+    try {
+      await saveToDatabase(items);
+      navigation.navigate('PdfPreview', { html: generateQuoteHTML(items), title: `Quote_${localName || 'Preview'}.pdf` });
+    } catch (e) {
+      Alert.alert('Error', 'Failed to generate preview');
+    }
   };
 
   const handleSendQuote = async (items) => {
+    setGenerating(true);
     try {
-      showToast('Saving & Generating Quote...');
-      
-      // FIXED: Save to DB First! This guarantees it updates even if Sharing is cancelled.
-      const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
-      const gstAmt = (settings?.gstEnabled !== false) ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
-      await unwrap(apiClient.put(`/api/enquiries/${params.id}`, { price: subtotal + gstAmt }));
+      // Save data first
+      await saveToDatabase(items);
       await sendQuote(items); // Updates status to 'quoted'
       
-      // THEN open PDF
       const { uri } = await Print.printToFileAsync({ html: generateQuoteHTML(items), base64: false });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' });
-      }
       
-      showToast('Quote sent successfully');
-    } catch (err) { Alert.alert("Error", "Failed to generate or share quote."); }
+      // Share dialog wrapped safely
+      if (await Sharing.isAvailableAsync()) {
+        try {
+          await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' });
+        } catch (shareErr) {
+          // If user cancels or dismisses share sheet, state remains saved
+        }
+      }
+      showToast('Quote saved and sent!');
+      refresh();
+    } catch (err) {
+      Alert.alert("Error", err?.response?.data?.message || err?.message || "Failed to generate or share quote.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleConvertToInvoice = async () => {
+    try {
+      const data = await convertToInvoice(params.id);
+      showToast('Converted Directly to Invoice!');
+      navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: data.invoice._id } });
+    } catch (e) { Alert.alert('Backend Error', e?.response?.data?.message || 'Could not convert to Invoice'); }
   };
 
   const handleAccept = async () => {
@@ -170,14 +192,12 @@ export default function EnquiryDetailScreen() {
       const { job } = await accept();
       showToast('Job created from enquiry');
       navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: job._id } });
-    } catch (e) {
-      Alert.alert("Backend Error", e?.response?.data?.message || e?.message || "Could not accept enquiry.");
-    }
+    } catch (e) { Alert.alert("Backend Error", e?.response?.data?.message || "Could not accept enquiry."); }
   };
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="QUOTE / ENQUIRY" subtitle={enquiry?.name} onBack={() => { navigation.canGoBack() ? navigation.goBack() : navigation.navigate('EnquiriesList') }} />
+      <ScreenHeader title="QUOTE / ENQUIRY" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {loading && <LoadingState />}
@@ -189,10 +209,17 @@ export default function EnquiryDetailScreen() {
                 <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>{enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}</Chip>
               </View>
 
-              <FieldLabel style={{ marginTop: 14 }}>Customer Details</FieldLabel>
+              {/* Explicit FieldLabels for every single field */}
+              <FieldLabel style={{ marginTop: 14 }}>Customer Name</FieldLabel>
               <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
+              
+              <FieldLabel>Phone Number</FieldLabel>
               <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+              
+              <FieldLabel>Email Address</FieldLabel>
               <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+              
+              <FieldLabel>Address</FieldLabel>
               <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Address" />
               
               <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
@@ -200,20 +227,18 @@ export default function EnquiryDetailScreen() {
 
               <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
               <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Scope of work, terms, etc..." value={localNotes} onChangeText={setLocalNotes} />
-              
-              <Button variant="outline" style={{ marginBottom: 20 }} onPress={handleUpdateEnquiry}>
-                💾 Save Customer Details & Notes
-              </Button>
 
-              {enquiry.status !== 'rejected' && (
-                <QuoteComposer initialItems={enquiry.quoteItems} onSend={handleSendQuote} onPreview={handlePreviewQuote} />
-              )}
+              <QuoteComposer 
+                initialItems={enquiry.quoteItems} 
+                onSave={handleManualSave}
+                onPreview={handlePreviewQuote}
+                onSend={handleSendQuote}
+                generating={generating}
+              />
 
               {enquiry.status === 'new' && (
                 <>
-                  <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>
-                    ✅ Accept Instantly & Create Job
-                  </Button>
+                  <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>✅ Accept Instantly & Create Job</Button>
                   <Button variant="outline" onPress={() => reject()} style={{ marginTop: 10 }}>Reject enquiry</Button>
                 </>
               )}
@@ -252,7 +277,7 @@ export default function EnquiryDetailScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16 },
+  content: { padding: 16, paddingBottom: 40 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 8, color: colors.charcoal },
   noteError: { fontSize: 12.5, color: colors.red, fontWeight: '700', marginTop: 10 },

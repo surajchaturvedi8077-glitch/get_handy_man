@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import JobFilterTabs from '../components/jobs/JobFilterTabs';
 import JobListItem from '../components/jobs/JobListItem';
 import SegmentedControl from '../components/ui/SegmentedControl';
@@ -13,17 +13,29 @@ import { colors } from '../theme/colors';
 const { width } = Dimensions.get('window');
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-const safeTime = (dateStr) => {
-  if (!dateStr) return 9999999999999; 
-  const time = new Date(dateStr).getTime();
-  return isNaN(time) ? 9999999999999 : time;
+// Chronological score: Today's jobs first, then upcoming ascending, then past, then unscheduled at bottom
+const getJobSortScore = (job) => {
+  if (!job.scheduledDate) return Number.MAX_SAFE_INTEGER;
+  const d = new Date(job.scheduledDate);
+  const time = d.getTime();
+  if (isNaN(time)) return Number.MAX_SAFE_INTEGER;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const jobDay = new Date(d);
+  jobDay.setHours(0, 0, 0, 0);
+
+  if (jobDay.getTime() === today.getTime()) {
+    return 1000000000000 + (time - jobDay.getTime());
+  } else if (jobDay.getTime() > today.getTime()) {
+    return 2000000000000 + time; // Ascending future dates
+  } else {
+    return 3000000000000 + time; // Past dates
+  }
 };
 
 export default function JobsScreen() {
   const navigation = useNavigation();
-  const route = useRoute(); 
-  const params = route.params || {};
-
   const [viewMode, setViewMode] = useState('list'); 
   const [filter, setFilter] = useState('all'); 
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,20 +49,39 @@ export default function JobsScreen() {
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
 
+  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayIndex = new Date(year, month, 1).getDay();
+  const daysArray = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
+
+  const jobsPerDay = {};
+  jobs.forEach(j => {
+    if (!j.scheduledDate) return;
+    const d = new Date(j.scheduledDate);
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const dayNum = d.getDate();
+      jobsPerDay[dayNum] = (jobsPerDay[dayNum] || 0) + 1;
+    }
+  });
+
   const filteredJobs = jobs.filter(j => {
     const q = searchQuery.toLowerCase();
     const searchMatch = q === '' || 
       (j.name && j.name.toLowerCase().includes(q)) ||
-      (j.address && j.address.toLowerCase().includes(q));
+      (j.address && j.address.toLowerCase().includes(q)) ||
+      (Array.isArray(j.services) && j.services.some(s => {
+        const sName = typeof s === 'string' ? s : s?.name || '';
+        return sName.toLowerCase().includes(q);
+      })) ||
+      (typeof j.service === 'string' && j.service.toLowerCase().includes(q));
     
-    // FIXED: Only filters by 'accepted' (Assigned) and 'complete' now. Confirmed is gone.
     let tabMatch = false;
     if (filter === 'all') tabMatch = true;
-    else if (filter === 'accepted') tabMatch = (j.status === 'accepted');
+    else if (filter === 'accepted') tabMatch = (j.status === 'accepted' || j.status === 'pending');
+    else if (filter === 'confirmed') tabMatch = (j.status === 'confirmed');
     else if (filter === 'complete') tabMatch = (j.status === 'complete');
     
     return searchMatch && tabMatch;
-  }).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
+  }).sort((a, b) => getJobSortScore(a) - getJobSortScore(b));
 
   return (
     <View style={styles.screen}>
@@ -73,17 +104,39 @@ export default function JobsScreen() {
             {loading && <LoadingState />}
             {error && <ErrorState>{error}</ErrorState>}
             
-            {!loading && !error && filteredJobs.length > 0 && ( 
+            {!loading && !error && filteredJobs.length > 0 ? ( 
               filteredJobs.map(j => <JobListItem key={j._id} job={j} />) 
-            )}
-
-            {!loading && !error && filteredJobs.length === 0 && (
-              <Text style={styles.emptyText}>No jobs match this filter.</Text>
+            ) : ( 
+              !loading && <Text style={styles.emptyText}>No jobs match this filter.</Text> 
             )}
           </View>
         ) : (
           <View style={styles.calendarContainer}>
-            <Text style={{textAlign: 'center', marginTop: 50, color: colors.gray}}>Calendar View Selected</Text>
+            <View style={styles.monthNav}>
+              <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
+              <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
+              <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
+            </View>
+            <View style={styles.daysHeader}>
+              {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
+            </View>
+            <View style={styles.grid}>
+              {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
+              {daysArray.map(day => {
+                const isTodayCell = new Date().toDateString() === new Date(year, month, day).toDateString();
+                const count = jobsPerDay[day] || 0;
+                return (
+                  <TouchableOpacity key={day} style={[styles.dayCell, isTodayCell && styles.todayCell]} onPress={() => navigation.navigate('DayDetail', { day, year, month })}>
+                    <Text style={[styles.dayText, isTodayCell && { color: colors.orangeDeep, fontWeight: '800' }]}>{day}</Text>
+                    {count > 0 && (
+                      <View style={[styles.badge, count >= 2 ? { backgroundColor: colors.charcoal2 } : {}]}>
+                        <Text style={[styles.badgeText, count >= 2 ? { color: '#fff' } : {}]}>{count}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         )}
       </ScrollView>
@@ -103,5 +156,17 @@ const styles = StyleSheet.create({
   tabs: { marginBottom: 14 },
   searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
   emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
-  calendarContainer: { padding: 14 }
+  calendarContainer: { padding: 14 },
+  monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.grayLight },
+  monthBtn: { padding: 8 },
+  monthBtnText: { fontSize: 14, fontWeight: 'bold', color: colors.charcoal },
+  monthTitle: { fontSize: 15, fontWeight: '800', color: colors.charcoal },
+  daysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 10 },
+  dayHeadText: { fontSize: 10, color: colors.gray, fontWeight: '700', width: (width - 28) / 7, textAlign: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  dayCell: { width: (width - 28) / 7, height: 46, alignItems: 'center', paddingTop: 4 },
+  todayCell: { backgroundColor: colors.orangeTint, borderRadius: 8, borderWidth: 1, borderColor: colors.orange },
+  dayText: { fontSize: 11, fontWeight: '500', color: colors.charcoal },
+  badge: { backgroundColor: colors.grayLight, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1, marginTop: 2 },
+  badgeText: { fontSize: 8, fontWeight: '800', color: colors.gray }
 });

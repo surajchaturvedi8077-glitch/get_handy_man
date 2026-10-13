@@ -105,7 +105,6 @@ export default function NewQuoteScreen() {
           </div>
           ${paymentDetailsHtml}
           ${notesHtml}
-          ${settings?.quoteMessage ? `<div style="margin-top: 30px; font-size: 11px; color: #6B7280; line-height: 1.5;">${settings.quoteMessage}</div>` : ''}
         </body>
       </html>
     `;
@@ -115,6 +114,22 @@ export default function NewQuoteScreen() {
     navigation.navigate('PdfPreview', { html: generateHTMLString(), title: `Quote_${form.name || 'Preview'}.pdf` });
   };
 
+  const handleSaveOnly = async () => {
+    if (!form.name || !form.phone || !form.email) return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
+    try {
+      const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
+      const applyGst = settings?.gstEnabled !== false;
+      const gstAmt = applyGst ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
+      await apiClient.post('/api/enquiries', {
+        name: form.name, phone: form.phone, email: form.email, address: form.address,
+        notes: form.notes, advancePaid: Number(form.advancePaid) || 0,
+        status: 'new', quoteItems: items, price: subtotal + gstAmt
+      });
+      showToast('Draft Quote Saved Successfully!');
+      navigation.navigate('Dashboard');
+    } catch (err) { Alert.alert("Error", "Failed to save draft quote."); } 
+  };
+
   const handleSaveAndShareQuote = async () => {
     if (!form.name || !form.phone || !form.email) return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
     setGenerating(true);
@@ -122,19 +137,23 @@ export default function NewQuoteScreen() {
       const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
       const applyGst = settings?.gstEnabled !== false;
       const gstAmt = applyGst ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
-      const finalTotal = subtotal + gstAmt;
 
       await apiClient.post('/api/enquiries', {
         name: form.name, phone: form.phone, email: form.email, address: form.address,
         notes: form.notes, advancePaid: Number(form.advancePaid) || 0,
-        status: 'quoted', quoteItems: items, price: finalTotal
+        status: 'quoted', quoteItems: items, price: subtotal + gstAmt
       });
-      showToast('Quote saved permanently!');
-
+      
       const { uri } = await Print.printToFileAsync({ html: generateHTMLString(), base64: false });
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${form.name}`, UTI: '.pdf' });
+      if (await Sharing.isAvailableAsync()) {
+        try {
+          await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${form.name}`, UTI: '.pdf' });
+        } catch (shareErr) {}
+      }
+      showToast('Quote Saved & Shared!');
+      navigation.navigate('Dashboard');
     } catch (err) { Alert.alert("Error", "Failed to generate quote PDF."); } 
-    finally { setGenerating(false); navigation.navigate('Dashboard'); }
+    finally { setGenerating(false); }
   };
 
   return (
@@ -142,10 +161,16 @@ export default function NewQuoteScreen() {
       <ScreenHeader title="NEW QUOTE" onBack={() => { navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Dashboard') }} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <FieldLabel>Customer Details (Mandatory)</FieldLabel>
-          <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} />
-          <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" />
-          <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" />
+          <FieldLabel>Customer Name *</FieldLabel>
+          <TextInput style={styles.input} placeholder="Customer Name" value={form.name} onChangeText={v => updateForm('name', v)} />
+          
+          <FieldLabel>Phone Number *</FieldLabel>
+          <TextInput style={styles.input} placeholder="Phone Number" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" />
+          
+          <FieldLabel>Email Address *</FieldLabel>
+          <TextInput style={styles.input} placeholder="Email Address" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" />
+          
+          <FieldLabel>Street Address</FieldLabel>
           <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} />
           
           <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
@@ -154,7 +179,7 @@ export default function NewQuoteScreen() {
           <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
           <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Scope of work, terms, etc..." value={form.notes} onChangeText={v => updateForm('notes', v)} />
 
-          <FieldLabel style={{ marginTop: 14 }}>Service Description / Line Items</FieldLabel>
+          <FieldLabel style={{ marginTop: 14 }}>Description (Services)</FieldLabel>
           {items.map((it, idx) => (
             <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
               <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={it.name} onChangeText={v => { const n = [...items]; n[idx].name = v; setItems(n); }} placeholder="Description" />
@@ -163,6 +188,8 @@ export default function NewQuoteScreen() {
             </View>
           ))}
           <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add description line</Button>
+
+          <Button variant="outline" style={{ marginBottom: 10 }} onPress={handleSaveOnly}>💾 Save Draft Quote</Button>
 
           <View style={styles.btnRow}>
             <Button variant="dark" style={[styles.flex, { marginRight: 8 }]} onPress={handlePreviewPdf}>Preview PDF</Button>
@@ -180,7 +207,6 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16, paddingBottom: 40 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 10, color: colors.charcoal },
-  row: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   btnRow: { flexDirection: 'row', marginTop: 12 },
   flex: { flex: 1 }
 });

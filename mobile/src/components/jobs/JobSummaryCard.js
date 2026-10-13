@@ -3,9 +3,9 @@ import { money } from '../../utils/money';
 import { colors } from '../../theme/colors';
 
 export default function JobSummaryCard({ job }) {
-  const serviceText = (job.services && job.services.length > 0) 
-    ? job.services.join(', ') 
-    : (job.service || 'None');
+  const serviceText = (Array.isArray(job.services) && job.services.length > 0) 
+    ? job.services.map(s => (typeof s === 'string' ? s : s?.name || '')).filter(Boolean).join(', ') 
+    : (typeof job.service === 'string' ? job.service : job.service?.name || 'None');
 
   return (
     <View style={styles.wrap}>

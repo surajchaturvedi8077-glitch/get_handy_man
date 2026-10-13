@@ -1,40 +1,26 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Notifications from 'expo-notifications'; 
 import useAuth from '../hooks/useAuth';
 import useEnquiries from '../hooks/useEnquiries';
 import useJobs from '../hooks/useJobs';
 import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
-
-// FIXED: Imported the new scheduleDailyMorningBriefing function
-import { getExpoPushToken, scheduleDailyMorningBriefing } from '../services/notificationService';
+import { getExpoPushToken, scheduleLocalJobReminder, setupMorningBriefingTimeout } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
-
 const safeTime = (dateStr) => {
-  if (!dateStr) return 0;
+  if (!dateStr) return Number.MAX_SAFE_INTEGER;
   const time = new Date(dateStr).getTime();
-  return isNaN(time) ? 0 : time;
+  return isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
 };
 
 function SummaryCard({ big, label, sub, bg, fg, onPress }) {
   return (
     <TouchableOpacity onPress={onPress} style={[styles.card, { backgroundColor: bg }]}>
-      <View style={styles.cardTop}>
-        <Text style={[styles.big, { color: fg }]}>{big}</Text>
-        <Text style={[styles.label, { color: fg }]}>{label}</Text>
-      </View>
+      <View style={styles.cardTop}><Text style={[styles.big, { color: fg }]}>{big}</Text><Text style={[styles.label, { color: fg }]}>{label}</Text></View>
       <Text style={[styles.sub, { color: fg }]}>{sub}</Text>
     </TouchableOpacity>
   );
@@ -45,59 +31,19 @@ export default function DashboardScreen() {
   const { user } = useAuth();
   const { settings, update } = useSettings();
 
-  const { enquiries: newEnquiries, refresh: refreshEnquiries } = useEnquiries('new');
-  const { jobs, refresh: refreshJobs } = useJobs('all');
-  const { invoices: unpaidInvoices, refresh: refreshInvoices } = useInvoices('unpaid');
+  const { enquiries: newEnquiries } = useEnquiries('new');
+  const { jobs } = useJobs('all');
+  const { invoices: unpaidInvoices } = useInvoices('unpaid');
 
-  const [notifiedEnquiries, setNotifiedEnquiries] = useState(new Set());
-useEffect(() => {
-    async function setupNotifications() {
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permissions Required', 'Please enable notifications in your phone settings to receive alerts.');
-      }
+  useEffect(() => {
+    async function syncPushToken() {
       if (settings && !settings.expoPushToken) {
         const token = await getExpoPushToken();
         if (token) update({ expoPushToken: token });
       }
-
-      // Schedule with your custom preference from settings (or fallback to saved local setting)
-      if (scheduleDailyMorningBriefing) {
-        await scheduleDailyMorningBriefing(
-          settings?.briefingEnabled ?? true,
-          settings?.briefingTime || '07:30'
-        );
-      }
     }
-    setupNotifications();
+    syncPushToken();
   }, [settings]);
-
-  useEffect(() => {
-    if (newEnquiries && newEnquiries.length > 0) {
-      newEnquiries.forEach(enq => {
-        if (!notifiedEnquiries.has(enq._id)) {
-          Notifications.scheduleNotificationAsync({
-            content: {
-              title: '🆕 New Enquiry Received!',
-              body: `${enq.name} needs a ${enq.service || 'handyman'}.`,
-              sound: 'default',
-            },
-            trigger: null,
-          });
-          setNotifiedEnquiries(prev => new Set(prev).add(enq._id));
-        }
-      });
-    }
-  }, [newEnquiries]);
-
-  useEffect(() => {
-    const frontendCron = setInterval(() => {
-      refreshEnquiries();
-      refreshJobs();
-      refreshInvoices();
-    }, 30000); 
-    return () => clearInterval(frontendCron);
-  }, [refreshEnquiries, refreshJobs, refreshInvoices]);
 
   const isToday = (dateString) => {
     if (!dateString) return false;
@@ -106,77 +52,50 @@ useEffect(() => {
     return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
   };
 
-  const todaysJobs = jobs
-    .filter(j => j.status !== 'complete' && isToday(j.scheduledDate))
-    .sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
+  const todaysJobs = jobs.filter(j => j.status !== 'complete' && isToday(j.scheduledDate)).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)); 
+  const upcomingJobs = jobs.filter(j => j.status !== 'complete' && safeTime(j.scheduledDate) > new Date().setHours(23,59,59,999)).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)).slice(0, 3);
 
-  const needsDetailsCount = todaysJobs.filter(j => j.needsDetails).length;
-  const assignedCount = todaysJobs.filter(j => j.status === 'accepted').length;
+  useEffect(() => {
+    todaysJobs.forEach(job => scheduleLocalJobReminder(job));
+  }, [todaysJobs]);
 
-  const todayOptions = { weekday: 'long', day: 'numeric', month: 'long' };
-  const todayStr = new Date().toLocaleDateString('en-US', todayOptions);
+  // Set timeout morning briefing
+  useEffect(() => {
+    const timer = setupMorningBriefingTimeout(settings?.briefingEnabled, settings?.briefingTime, () => todaysJobs.length);
+    return () => { if (timer) clearTimeout(timer); };
+  }, [settings?.briefingEnabled, settings?.briefingTime, todaysJobs.length]);
 
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.greeting}>Hi, {user?.name?.split(' ')[0] || 'Worker'}</Text>
-          <Text style={styles.dateSub}>{todayStr}</Text>
+          <Text style={styles.dateSub}>{new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
         </View>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Customers')}>
-            <View style={styles.iconBoxDark}><Text style={styles.iconLarge}>👥</Text></View>
-            <Text style={styles.navLabel}>Clients</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Notifications')}>
-            <View style={styles.iconBoxDark}>
-              <Text style={styles.iconLarge}>🔔</Text>
-              {(newEnquiries.length > 0) && <View style={styles.alertDot} />}
-            </View>
-            <Text style={styles.navLabel}>Alerts</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Settings')}>
-            <View style={styles.iconBoxDark}><Text style={styles.iconLarge}>⚙️</Text></View>
-            <Text style={styles.navLabel}>Settings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('NewJob')}>
-            <View style={styles.iconBoxOrange}><Text style={styles.iconPlus}>+</Text></View>
-            <Text style={styles.navLabel}>New Job</Text>
-          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Customers')}><View style={styles.iconBoxDark}><Text style={styles.iconLarge}>👥</Text></View><Text style={styles.navLabel}>Clients</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Notifications')}><View style={styles.iconBoxDark}><Text style={styles.iconLarge}>🔔</Text>{(newEnquiries.length > 0) && <View style={styles.alertDot} />}</View><Text style={styles.navLabel}>Alerts</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Settings')}><View style={styles.iconBoxDark}><Text style={styles.iconLarge}>⚙️</Text></View><Text style={styles.navLabel}>Settings</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('NewJob')}><View style={styles.iconBoxOrange}><Text style={styles.iconPlus}>+</Text></View><Text style={styles.navLabel}>New Job</Text></TouchableOpacity>
         </View>
       </SafeAreaView>
 
       <ScrollView style={styles.content} contentContainerStyle={{ padding: 14 }}>
-        <SummaryCard
-          big={newEnquiries.length}
-          label={newEnquiries.length === 1 ? 'NEW ENQUIRY' : 'NEW ENQUIRIES'}
-          sub="From website or directly"
-          bg={colors.orangeTint}
-          fg={colors.orangeDeep}
-          onPress={() => navigation.getParent()?.navigate('Enquiries')}
-        />
-        <SummaryCard
-          big={todaysJobs.length}
-          label="JOBS TODAY"
-          sub={`${assignedCount} assigned · ${needsDetailsCount} need details`}
-          bg={colors.blueTint}
-          fg={colors.blue}
-          onPress={() => navigation.getParent()?.navigate('Jobs')}
-        />
-        {unpaidInvoices.length > 0 && (
-          <SummaryCard
-            big={unpaidInvoices.length}
-            label={unpaidInvoices.length === 1 ? 'UNPAID INVOICE' : 'UNPAID INVOICES'}
-            sub="Tap to review & follow up"
-            bg={colors.redTint}
-            fg={colors.red}
-            onPress={() => navigation.getParent()?.navigate('Invoices')}
-          />
-        )}
+        <SummaryCard big={newEnquiries.length} label={newEnquiries.length === 1 ? 'NEW ENQUIRY' : 'NEW ENQUIRIES'} sub="From website or directly" bg={colors.orangeTint} fg={colors.orangeDeep} onPress={() => navigation.getParent()?.navigate('Enquiries')} />
+        <SummaryCard big={todaysJobs.length} label="JOBS TODAY" sub={`${todaysJobs.length} scheduled for today`} bg={colors.blueTint} fg={colors.blue} onPress={() => navigation.getParent()?.navigate('Jobs')} />
+        {unpaidInvoices.length > 0 && <SummaryCard big={unpaidInvoices.length} label={unpaidInvoices.length === 1 ? 'UNPAID INVOICE' : 'UNPAID INVOICES'} sub="Tap to review & follow up" bg={colors.redTint} fg={colors.red} onPress={() => navigation.getParent()?.navigate('Invoices')} />}
+        
         <Text style={styles.sectionLabel}>Today's schedule</Text>
-        {todaysJobs.map((job) => <JobListItem key={job._id} job={job} />)}
-        {todaysJobs.length === 0 && <Text style={styles.emptyText}>No jobs scheduled for today.</Text>}
+        {todaysJobs.length > 0 ? ( todaysJobs.map((job) => <JobListItem key={job._id} job={job} />) ) : (
+          <View>
+            <Text style={styles.emptyText}>You have a clear schedule today!</Text>
+            {upcomingJobs.length > 0 && (
+              <><Text style={[styles.sectionLabel, { marginTop: 24 }]}>UPCOMING JOBS</Text>
+              {upcomingJobs.map((job) => <JobListItem key={job._id} job={job} />)}</>
+            )}
+          </View>
+        )}
       </ScrollView>
     </View>
   );

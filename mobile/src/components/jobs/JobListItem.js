@@ -9,10 +9,10 @@ import { colors } from '../../theme/colors';
 export default function JobListItem({ job }) {
   const navigation = useNavigation();
   
-  // FIXED: Crash-proof check. If it's an old job, it safely falls back to the old string format.
+  // Safely extracts string name whether service is a string, object, or array of objects
   const serviceText = (Array.isArray(job.services) && job.services.length > 0) 
-    ? job.services.join(', ') 
-    : (job.service || 'None');
+    ? job.services.map(s => (typeof s === 'string' ? s : s?.name || '')).filter(Boolean).join(', ') 
+    : (typeof job.service === 'string' ? job.service : job.service?.name || 'None');
 
   return (
     <Card
