@@ -50,13 +50,11 @@ export default function EnquiryDetailScreen() {
 
   const generateQuoteHTML = (items) => {
     const itemsHtml = items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">1</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`).join('') || '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
-    
     const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
     const gstRate = settings?.gstRate || 10;
     const applyGst = settings?.gstEnabled !== false;
     const gstAmt = applyGst ? subtotal * (gstRate / 100) : 0;
     const finalTotal = subtotal + gstAmt;
-
     const advanceAmt = parseFloat(localAdvancePaid || 0);
     const advanceHtml = advanceAmt > 0 ? `<div class="totals-row"><span>Advance/Deposit Paid</span><span>-$${advanceAmt.toFixed(2)}</span></div>` : '';
     const balanceDue = finalTotal - advanceAmt;
@@ -67,67 +65,16 @@ export default function EnquiryDetailScreen() {
     const bankNameStr = settings?.bankName || '';
     const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
     const paymentDetailsHtml = bankNameStr ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>` : '';
-
     const notesHtml = localNotes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${localNotes.replace(/\n/g, '<br/>')}</div>` : '';
 
     return `
-      <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          <style>
-            @page { margin: 0; }
-            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; -webkit-print-color-adjust: exact; }
-            .header { display: flex; justify-content: space-between; align-items: flex-start; }
-            .logo { max-height: 120px; max-width: 250px; object-fit: contain; margin-bottom: 15px; }
-            .biz-details { font-size: 12px; color: #374151; line-height: 1.6; }
-            .biz-name { font-size: 16px; font-weight: 800; color: #111827; margin-bottom: 4px; }
-            .doc-meta { text-align: right; }
-            .doc-type { font-size: 28px; font-weight: 800; color: #6B7280; margin: 0 0 15px 0; letter-spacing: 1px; line-height: 1; }
-            .divider { border-top: 2px solid #111827; margin: 25px 0; }
-            .bill-to-section { margin-bottom: 30px; }
-            .bill-to-title { color: #9CA3AF; font-weight: 700; font-size: 11px; margin-bottom: 6px; letter-spacing: 0.5px; }
-            .bill-to-details { font-size: 12px; color: #374151; line-height: 1.5; }
-            .items-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
-            .items-table th { background-color: #1D4ED8; color: #ffffff; padding: 12px 10px; font-weight: 700; text-align: left; }
-            .items-table td { padding: 12px 10px; border-bottom: 1px solid #E5E7EB; }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid; }
-            .totals { width: 260px; font-size: 11px; color: #374151; }
-            .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; }
-            .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>${settings?.logoUrl ? `<img src="${settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`}" class="logo" />` : ''}<div class="biz-details"><div class="biz-name">${settings?.businessName || 'Get Handyman'}</div>${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}${settings?.bizCityState ? `<div>${settings.bizCityState}</div>` : ''}${settings?.bizPhone ? `<div>${settings.bizPhone}</div>` : ''}${settings?.website ? `<div>${settings.website}</div>` : ''}</div></div>
-            <div class="doc-meta"><h2 class="doc-type">QUOTE</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${new Date().toLocaleDateString('en-GB')}</div><div><strong style="color: #9CA3AF;">Currency:</strong> AUD</div><div><strong style="color: #9CA3AF;">Terms:</strong> ${settings?.paymentTerms || 'Due on receipt'}</div></div></div>
-          </div>
-          <div class="divider"></div>
-          <div class="bill-to-section">
-            <div class="bill-to-title">QUOTE TO:</div>
-            <div class="bill-to-details"><div style="font-weight: 700; font-size: 14px; color: #111827;">${localName || 'Customer Name'}</div>${localPhone ? `<div>${localPhone}</div>` : ''}${localEmail ? `<div>${localEmail}</div>` : ''}${localAddress ? `<div style="margin-top: 4px;">${localAddress}</div>` : ''}</div>
-          </div>
-          <table class="items-table"><tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>${itemsHtml}</table>
-          <div class="totals-container">
-            <div class="totals">
-              <div class="totals-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>
-              <div class="totals-row"><span>${applyGst ? `GST ${gstRate}%` : 'GST'}</span><span>${applyGst ? `$${gstAmt.toFixed(2)}` : '$0.00'}</span></div>
-              ${advanceHtml}
-              <div class="balance-due"><span>Total Quote</span><span>$${balanceDue.toFixed(2)}</span></div>
-            </div>
-          </div>
-          ${paymentDetailsHtml}
-          ${notesHtml}
-        </body>
-      </html>
+      <html><head><meta name="viewport" content="width=device-width, initial-scale=1.0" /><style>@page { margin: 0; } body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; } .header { display: flex; justify-content: space-between; align-items: flex-start; } .logo { max-height: 120px; max-width: 250px; object-fit: contain; margin-bottom: 15px; } .biz-details { font-size: 12px; color: #374151; line-height: 1.6; } .biz-name { font-size: 16px; font-weight: 800; color: #111827; margin-bottom: 4px; } .doc-meta { text-align: right; } .doc-type { font-size: 28px; font-weight: 800; color: #6B7280; margin: 0 0 15px 0; letter-spacing: 1px; } .divider { border-top: 2px solid #111827; margin: 25px 0; } .bill-to-section { margin-bottom: 30px; } .bill-to-title { color: #9CA3AF; font-weight: 700; font-size: 11px; margin-bottom: 6px; } .bill-to-details { font-size: 12px; color: #374151; line-height: 1.5; } .items-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; } .items-table th { background-color: #1D4ED8; color: #ffffff; padding: 12px 10px; font-weight: 700; text-align: left; } .items-table td { padding: 12px 10px; border-bottom: 1px solid #E5E7EB; } .text-center { text-align: center; } .text-right { text-align: right; } .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; } .totals { width: 260px; font-size: 11px; color: #374151; } .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; } .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; }</style></head><body><div class="header"><div>${settings?.logoUrl ? `<img src="${settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`}" class="logo" />` : ''}<div class="biz-details"><div class="biz-name">${settings?.businessName || 'Get Handyman'}</div>${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}${settings?.bizCityState ? `<div>${settings.bizCityState}</div>` : ''}${settings?.bizPhone ? `<div>${settings.bizPhone}</div>` : ''}${settings?.website ? `<div>${settings.website}</div>` : ''}</div></div><div class="doc-meta"><h2 class="doc-type">QUOTE</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${new Date().toLocaleDateString('en-GB')}</div><div><strong style="color: #9CA3AF;">Terms:</strong> ${settings?.paymentTerms || 'Due on receipt'}</div></div></div></div><div class="divider"></div><div class="bill-to-section"><div class="bill-to-title">QUOTE TO:</div><div class="bill-to-details"><div style="font-weight: 700; font-size: 14px; color: #111827;">${localName || 'Customer Name'}</div>${localPhone ? `<div>${localPhone}</div>` : ''}${localEmail ? `<div>${localEmail}</div>` : ''}${localAddress ? `<div style="margin-top: 4px;">${localAddress}</div>` : ''}</div></div><table class="items-table"><tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>${itemsHtml}</table><div class="totals-container"><div class="totals"><div class="totals-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div><div class="totals-row"><span>${applyGst ? `GST ${gstRate}%` : 'GST'}</span><span>${applyGst ? `$${gstAmt.toFixed(2)}` : '$0.00'}</span></div>${advanceHtml}<div class="balance-due"><span>Total Quote</span><span>$${balanceDue.toFixed(2)}</span></div></div></div>${paymentDetailsHtml}${notesHtml}</body></html>
     `;
   };
 
   const saveToDatabase = async (items) => {
     const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
     const gstAmt = (settings?.gstEnabled !== false) ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
-    
     await unwrap(apiClient.put(`/api/enquiries/${params.id}`, {
       name: localName, phone: localPhone, email: localEmail, address: localAddress,
       notes: localNotes, advancePaid: Number(localAdvancePaid) || 0,
@@ -136,44 +83,28 @@ export default function EnquiryDetailScreen() {
   };
 
   const handleManualSave = async (items) => {
-    try {
-      await saveToDatabase(items);
-      refresh();
-      showToast('Quote details safely saved!');
-    } catch (e) {
-      Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes');
-    }
+    try { await saveToDatabase(items); refresh(); showToast('Quote details saved!'); } 
+    catch (e) { Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes'); }
   };
 
   const handlePreviewQuote = async (items) => {
-    try {
-      await saveToDatabase(items);
-      navigation.navigate('PdfPreview', { html: generateQuoteHTML(items), title: `Quote_${localName || 'Preview'}.pdf` });
-    } catch (e) {
-      Alert.alert('Error', 'Failed to generate preview');
-    }
+    try { await saveToDatabase(items); navigation.navigate('PdfPreview', { html: generateQuoteHTML(items), title: `Quote_${localName || 'Preview'}.pdf` }); } 
+    catch (e) { Alert.alert('Error', 'Failed to generate preview'); }
   };
 
   const handleSendQuote = async (items) => {
     setGenerating(true);
     try {
       await saveToDatabase(items);
-      await sendQuote(items); // Updates status to 'quoted' in DB
-      
+      await sendQuote(items); 
       const { uri } = await Print.printToFileAsync({ html: generateQuoteHTML(items), base64: false });
-      
       if (await Sharing.isAvailableAsync()) {
-        try {
-          await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' });
-        } catch (shareErr) {}
+        try { await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' }); } catch (shareErr) {}
       }
       showToast('Quote marked as sent!');
       refresh();
-    } catch (err) {
-      Alert.alert("Error", err?.response?.data?.message || err?.message || "Failed to generate or share quote.");
-    } finally {
-      setGenerating(false);
-    }
+    } catch (err) { Alert.alert("Error", err?.message || "Failed to share."); } 
+    finally { setGenerating(false); }
   };
 
   const handleConvertToInvoice = async () => {
@@ -192,6 +123,14 @@ export default function EnquiryDetailScreen() {
     } catch (e) { Alert.alert("Backend Error", e?.response?.data?.message || "Could not accept enquiry."); }
   };
 
+  // MAPPING: Ensure services requested on website seamlessly port into Quote form
+  const getInitialQuoteItems = () => {
+    if (enquiry?.quoteItems?.length > 0) return enquiry.quoteItems;
+    if (enquiry?.services?.length > 0) return enquiry.services.map(s => ({ name: s, amt: 0, qty: 1 }));
+    if (enquiry?.service) return [{ name: enquiry.service, amt: 0, qty: 1 }];
+    return [{ name: 'General Handyman Services', amt: 0, qty: 1 }];
+  };
+
   return (
     <View style={styles.screen}>
       <ScreenHeader title="QUOTE / ENQUIRY" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
@@ -206,7 +145,14 @@ export default function EnquiryDetailScreen() {
                 <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>{enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}</Chip>
               </View>
 
-              {/* FIXED: Explicit FieldLabels so they never vanish */}
+              {/* FIXED: Expose user messages from the website distinctly! */}
+              {enquiry.message ? (
+                <View style={styles.messageBox}>
+                  <Text style={styles.messageTitle}>Message from customer:</Text>
+                  <Text style={styles.messageText}>"{enquiry.message}"</Text>
+                </View>
+              ) : null}
+
               <FieldLabel style={{ marginTop: 14 }}>Customer Name</FieldLabel>
               <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
               
@@ -225,9 +171,8 @@ export default function EnquiryDetailScreen() {
               <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
               <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Scope of work, terms, etc..." value={localNotes} onChangeText={setLocalNotes} />
 
-              {/* Explicitly passing Save, Preview, and Send handlers */}
               <QuoteComposer 
-                initialItems={enquiry.quoteItems} 
+                initialItems={getInitialQuoteItems()} 
                 onSave={handleManualSave}
                 onPreview={handlePreviewQuote}
                 onSend={handleSendQuote}
@@ -278,5 +223,7 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 8, color: colors.charcoal },
-  noteError: { fontSize: 12.5, color: colors.red, fontWeight: '700', marginTop: 10 },
+  messageBox: { padding: 14, backgroundColor: colors.orangeTint, borderRadius: 8, marginBottom: 14, borderWidth: 1, borderColor: colors.orange },
+  messageTitle: { fontSize: 11, fontWeight: '800', color: colors.orangeDeep, marginBottom: 4 },
+  messageText: { fontSize: 13, color: colors.charcoal, fontStyle: 'italic', lineHeight: 20 },
 });

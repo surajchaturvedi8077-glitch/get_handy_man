@@ -8,7 +8,7 @@ import useJobs from '../hooks/useJobs';
 import useInvoices from '../hooks/useInvoices';
 import useSettings from '../hooks/useSettings';
 import JobListItem from '../components/jobs/JobListItem';
-import { getExpoPushToken, scheduleLocalJobReminder, setupMorningBriefingTimeout } from '../services/notificationService';
+import { getExpoPushToken, syncLocalNotifications, scheduleDailyMorningBriefing } from '../services/notificationService';
 import { colors } from '../theme/colors';
 
 const safeTime = (dateStr) => {
@@ -52,7 +52,6 @@ export default function DashboardScreen() {
     return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
   };
 
-  // FIXED: useMemo prevents the array from recreating infinitely and crashing the phone
   const todaysJobs = useMemo(() => {
     return jobs.filter(j => j.status !== 'complete' && isToday(j.scheduledDate)).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
   }, [jobs]);
@@ -61,14 +60,13 @@ export default function DashboardScreen() {
     return jobs.filter(j => j.status !== 'complete' && safeTime(j.scheduledDate) > new Date().setHours(23,59,59,999)).sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate)).slice(0, 3);
   }, [jobs]);
 
+  // Sync Notifications securely into the background
   useEffect(() => {
-    todaysJobs.forEach(job => scheduleLocalJobReminder(job));
-  }, [todaysJobs]);
-
-  useEffect(() => {
-    const timer = setupMorningBriefingTimeout(settings?.briefingEnabled, settings?.briefingTime, () => todaysJobs.length);
-    return () => { if (timer) clearTimeout(timer); };
-  }, [settings?.briefingEnabled, settings?.briefingTime, todaysJobs.length]);
+    if (jobs.length > 0) {
+      syncLocalNotifications(todaysJobs.concat(upcomingJobs), unpaidInvoices);
+      scheduleDailyMorningBriefing(settings?.briefingEnabled, settings?.briefingTime);
+    }
+  }, [jobs, settings]);
 
   return (
     <View style={styles.screen}>
