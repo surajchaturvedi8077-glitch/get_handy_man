@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, ScrollView, StyleSheet, Alert, Text, TextInput, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Print from 'expo-print';
@@ -109,8 +109,11 @@ export default function EnquiryDetailScreen() {
       await saveToDatabase(items); 
       refresh(); 
       showToast('✅ Quote data saved!'); 
-    } catch (e) { Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes'); } 
-    finally { setSavingQuote(false); }
+    } catch (e) { 
+      Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes'); 
+    } finally {
+      setSavingQuote(false);
+    }
   };
 
   const handlePreviewQuote = async (items) => {
@@ -151,12 +154,14 @@ export default function EnquiryDetailScreen() {
     } catch (e) { Alert.alert("Backend Error", e?.response?.data?.message || "Could not accept enquiry."); }
   };
 
-  const getInitialQuoteItems = () => {
+  // FIXED: useMemo ensures the initial state ONLY updates when the backend DB actually updates.
+  // It completely stops the "vanishing text" bug when clicking buttons.
+  const initialQuoteItems = useMemo(() => {
     if (enquiry?.quoteItems?.length > 0) return enquiry.quoteItems;
-    if (enquiry?.services?.length > 0) return enquiry.services.map(s => ({ name: s, amt: 0, qty: 1 }));
-    if (enquiry?.service) return [{ name: enquiry.service, amt: 0, qty: 1 }];
-    return [{ name: 'General Handyman Services', amt: 0, qty: 1 }];
-  };
+    if (enquiry?.services?.length > 0) return enquiry.services.map(s => ({ name: s, amt: '', qty: 1 }));
+    if (enquiry?.service) return [{ name: enquiry.service, amt: '', qty: 1 }];
+    return [{ name: 'General Handyman Services', amt: '', qty: 1 }];
+  }, [enquiry]);
 
   return (
     <View style={styles.screen}>
@@ -210,7 +215,7 @@ export default function EnquiryDetailScreen() {
               </Button>
 
               <QuoteComposer 
-                initialItems={getInitialQuoteItems()} 
+                initialItems={initialQuoteItems} 
                 onSave={handleManualSave}
                 onPreview={handlePreviewQuote}
                 onSend={handleSendQuote}
