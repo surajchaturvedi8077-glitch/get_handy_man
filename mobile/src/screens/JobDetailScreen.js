@@ -67,10 +67,11 @@ export default function JobDetailScreen() {
     navigation.navigate('JobsList');
   };
 
-  const handleStatusChange = async (newStatus) => {
+ const handleStatusChange = async (newStatus) => {
     setShowStatusPicker(false);
     try {
-      await changeStatus(newStatus);
+      // FIXED: Uses handleSaveDetails directly so it correctly hits the database!
+      await handleSaveDetails({ status: newStatus }); 
       showToast(`Job status updated successfully`);
     } catch (err) { Alert.alert("Error", err.message || "Failed to change status."); }
   };

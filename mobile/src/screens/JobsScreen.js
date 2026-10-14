@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { Calendar } from 'react-native-calendars';
 import JobFilterTabs from '../components/jobs/JobFilterTabs';
 import JobListItem from '../components/jobs/JobListItem';
 import SegmentedControl from '../components/ui/SegmentedControl';
@@ -9,9 +10,6 @@ import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import useJobs from '../hooks/useJobs';
 import { colors } from '../theme/colors';
-
-const { width } = Dimensions.get('window');
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const safeTime = (dateStr) => {
   if (!dateStr) return Number.MAX_SAFE_INTEGER; 
@@ -21,36 +19,13 @@ const safeTime = (dateStr) => {
 
 export default function JobsScreen() {
   const navigation = useNavigation();
-  const scrollViewRef = useRef(null);
-  
   const [viewMode, setViewMode] = useState('list'); 
   const [filter, setFilter] = useState('accepted');
   const [searchQuery, setSearchQuery] = useState('');
-  const [scrolledToToday, setScrolledToToday] = useState(false);
+  const [selectedDateStr, setSelectedDateStr] = useState(new Date().toISOString().split('T')[0]);
+  const [showPastJobs, setShowPastJobs] = useState(false);
 
   const { jobs, loading, error } = useJobs('all');
-
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-
-  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
-  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
-
-  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayIndex = new Date(year, month, 1).getDay();
-  const daysArray = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
-
-  const jobsPerDay = {};
-  jobs.forEach(j => {
-    if (!j.scheduledDate) return;
-    const d = new Date(j.scheduledDate);
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      const dayNum = d.getDate();
-      jobsPerDay[dayNum] = (jobsPerDay[dayNum] || 0) + 1;
-    }
-  });
 
   const baseFilteredJobs = useMemo(() => {
     return jobs.filter(j => {
@@ -66,36 +41,52 @@ export default function JobsScreen() {
 
       let tabMatch = false;
       if (filter === 'all') tabMatch = true;
-      else if (filter === 'accepted') tabMatch = (j.status !== 'complete'); // Groups all active jobs into "Assigned"
+      else if (filter === 'accepted') tabMatch = (j.status !== 'complete'); // Groups all active into Assigned
       else if (filter === 'complete') tabMatch = (j.status === 'complete');
       
       return searchMatch && tabMatch;
     });
   }, [jobs, searchQuery, filter]);
 
-  // Calendar View Filter
+  const { upcomingJobs, pastJobs } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    const upcoming = [];
+    const past = [];
+
+    baseFilteredJobs.forEach(job => {
+      if (!job.scheduledDate) { upcoming.push(job); return; }
+      const jd = new Date(job.scheduledDate);
+      jd.setHours(0,0,0,0);
+      if (jd.getTime() >= today.getTime()) upcoming.push(job);
+      else past.push(job);
+    });
+
+    upcoming.sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
+    past.sort((a, b) => safeTime(b.scheduledDate) - safeTime(a.scheduledDate));
+
+    return { upcomingJobs: upcoming, pastJobs: past };
+  }, [baseFilteredJobs]);
+
   const calendarJobs = useMemo(() => {
     return baseFilteredJobs.filter(j => {
       if (!j.scheduledDate) return false;
-      const jd = new Date(j.scheduledDate);
-      return jd.getFullYear() === selectedDate.getFullYear() && 
-             jd.getMonth() === selectedDate.getMonth() && 
-             jd.getDate() === selectedDate.getDate();
+      return j.scheduledDate.startsWith(selectedDateStr);
     });
-  }, [baseFilteredJobs, selectedDate]);
+  }, [baseFilteredJobs, selectedDateStr]);
 
-  // Single Unified Timeline
-  const timelineJobs = useMemo(() => {
-    return [...baseFilteredJobs].sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
-  }, [baseFilteredJobs]);
-
-  useEffect(() => { setScrolledToToday(false); }, [filter, viewMode, searchQuery]);
-
-  const firstTodayJobId = useMemo(() => {
-    const todayTimestamp = new Date().setHours(0, 0, 0, 0);
-    const job = timelineJobs.find(j => safeTime(j.scheduledDate) >= todayTimestamp);
-    return job ? job._id : null;
-  }, [timelineJobs]);
+  const markedDates = useMemo(() => {
+    const marks = {};
+    jobs.forEach(j => {
+      if (j.scheduledDate && j.status !== 'complete') {
+        const dStr = j.scheduledDate.split('T')[0];
+        marks[dStr] = { marked: true, dotColor: colors.orange };
+      }
+    });
+    marks[selectedDateStr] = { ...marks[selectedDateStr], selected: true, selectedColor: colors.orange };
+    return marks;
+  }, [jobs, selectedDateStr]);
 
   return (
     <View style={styles.screen}>
@@ -112,73 +103,52 @@ export default function JobsScreen() {
       {error && <View style={{padding: 20}}><ErrorState>{error}</ErrorState></View>}
 
       {!loading && !error && (
-        <ScrollView ref={scrollViewRef} style={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.listContainer}>
             
-            {/* TOGGLES NOW SCROLL WITH THE SCREEN */}
-            <SegmentedControl 
-              options={[{ value: 'list', label: 'Timeline List' }, { value: 'calendar', label: 'Calendar' }]} 
-              value={viewMode} onChange={setViewMode} 
-            />
-            
+            <SegmentedControl options={[{ value: 'list', label: 'Timeline List' }, { value: 'calendar', label: 'Calendar' }]} value={viewMode} onChange={setViewMode} />
             <View style={styles.tabs}><JobFilterTabs value={filter} onChange={setFilter} /></View>
             <TextInput style={styles.searchBar} placeholder="Search jobs by client, address..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor={colors.gray} />
 
             {/* TIMELINE LIST */}
             {viewMode === 'list' && (
               <>
-                {timelineJobs.length > 0 ? (
-                  timelineJobs.map(j => (
-                    <View 
-                      key={j._id}
-                      onLayout={(event) => {
-                        if (j._id === firstTodayJobId && !scrolledToToday && scrollViewRef.current) {
-                          scrollViewRef.current.scrollTo({ y: event.nativeEvent.layout.y, animated: false });
-                          setScrolledToToday(true);
-                        }
-                      }}
-                    >
-                      <JobListItem job={j} />
-                    </View>
-                  ))
+                <Text style={styles.timelineLabel}>Today & Upcoming</Text>
+                {upcomingJobs.length > 0 ? (
+                  upcomingJobs.map(j => <JobListItem key={j._id} job={j} />)
                 ) : (
-                  <Text style={styles.emptyText}>No jobs found.</Text>
+                  <Text style={styles.emptyText}>No upcoming jobs in this category.</Text>
                 )}
+
+                <TouchableOpacity style={styles.pastToggleBtn} onPress={() => setShowPastJobs(!showPastJobs)}>
+                  <Text style={styles.pastToggleText}>{showPastJobs ? "Hide Past Jobs ▲" : "Show Past Jobs ▼"}</Text>
+                </TouchableOpacity>
+
+                {showPastJobs && pastJobs.map(j => <JobListItem key={j._id} job={j} />)}
+                {showPastJobs && pastJobs.length === 0 && <Text style={styles.emptyText}>No past jobs.</Text>}
               </>
             )}
 
-            {/* CALENDAR VIEW */}
+            {/* ROBUST CALENDAR VIEW */}
             {viewMode === 'calendar' && (
               <>
                 <View style={styles.calendarContainer}>
-                  <View style={styles.monthNav}>
-                    <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
-                    <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
-                    <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
-                  </View>
-                  <View style={styles.daysHeader}>
-                    {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
-                  </View>
-                  <View style={styles.grid}>
-                    {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
-                    {daysArray.map(day => {
-                      const isSelectedCell = selectedDate.getFullYear() === year && selectedDate.getMonth() === month && selectedDate.getDate() === day;
-                      const count = jobsPerDay[day] || 0;
-                      return (
-                        <TouchableOpacity key={day} style={[styles.dayCell, isSelectedCell && styles.selectedCell]} onPress={() => setSelectedDate(new Date(year, month, day))}>
-                          <Text style={[styles.dayText, isSelectedCell && { color: '#fff', fontWeight: '800' }]}>{day}</Text>
-                          {count > 0 && (
-                            <View style={[styles.badge, count >= 2 ? { backgroundColor: isSelectedCell ? '#fff' : colors.charcoal2 } : {}]}>
-                              <Text style={[styles.badgeText, count >= 2 ? { color: isSelectedCell ? colors.orangeDeep : '#fff' } : {}]}>{count}</Text>
-                            </View>
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+                  <Calendar
+                    current={selectedDateStr}
+                    onDayPress={day => setSelectedDateStr(day.dateString)}
+                    markedDates={markedDates}
+                    theme={{
+                      selectedDayBackgroundColor: colors.orange,
+                      todayTextColor: colors.orangeDeep,
+                      arrowColor: colors.charcoal,
+                      textDayFontWeight: '500',
+                      textMonthFontWeight: 'bold',
+                      textDayHeaderFontWeight: 'bold'
+                    }}
+                  />
                 </View>
 
-                <Text style={styles.selectedDateTitle}>{selectedDate.toDateString()}</Text>
+                <Text style={styles.selectedDateTitle}>Selected: {selectedDateStr}</Text>
                 {calendarJobs.length > 0 ? (
                   calendarJobs.map(j => <JobListItem key={j._id} job={j} />)
                 ) : (
@@ -205,21 +175,10 @@ const styles = StyleSheet.create({
   listContainer: { padding: 16, paddingBottom: 80 },
   tabs: { marginVertical: 14 },
   searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
-  
-  calendarContainer: { paddingBottom: 14, backgroundColor: '#fff', borderRadius: 10, padding: 10, marginBottom: 16, borderWidth: 1, borderColor: colors.grayLight },
-  monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  monthBtn: { padding: 4 },
-  monthBtnText: { fontSize: 14, fontWeight: 'bold', color: colors.gray },
-  monthTitle: { fontSize: 15, fontWeight: '800', color: colors.charcoal },
-  daysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 6 },
-  dayHeadText: { fontSize: 10, color: colors.gray, fontWeight: '700', width: (width - 48) / 7, textAlign: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCell: { width: (width - 48) / 7, height: 42, alignItems: 'center', paddingTop: 6, borderRadius: 8 },
-  selectedCell: { backgroundColor: colors.orange },
-  dayText: { fontSize: 12, fontWeight: '500', color: colors.charcoal },
-  badge: { backgroundColor: colors.grayLight, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1, marginTop: 2 },
-  badgeText: { fontSize: 8, fontWeight: '800', color: colors.gray },
-
-  selectedDateTitle: { fontSize: 14, fontWeight: '800', color: colors.charcoal, marginBottom: 12 },
+  timelineLabel: { fontSize: 12, fontWeight: '800', color: colors.blue, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 },
+  pastToggleBtn: { backgroundColor: colors.charcoal2, paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginVertical: 16 },
+  pastToggleText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  calendarContainer: { backgroundColor: '#fff', borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: colors.grayLight, marginBottom: 16 },
+  selectedDateTitle: { fontSize: 14, fontWeight: '800', color: colors.charcoal, marginBottom: 12, marginTop: 4 },
   emptyText: { textAlign: 'center', color: colors.gray, marginTop: 10, fontSize: 12.5 },
 });
