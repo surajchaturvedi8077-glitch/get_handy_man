@@ -53,10 +53,12 @@ export default function SettingsScreen() {
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  // Password Change State
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [changingPwd, setChangingPwd] = useState(false);
 
+  // Morning Briefing Customization State
   const [briefingEnabled, setBriefingEnabled] = useState(true);
   const [briefingTime, setBriefingTime] = useState('07:30');
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -67,6 +69,7 @@ export default function SettingsScreen() {
       if (settings.briefingEnabled !== undefined) setBriefingEnabled(settings.briefingEnabled);
       if (settings.briefingTime) setBriefingTime(settings.briefingTime);
     }
+    // Load phone fail-safe settings
     getSavedBriefingPref().then(pref => {
       if (pref) {
         if (pref.enabled !== undefined) setBriefingEnabled(pref.enabled);
@@ -100,12 +103,20 @@ export default function SettingsScreen() {
   async function handleSave() {
     setSaving(true);
     try {
-      const payload = { ...draft, briefingEnabled, briefingTime };
+      const payload = {
+        ...draft,
+        briefingEnabled,
+        briefingTime,
+      };
       await update(payload);
+      // Immediately apply the customized alarm
       await scheduleDailyMorningBriefing(briefingEnabled, briefingTime);
       showToast('Settings saved successfully');
-    } catch (err) { Alert.alert('Error', 'Could not save settings.'); } 
-    finally { setSaving(false); }
+    } catch (err) {
+      Alert.alert('Error', 'Could not save settings.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   const handleChangePassword = async () => {
@@ -116,8 +127,11 @@ export default function SettingsScreen() {
       showToast("✅ Password Updated Successfully!");
       setOldPassword('');
       setNewPassword('');
-    } catch (e) { Alert.alert("Error", e.response?.data?.message || "Failed to change password. Is your current password correct?"); } 
-    finally { setChangingPwd(false); }
+    } catch (e) {
+      Alert.alert("Error", e.response?.data?.message || "Failed to change password.");
+    } finally {
+      setChangingPwd(false);
+    }
   };
 
   const handleLogout = () => {
@@ -135,18 +149,38 @@ export default function SettingsScreen() {
         return;
       }
       await Notifications.scheduleNotificationAsync({
-        content: { title: "Test Alert 🔔", body: "Push notifications and lock screen alerts are working perfectly!", sound: true, channelId: 'alerts-v2' },
+        content: {
+          title: "Test Alert 🔔",
+          body: "Push notifications and lock screen alerts are working perfectly!",
+          sound: true,
+          channelId: 'alerts-v2',
+        },
         trigger: null,
       });
       showToast('Test alert sent!');
-    } catch (error) { Alert.alert('Error', 'Could not fire notification.'); }
+    } catch (error) {
+      Alert.alert('Error', 'Could not fire notification.');
+    }
   }
 
+  // FIXED: Trigger Notification locally without pinging a missing backend route
   async function fireBackendBriefing() {
     try {
-      showToast('Requesting briefing from server...');
-      await settingsService.triggerMorningBriefing();
-    } catch (e) { Alert.alert('Backend Error', 'Ensure your Node.js server is running and the /test-briefing route is saved.'); }
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') return Alert.alert('Permission Denied', 'Enable notifications in settings.');
+      
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "☀️ Good Morning!",
+          body: "Tap to open Get Handyman and check your jobs, route, and alerts for today.",
+          sound: 'default',
+        },
+        trigger: null,
+      });
+      showToast('Morning Briefing preview triggered!');
+    } catch (e) {
+      Alert.alert('Error', 'Could not trigger briefing.');
+    }
   }
 
   if (!draft) return <View style={styles.screen}><ScreenHeader title="SETTINGS" /><LoadingState /></View>;
@@ -158,100 +192,100 @@ export default function SettingsScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader title="SETTINGS" />
-      {/* KEYBOARD AVOIDING VIEW WITH OFFSET */}
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
-      >
-        <ScrollView 
-          contentContainerStyle={[styles.content, { paddingBottom: 150 }]} 
-          keyboardShouldPersistTaps="handled"
-          automaticallyAdjustKeyboardInsets={true}
-        >
-          
-          <FieldLabel style={styles.sectionHeader}>Daily Morning Briefing</FieldLabel>
-          <View style={styles.card}>
-            <ToggleRow
-              title="Enable Morning Briefing"
-              sub="Rings your phone every morning with today's jobs"
-              value={briefingEnabled}
-              onToggle={() => {
-                const next = !briefingEnabled;
-                setBriefingEnabled(next);
-                patch({ briefingEnabled: next });
-              }}
-            />
-            {briefingEnabled && (
-              <View style={{ marginTop: 12 }}>
-                <FieldLabel>Briefing Time</FieldLabel>
-                <TouchableOpacity onPress={() => setShowTimePicker(true)} activeOpacity={0.7} style={[styles.input, { justifyContent: 'center', height: 42, marginTop: 4 }]}>
-                  <Text style={{ color: colors.charcoal, fontSize: 13, fontWeight: '700' }}>⏰ {formatDisplayTime(briefingTime)} (Tap to change)</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+      <ScrollView contentContainerStyle={styles.content}>
+        
+        {/* Morning Briefing Settings */}
+        <FieldLabel style={styles.sectionHeader}>Daily Morning Briefing</FieldLabel>
+        <View style={styles.card}>
+          <ToggleRow
+            title="Enable Morning Briefing"
+            sub="Rings your phone every morning with today's jobs"
+            value={briefingEnabled}
+            onToggle={() => {
+              const next = !briefingEnabled;
+              setBriefingEnabled(next);
+              patch({ briefingEnabled: next });
+            }}
+          />
+          {briefingEnabled && (
+            <View style={{ marginTop: 12 }}>
+              <FieldLabel>Briefing Time</FieldLabel>
+              <TouchableOpacity
+                onPress={() => setShowTimePicker(true)}
+                activeOpacity={0.7}
+                style={[styles.input, { justifyContent: 'center', height: 42, marginTop: 4 }]}
+              >
+                <Text style={{ color: colors.charcoal, fontSize: 13, fontWeight: '700' }}>
+                  ⏰ {formatDisplayTime(briefingTime)} (Tap to change)
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
 
-          <FieldLabel style={styles.sectionHeader}>Tax & Invoicing</FieldLabel>
-          <View style={styles.card}>
-            <ToggleRow title="GST on invoices" sub="Applied to online-payment invoices only" value={draft.gstEnabled} onToggle={() => patch({ gstEnabled: !draft.gstEnabled })} />
-            {draft.gstEnabled && <SettingInput label="GST Rate (%)" value={String(draft.gstRate)} onChange={v => patch({ gstRate: Number(v) || 0 })} />}
-            <SettingInput label="Invoice Number Prefix" value={draft.invoicePrefix} onChange={v => patch({ invoicePrefix: v })} />
-            <SettingInput label="Default Payment Terms" value={draft.paymentTerms} onChange={v => patch({ paymentTerms: v })} />
-          </View>
+        <FieldLabel style={styles.sectionHeader}>Tax & Invoicing</FieldLabel>
+        <View style={styles.card}>
+          <ToggleRow title="GST on invoices" sub="Applied to online-payment invoices only" value={draft.gstEnabled} onToggle={() => patch({ gstEnabled: !draft.gstEnabled })} />
+          {draft.gstEnabled && <SettingInput label="GST Rate (%)" value={String(draft.gstRate)} onChange={v => patch({ gstRate: Number(v) || 0 })} />}
+          <SettingInput label="Invoice Number Prefix" value={draft.invoicePrefix} onChange={v => patch({ invoicePrefix: v })} />
+          <SettingInput label="Default Payment Terms" value={draft.paymentTerms} onChange={v => patch({ paymentTerms: v })} />
+        </View>
 
-          <FieldLabel style={styles.sectionHeader}>Business Profile</FieldLabel>
-          <View style={styles.card}>
-            <LogoUploader logoUrl={settingsService.resolveMediaUrl(draft.logoUrl)} onUpload={async (asset) => { await settingsService.uploadLogo(asset); refresh(); showToast('Logo updated'); }} />
-            <View style={{ height: 16 }} />
-            <SettingInput label="Business Name" value={draft.businessName} onChange={v => patch({ businessName: v })} />
-            <SettingInput label="ABN" value={draft.abn} onChange={v => patch({ abn: v })} />
-            <SettingInput label="City, State (Shown on invoices)" value={draft.bizCityState} onChange={v => patch({ bizCityState: v })} />
-            <SettingInput label="Website" value={draft.website} onChange={v => patch({ website: v })} />
-            <SettingInput label="Business Address" value={draft.bizAddress} onChange={v => patch({ bizAddress: v })} />
-            <SettingInput label="Phone" value={draft.bizPhone} onChange={v => patch({ bizPhone: v })} />
-            <SettingInput label="Email" value={draft.bizEmail} onChange={v => patch({ bizEmail: v })} />
-          </View>
+        <FieldLabel style={styles.sectionHeader}>Business Profile</FieldLabel>
+        <View style={styles.card}>
+          <LogoUploader logoUrl={settingsService.resolveMediaUrl(draft.logoUrl)} onUpload={async (asset) => { await settingsService.uploadLogo(asset); refresh(); showToast('Logo updated'); }} />
+          <View style={{ height: 16 }} />
+          <SettingInput label="Business Name" value={draft.businessName} onChange={v => patch({ businessName: v })} />
+          <SettingInput label="ABN" value={draft.abn} onChange={v => patch({ abn: v })} />
+          <SettingInput label="City, State (Shown on invoices)" value={draft.bizCityState} onChange={v => patch({ bizCityState: v })} />
+          <SettingInput label="Website" value={draft.website} onChange={v => patch({ website: v })} />
+          <SettingInput label="Business Address" value={draft.bizAddress} onChange={v => patch({ bizAddress: v })} />
+          <SettingInput label="Phone" value={draft.bizPhone} onChange={v => patch({ bizPhone: v })} />
+          <SettingInput label="Email" value={draft.bizEmail} onChange={v => patch({ bizEmail: v })} />
+        </View>
 
-          <FieldLabel style={styles.sectionHeader}>Bank & PayID Transfer Details</FieldLabel>
-          <View style={styles.card}>
-            <SettingInput label="Bank Name" value={draft.bankName} onChange={v => patch({ bankName: v })} />
-            <SettingInput label="BSB" value={draft.bsb} onChange={v => patch({ bsb: v })} />
-            <SettingInput label="Account Number" value={draft.account} onChange={v => patch({ account: v })} />
-            <SettingInput label="Account Name" value={draft.accountName} onChange={v => patch({ accountName: v })} />
-            <SettingInput label="PayID (Email / Phone / ABN)" value={draft.payId} onChange={v => patch({ payId: v })} />
-          </View>
+        <FieldLabel style={styles.sectionHeader}>Bank & PayID Transfer Details</FieldLabel>
+        <View style={styles.card}>
+          <SettingInput label="Bank Name" value={draft.bankName} onChange={v => patch({ bankName: v })} />
+          <SettingInput label="BSB" value={draft.bsb} onChange={v => patch({ bsb: v })} />
+          <SettingInput label="Account Number" value={draft.account} onChange={v => patch({ account: v })} />
+          <SettingInput label="Account Name" value={draft.accountName} onChange={v => patch({ accountName: v })} />
+          <SettingInput label="PayID (Email / Phone / ABN)" value={draft.payId} onChange={v => patch({ payId: v })} />
+        </View>
 
-          <FieldLabel style={styles.sectionHeader}>Quote Template</FieldLabel>
-          <View style={styles.card}>
-            <SettingInput label="Default Intro Message" value={draft.quoteMessage} onChange={v => patch({ quoteMessage: v })} multiline />
-          </View>
+        <FieldLabel style={styles.sectionHeader}>Quote Template</FieldLabel>
+        <View style={styles.card}>
+          <SettingInput label="Default Intro Message" value={draft.quoteMessage} onChange={v => patch({ quoteMessage: v })} multiline />
+        </View>
 
-          <FieldLabel style={styles.sectionHeader}>Security</FieldLabel>
-          <View style={styles.card}>
-            <SettingInput label="Current Password" value={oldPassword} onChange={setOldPassword} secureTextEntry placeholder="••••••••" />
-            <SettingInput label="New Password" value={newPassword} onChange={setNewPassword} secureTextEntry placeholder="••••••••" />
-            <Button variant="outline" onPress={handleChangePassword} disabled={changingPwd} style={{ marginTop: 6 }}>
-              {changingPwd ? 'Updating...' : 'Update Password'}
-            </Button>
-          </View>
-
-          <FieldLabel style={styles.sectionHeader}>Troubleshooting</FieldLabel>
-          <View style={[styles.card, { marginBottom: 30 }]}>
-            <Button variant="outline" onPress={forceTestNotifications} style={{ marginBottom: 12 }}>🔔 Test & Enable Notifications</Button>
-            <Button variant="outline" onPress={fireBackendBriefing}>🚀 Send Morning Briefing Now</Button>
-          </View>
-
-          <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginBottom: 12 }}>
-            {saving ? 'Saving…' : 'Save all settings'}
+        <FieldLabel style={styles.sectionHeader}>Security</FieldLabel>
+        <View style={styles.card}>
+          <SettingInput label="Current Password" value={oldPassword} onChange={setOldPassword} secureTextEntry placeholder="••••••••" />
+          <SettingInput label="New Password" value={newPassword} onChange={setNewPassword} secureTextEntry placeholder="••••••••" />
+          <Button variant="outline" onPress={handleChangePassword} disabled={changingPwd} style={{ marginTop: 6 }}>
+            {changingPwd ? 'Updating...' : 'Update Password'}
           </Button>
+        </View>
 
-          <Button variant="outline" onPress={handleLogout} style={{ borderColor: colors.red, borderWidth: 1.5, marginBottom: 40 }}>
-            <Text style={{ color: colors.red, fontWeight: '700' }}>Log out</Text>
+        <FieldLabel style={styles.sectionHeader}>Troubleshooting</FieldLabel>
+        <View style={[styles.card, { marginBottom: 30 }]}>
+          <Button variant="outline" onPress={forceTestNotifications} style={{ marginBottom: 12 }}>
+            🔔 Test & Enable Notifications
           </Button>
+          <Button variant="outline" onPress={fireBackendBriefing}>
+            🚀 Send Morning Briefing Now
+          </Button>
+        </View>
 
-        </ScrollView>
-      </KeyboardAvoidingView>
+        <Button variant="primary" onPress={handleSave} disabled={saving} style={{ marginBottom: 12 }}>
+          {saving ? 'Saving…' : 'Save all settings'}
+        </Button>
+
+        <Button variant="outline" onPress={handleLogout} style={{ borderColor: colors.red, borderWidth: 1.5, marginBottom: 40 }}>
+          <Text style={{ color: colors.red, fontWeight: '700' }}>Log out</Text>
+        </Button>
+
+      </ScrollView>
 
       {showTimePicker && (
         <DateTimePicker

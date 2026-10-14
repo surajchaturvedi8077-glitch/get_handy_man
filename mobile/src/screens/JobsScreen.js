@@ -66,13 +66,14 @@ export default function JobsScreen() {
 
       let tabMatch = false;
       if (filter === 'all') tabMatch = true;
-      else if (filter === 'accepted') tabMatch = (j.status === 'accepted' || j.status === 'pending');
+      else if (filter === 'accepted') tabMatch = (j.status !== 'complete'); // Groups all active jobs into "Assigned"
       else if (filter === 'complete') tabMatch = (j.status === 'complete');
       
       return searchMatch && tabMatch;
     });
   }, [jobs, searchQuery, filter]);
 
+  // Calendar View Filter
   const calendarJobs = useMemo(() => {
     return baseFilteredJobs.filter(j => {
       if (!j.scheduledDate) return false;
@@ -83,40 +84,18 @@ export default function JobsScreen() {
     });
   }, [baseFilteredJobs, selectedDate]);
 
-  const { pastJobs, upcomingJobs } = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const past = [];
-    const upcoming = [];
-
-    baseFilteredJobs.forEach(job => {
-      if (!job.scheduledDate) {
-        upcoming.push(job);
-        return;
-      }
-      const jd = new Date(job.scheduledDate);
-      jd.setHours(0, 0, 0, 0);
-      if (jd.getTime() < today.getTime()) {
-        past.push(job);
-      } else {
-        upcoming.push(job);
-      }
-    });
-
-    past.sort((a, b) => safeTime(b.scheduledDate) - safeTime(a.scheduledDate));
-    upcoming.sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
-
-    return { pastJobs: past, upcomingJobs: upcoming };
+  // Single Unified Timeline
+  const timelineJobs = useMemo(() => {
+    return [...baseFilteredJobs].sort((a, b) => safeTime(a.scheduledDate) - safeTime(b.scheduledDate));
   }, [baseFilteredJobs]);
 
   useEffect(() => { setScrolledToToday(false); }, [filter, viewMode, searchQuery]);
 
   const firstTodayJobId = useMemo(() => {
     const todayTimestamp = new Date().setHours(0, 0, 0, 0);
-    const job = upcomingJobs.find(j => safeTime(j.scheduledDate) >= todayTimestamp);
+    const job = timelineJobs.find(j => safeTime(j.scheduledDate) >= todayTimestamp);
     return job ? job._id : null;
-  }, [upcomingJobs]);
+  }, [timelineJobs]);
 
   return (
     <View style={styles.screen}>
@@ -127,38 +106,6 @@ export default function JobsScreen() {
             <Text style={styles.addBtnText}>+ New Job</Text>
           </TouchableOpacity>
         </View>
-        
-        <SegmentedControl options={[{ value: 'list', label: 'Timeline List' }, { value: 'calendar', label: 'Calendar' }]} value={viewMode} onChange={setViewMode} dark />
-        
-        {viewMode === 'calendar' && (
-          <View style={styles.calendarContainer}>
-            <View style={styles.monthNav}>
-              <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
-              <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
-              <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
-            </View>
-            <View style={styles.daysHeader}>
-              {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
-            </View>
-            <View style={styles.grid}>
-              {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
-              {daysArray.map(day => {
-                const isSelectedCell = selectedDate.getFullYear() === year && selectedDate.getMonth() === month && selectedDate.getDate() === day;
-                const count = jobsPerDay[day] || 0;
-                return (
-                  <TouchableOpacity key={day} style={[styles.dayCell, isSelectedCell && styles.selectedCell]} onPress={() => setSelectedDate(new Date(year, month, day))}>
-                    <Text style={[styles.dayText, isSelectedCell && { color: '#fff', fontWeight: '800' }]}>{day}</Text>
-                    {count > 0 && (
-                      <View style={[styles.badge, count >= 2 ? { backgroundColor: isSelectedCell ? '#fff' : colors.charcoal2 } : {}]}>
-                        <Text style={[styles.badgeText, count >= 2 ? { color: isSelectedCell ? colors.orangeDeep : '#fff' } : {}]}>{count}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        )}
       </SafeAreaView>
 
       {loading && <View style={{padding: 20}}><LoadingState /></View>}
@@ -166,26 +113,22 @@ export default function JobsScreen() {
 
       {!loading && !error && (
         <ScrollView ref={scrollViewRef} style={styles.content} keyboardShouldPersistTaps="handled">
-          
           <View style={styles.listContainer}>
-            {/* TABS & SEARCH (Scrolls freely with the list) */}
-            {viewMode === 'calendar' && <Text style={styles.selectedDateTitle}>{selectedDate.toDateString()}</Text>}
+            
+            {/* TOGGLES NOW SCROLL WITH THE SCREEN */}
+            <SegmentedControl 
+              options={[{ value: 'list', label: 'Timeline List' }, { value: 'calendar', label: 'Calendar' }]} 
+              value={viewMode} onChange={setViewMode} 
+            />
+            
             <View style={styles.tabs}><JobFilterTabs value={filter} onChange={setFilter} /></View>
             <TextInput style={styles.searchBar} placeholder="Search jobs by client, address..." value={searchQuery} onChangeText={setSearchQuery} placeholderTextColor={colors.gray} />
 
             {/* TIMELINE LIST */}
             {viewMode === 'list' && (
               <>
-                {pastJobs.length > 0 && (
-                  <View style={styles.pastSection}>
-                    <Text style={styles.timelineLabel}>⇧ Past Jobs (Scroll Up)</Text>
-                    {pastJobs.map(j => <JobListItem key={j._id} job={j} />)}
-                  </View>
-                )}
-                
-                <Text style={[styles.timelineLabel, { color: colors.blue }]}>Today & Upcoming</Text>
-                {upcomingJobs.length > 0 ? (
-                  upcomingJobs.map(j => (
+                {timelineJobs.length > 0 ? (
+                  timelineJobs.map(j => (
                     <View 
                       key={j._id}
                       onLayout={(event) => {
@@ -199,14 +142,43 @@ export default function JobsScreen() {
                     </View>
                   ))
                 ) : (
-                  <Text style={styles.emptyText}>No upcoming jobs in this category.</Text>
+                  <Text style={styles.emptyText}>No jobs found.</Text>
                 )}
               </>
             )}
 
-            {/* CALENDAR LIST */}
+            {/* CALENDAR VIEW */}
             {viewMode === 'calendar' && (
               <>
+                <View style={styles.calendarContainer}>
+                  <View style={styles.monthNav}>
+                    <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>◀</Text></TouchableOpacity>
+                    <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
+                    <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}><Text style={styles.monthBtnText}>▶</Text></TouchableOpacity>
+                  </View>
+                  <View style={styles.daysHeader}>
+                    {['S','M','T','W','T','F','S'].map((d, i) => ( <Text key={i} style={styles.dayHeadText}>{d}</Text> ))}
+                  </View>
+                  <View style={styles.grid}>
+                    {Array.from({ length: firstDayIndex }).map((_, i) => ( <View key={`empty-${i}`} style={{ width: (width - 28) / 7, height: 46 }} /> ))}
+                    {daysArray.map(day => {
+                      const isSelectedCell = selectedDate.getFullYear() === year && selectedDate.getMonth() === month && selectedDate.getDate() === day;
+                      const count = jobsPerDay[day] || 0;
+                      return (
+                        <TouchableOpacity key={day} style={[styles.dayCell, isSelectedCell && styles.selectedCell]} onPress={() => setSelectedDate(new Date(year, month, day))}>
+                          <Text style={[styles.dayText, isSelectedCell && { color: '#fff', fontWeight: '800' }]}>{day}</Text>
+                          {count > 0 && (
+                            <View style={[styles.badge, count >= 2 ? { backgroundColor: isSelectedCell ? '#fff' : colors.charcoal2 } : {}]}>
+                              <Text style={[styles.badgeText, count >= 2 ? { color: isSelectedCell ? colors.orangeDeep : '#fff' } : {}]}>{count}</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <Text style={styles.selectedDateTitle}>{selectedDate.toDateString()}</Text>
                 {calendarJobs.length > 0 ? (
                   calendarJobs.map(j => <JobListItem key={j._id} job={j} />)
                 ) : (
@@ -225,32 +197,29 @@ export default function JobsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.offwhite },
   header: { backgroundColor: colors.charcoal, paddingHorizontal: 16, paddingBottom: 14 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 4 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
   title: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1 },
   addBtn: { backgroundColor: colors.orange, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
   addBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   content: { flex: 1 },
-  
-  calendarContainer: { paddingTop: 16, paddingBottom: 4 },
-  monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  monthBtn: { padding: 4 },
-  monthBtnText: { fontSize: 14, fontWeight: 'bold', color: '#C7CCD4' },
-  monthTitle: { fontSize: 15, fontWeight: '800', color: '#fff' },
-  daysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 6 },
-  dayHeadText: { fontSize: 10, color: '#C7CCD4', fontWeight: '700', width: (width - 32) / 7, textAlign: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCell: { width: (width - 32) / 7, height: 42, alignItems: 'center', paddingTop: 6, borderRadius: 8 },
-  selectedCell: { backgroundColor: colors.orange },
-  dayText: { fontSize: 12, fontWeight: '500', color: '#fff' },
-  badge: { backgroundColor: colors.charcoal2, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1, marginTop: 2 },
-  badgeText: { fontSize: 8, fontWeight: '800', color: '#C7CCD4' },
-
-  listContainer: { padding: 16 },
-  tabs: { marginBottom: 14 },
+  listContainer: { padding: 16, paddingBottom: 80 },
+  tabs: { marginVertical: 14 },
   searchBar: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, marginBottom: 16, color: colors.charcoal },
   
-  timelineLabel: { fontSize: 11, fontWeight: '800', color: colors.gray, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10, marginTop: 4 },
-  pastSection: { opacity: 0.85, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: colors.grayLight, marginBottom: 14 },
+  calendarContainer: { paddingBottom: 14, backgroundColor: '#fff', borderRadius: 10, padding: 10, marginBottom: 16, borderWidth: 1, borderColor: colors.grayLight },
+  monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  monthBtn: { padding: 4 },
+  monthBtnText: { fontSize: 14, fontWeight: 'bold', color: colors.gray },
+  monthTitle: { fontSize: 15, fontWeight: '800', color: colors.charcoal },
+  daysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 6 },
+  dayHeadText: { fontSize: 10, color: colors.gray, fontWeight: '700', width: (width - 48) / 7, textAlign: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  dayCell: { width: (width - 48) / 7, height: 42, alignItems: 'center', paddingTop: 6, borderRadius: 8 },
+  selectedCell: { backgroundColor: colors.orange },
+  dayText: { fontSize: 12, fontWeight: '500', color: colors.charcoal },
+  badge: { backgroundColor: colors.grayLight, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1, marginTop: 2 },
+  badgeText: { fontSize: 8, fontWeight: '800', color: colors.gray },
+
   selectedDateTitle: { fontSize: 14, fontWeight: '800', color: colors.charcoal, marginBottom: 12 },
-  emptyText: { textAlign: 'center', color: colors.gray, marginTop: 30, fontSize: 12.5 },
+  emptyText: { textAlign: 'center', color: colors.gray, marginTop: 10, fontSize: 12.5 },
 });

@@ -37,18 +37,30 @@ export default function DashboardScreen() {
   const { invoices: unpaidInvoices } = useInvoices('unpaid');
 
   // Request Permissions & Sync Push Token on Load
+// Trigger Push Token Sync
   useEffect(() => {
     async function setupNotifications() {
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status === 'granted') {
-        const token = await getExpoPushToken();
-        if (token && settings && !settings.expoPushToken) {
-          update({ expoPushToken: token });
-        }
+      const token = await getExpoPushToken();
+      if (token && settings && !settings.expoPushToken) {
+        update({ expoPushToken: token });
       }
     }
     setupNotifications();
   }, [settings]);
+
+  // Sync Job Alarms automatically
+  useEffect(() => {
+    if (jobs.length > 0) {
+      syncLocalNotifications(jobs);
+    }
+  }, [jobs]);
+
+  // Sync Morning Briefing directly when Settings load or change
+  useEffect(() => {
+    if (settings) {
+      scheduleDailyMorningBriefing(settings.briefingEnabled, settings.briefingTime);
+    }
+  }, [settings?.briefingEnabled, settings?.briefingTime]);
 
   const isToday = (dateString) => {
     if (!dateString) return false;

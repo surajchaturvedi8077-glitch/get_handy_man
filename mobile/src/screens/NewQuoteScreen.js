@@ -145,41 +145,38 @@ export default function NewQuoteScreen() {
       });
       
       const { uri } = await Print.printToFileAsync({ html: generateHTMLString(), base64: false });
-      if (await Sharing.isAvailableAsync()) {
-        try {
-          await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${form.name}`, UTI: '.pdf' });
-        } catch (shareErr) {}
-      }
-      showToast('Quote Saved & Shared!');
-      navigation.navigate('Dashboard');
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${form.name}`, UTI: '.pdf' });
+      showToast('Quote Shared Successfully!');
     } catch (err) { Alert.alert("Error", "Failed to generate quote PDF."); } 
-    finally { setGenerating(false); }
+    finally { setGenerating(false); navigation.navigate('Dashboard'); }
   };
 
   return (
     <View style={styles.screen}>
       <ScreenHeader title="NEW QUOTE" onBack={() => { navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Dashboard') }} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <FieldLabel>Customer Name *</FieldLabel>
-          <TextInput style={styles.input} placeholder="Customer Name" value={form.name} onChangeText={v => updateForm('name', v)} />
-          
-          <FieldLabel>Phone Number *</FieldLabel>
-          <TextInput style={styles.input} placeholder="Phone Number" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" />
-          
-          <FieldLabel>Email Address *</FieldLabel>
-          <TextInput style={styles.input} placeholder="Email Address" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" />
-          
-          <FieldLabel>Street Address</FieldLabel>
-          <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} />
-          
-          <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
-          <TextInput style={styles.input} value={form.advancePaid} onChangeText={v => updateForm('advancePaid', v)} keyboardType="numeric" />
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+      >
+        <ScrollView 
+          contentContainerStyle={[styles.content, { paddingBottom: 200 }]} 
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={true}
+        >
+          <FieldLabel>Customer Details (Mandatory)</FieldLabel>
+          <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} placeholderTextColor={colors.gray} />
+          <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
+          <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
+          <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} placeholderTextColor={colors.gray} />
 
-          <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
-          <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Scope of work, terms, etc..." value={form.notes} onChangeText={v => updateForm('notes', v)} />
+          <FieldLabel style={{ marginTop: 10 }}>Quote Configuration</FieldLabel>
+          <View style={styles.row}>
+            <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} placeholder="Currency" value={form.currency} onChangeText={v => updateForm('currency', v)} />
+            <TextInput style={[styles.input, { flex: 2, marginTop: 0 }]} placeholder="Terms" value={form.terms} onChangeText={v => updateForm('terms', v)} />
+          </View>
 
-          <FieldLabel style={{ marginTop: 14 }}>Description (Services)</FieldLabel>
+          <FieldLabel style={{ marginTop: 14 }}>Line Items (Fully Editable)</FieldLabel>
           {items.map((it, idx) => (
             <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
               <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={it.name} onChangeText={v => { const n = [...items]; n[idx].name = v; setItems(n); }} placeholder="Description" />
@@ -187,14 +184,14 @@ export default function NewQuoteScreen() {
               <TouchableOpacity onPress={() => setItems(items.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
             </View>
           ))}
-          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add description line</Button>
+          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add line item</Button>
 
           <Button variant="outline" style={{ marginBottom: 10 }} onPress={handleSaveOnly}>💾 Save Draft Quote</Button>
 
           <View style={styles.btnRow}>
             <Button variant="dark" style={[styles.flex, { marginRight: 8 }]} onPress={handlePreviewPdf}>Preview PDF</Button>
             <Button variant="primary" style={[styles.flex, { backgroundColor: colors.orange }]} onPress={handleSaveAndShareQuote} disabled={generating}>
-              {generating ? <ActivityIndicator color="#fff" /> : <Text style={{fontWeight: 'bold', color: '#fff'}}>✓ Save & Share</Text>}
+              {generating ? <ActivityIndicator color="#fff" /> : <Text style={{fontWeight: 'bold', color: '#fff'}}>✓ Preview & Share</Text>}
             </Button>
           </View>
         </ScrollView>
@@ -205,8 +202,9 @@ export default function NewQuoteScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 16, paddingBottom: 40 },
+  content: { padding: 16 },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 10, color: colors.charcoal },
+  row: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   btnRow: { flexDirection: 'row', marginTop: 12 },
   flex: { flex: 1 }
 });
