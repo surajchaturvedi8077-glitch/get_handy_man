@@ -26,7 +26,8 @@
     "react-native-calendars": "^1.1314.0",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
-    "react-native-webview": "13.16.1"
+    "react-native-webview": "13.16.1",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",

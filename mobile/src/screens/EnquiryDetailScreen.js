@@ -11,11 +11,13 @@ import ErrorState from '../components/ui/ErrorState';
 import Button from '../components/ui/Button';
 import FieldLabel from '../components/ui/FieldLabel';
 import Chip from '../components/ui/Chip';
+import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import useEnquiry from '../hooks/useEnquiry';
 import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { apiClient, unwrap } from '../services/apiClient';
 import { convertToInvoice } from '../services/enquiryService';
+import * as jobService from '../services/jobService';
 import { colors } from '../theme/colors';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
@@ -26,7 +28,7 @@ export default function EnquiryDetailScreen() {
   const navigation = useNavigation();
   const { showToast } = useToast();
   const { settings } = useSettings();
-  
+
   const { enquiry, loading, error, reject, sendQuote, accept, refresh } = useEnquiry(params.id);
 
   const [localName, setLocalName] = useState('');
@@ -35,7 +37,7 @@ export default function EnquiryDetailScreen() {
   const [localAddress, setLocalAddress] = useState('');
   const [localNotes, setLocalNotes] = useState('');
   const [localAdvancePaid, setLocalAdvancePaid] = useState('0');
-  
+
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [savingQuote, setSavingQuote] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -52,7 +54,13 @@ export default function EnquiryDetailScreen() {
   }, [enquiry]);
 
   const generateQuoteHTML = (items) => {
-    const itemsHtml = items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">1</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`).join('') || '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
+    const itemsHtml =
+      items
+        .map(
+          (i) =>
+            `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">1</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`
+        )
+        .join('') || '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
     const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
     const gstRate = settings?.gstRate || 10;
     const applyGst = settings?.gstEnabled !== false;
@@ -67,7 +75,9 @@ export default function EnquiryDetailScreen() {
     const accountNameStr = settings?.accountName || '';
     const bankNameStr = settings?.bankName || '';
     const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
-    const paymentDetailsHtml = bankNameStr ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>` : '';
+    const paymentDetailsHtml = bankNameStr
+      ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>`
+      : '';
     const notesHtml = localNotes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${localNotes.replace(/\n/g, '<br/>')}</div>` : '';
 
     return `
@@ -77,22 +87,35 @@ export default function EnquiryDetailScreen() {
 
   const saveToDatabase = async (items) => {
     const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
-    const gstAmt = (settings?.gstEnabled !== false) ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
-    await unwrap(apiClient.put(`/api/enquiries/${params.id}`, {
-      name: localName, phone: localPhone, email: localEmail, address: localAddress,
-      notes: localNotes, advancePaid: Number(localAdvancePaid) || 0,
-      quoteItems: items, price: subtotal + gstAmt
-    }));
+    const gstAmt = settings?.gstEnabled !== false ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
+    await unwrap(
+      apiClient.put(`/api/enquiries/${params.id}`, {
+        name: localName,
+        phone: localPhone,
+        email: localEmail,
+        address: localAddress,
+        notes: localNotes,
+        advancePaid: Number(localAdvancePaid) || 0,
+        quoteItems: items,
+        price: subtotal + gstAmt,
+      })
+    );
   };
 
   const handleUpdateCustomer = async () => {
     Keyboard.dismiss();
     setSavingCustomer(true);
     try {
-      await unwrap(apiClient.put(`/api/enquiries/${params.id}`, {
-        name: localName, phone: localPhone, email: localEmail, address: localAddress,
-        notes: localNotes, advancePaid: Number(localAdvancePaid) || 0
-      }));
+      await unwrap(
+        apiClient.put(`/api/enquiries/${params.id}`, {
+          name: localName,
+          phone: localPhone,
+          email: localEmail,
+          address: localAddress,
+          notes: localNotes,
+          advancePaid: Number(localAdvancePaid) || 0,
+        })
+      );
       showToast('✅ Customer details saved!');
       refresh();
     } catch (e) {
@@ -105,12 +128,12 @@ export default function EnquiryDetailScreen() {
   const handleManualSave = async (items) => {
     Keyboard.dismiss();
     setSavingQuote(true);
-    try { 
-      await saveToDatabase(items); 
-      refresh(); 
-      showToast('✅ Quote data saved!'); 
-    } catch (e) { 
-      Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes'); 
+    try {
+      await saveToDatabase(items);
+      refresh();
+      showToast('✅ Quote data saved!');
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes');
     } finally {
       setSavingQuote(false);
     }
@@ -118,8 +141,12 @@ export default function EnquiryDetailScreen() {
 
   const handlePreviewQuote = async (items) => {
     Keyboard.dismiss();
-    try { await saveToDatabase(items); navigation.navigate('PdfPreview', { html: generateQuoteHTML(items), title: `Quote_${localName || 'Preview'}.pdf` }); } 
-    catch (e) { Alert.alert('Error', 'Failed to generate preview'); }
+    try {
+      await saveToDatabase(items);
+      navigation.navigate('PdfPreview', { html: generateQuoteHTML(items), title: `Quote_${localName || 'Preview'}.pdf` });
+    } catch (e) {
+      Alert.alert('Error', 'Failed to generate preview');
+    }
   };
 
   const handleSendQuote = async (items) => {
@@ -127,38 +154,85 @@ export default function EnquiryDetailScreen() {
     setGenerating(true);
     try {
       await saveToDatabase(items);
-      await sendQuote(items); 
+      await sendQuote(items);
       const { uri } = await Print.printToFileAsync({ html: generateQuoteHTML(items), base64: false });
       if (await Sharing.isAvailableAsync()) {
-        try { await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' }); } catch (shareErr) {}
+        try {
+          await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' });
+        } catch (shareErr) {}
       }
       showToast('Quote marked as sent!');
       refresh();
-    } catch (err) { Alert.alert("Error", err?.message || "Failed to share."); } 
-    finally { setGenerating(false); }
+    } catch (err) {
+      Alert.alert('Error', err?.message || 'Failed to share.');
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleConvertToInvoice = async () => {
     try {
       const data = await convertToInvoice(params.id);
       showToast('Converted Directly to Invoice!');
-      navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: data.invoice._id } });
-    } catch (e) { Alert.alert('Backend Error', e?.response?.data?.message || 'Could not convert to Invoice'); }
+      navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: String(data.invoice._id) }, initial: false });
+    } catch (e) {
+      Alert.alert('Backend Error', e?.response?.data?.message || 'Could not convert to Invoice');
+    }
+  };
+
+  const openLinkedJob = async (jobIdToOpen) => {
+    const cleanId = String(jobIdToOpen?._id || jobIdToOpen || '');
+    if (!cleanId) {
+      return handleAccept();
+    }
+    try {
+      // Verify the linked job still exists in the database before navigating
+      await jobService.getJob(cleanId);
+      navigation.getParent()?.navigate('Jobs', {
+        screen: 'JobDetail',
+        params: { id: cleanId },
+        initial: false,
+      });
+    } catch (err) {
+      Alert.alert(
+        'Linked Job Missing',
+        'The linked job was deleted or could not be found. Would you like to recreate the job from this enquiry now?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Recreate Job', onPress: handleAccept },
+        ]
+      );
+    }
   };
 
   const handleAccept = async () => {
     try {
+      await unwrap(
+        apiClient.put(`/api/enquiries/${params.id}`, {
+          name: localName,
+          phone: localPhone,
+          email: localEmail,
+          address: localAddress,
+          notes: localNotes,
+          advancePaid: Number(localAdvancePaid) || 0,
+        })
+      );
       const { job } = await accept();
       showToast('Job created from enquiry');
-      navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: job._id } });
-    } catch (e) { Alert.alert("Backend Error", e?.response?.data?.message || "Could not accept enquiry."); }
+      refresh();
+      navigation.getParent()?.navigate('Jobs', {
+        screen: 'JobDetail',
+        params: { id: String(job._id) },
+        initial: false,
+      });
+    } catch (e) {
+      Alert.alert('Backend Error', e?.response?.data?.message || 'Could not accept enquiry.');
+    }
   };
 
-  // FIXED: useMemo ensures the initial state ONLY updates when the backend DB actually updates.
-  // It completely stops the "vanishing text" bug when clicking buttons.
   const initialQuoteItems = useMemo(() => {
     if (enquiry?.quoteItems?.length > 0) return enquiry.quoteItems;
-    if (enquiry?.services?.length > 0) return enquiry.services.map(s => ({ name: s, amt: '', qty: 1 }));
+    if (enquiry?.services?.length > 0) return enquiry.services.map((s) => ({ name: s, amt: '', qty: 1 }));
     if (enquiry?.service) return [{ name: enquiry.service, amt: '', qty: 1 }];
     return [{ name: 'General Handyman Services', amt: '', qty: 1 }];
   }, [enquiry]);
@@ -166,23 +240,25 @@ export default function EnquiryDetailScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader title="QUOTE / ENQUIRY" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
       >
-        <ScrollView 
-          contentContainerStyle={[styles.content, { paddingBottom: 150 }]} 
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: 150 }]}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets={true}
         >
           {loading && <LoadingState />}
           {error && <ErrorState>{error}</ErrorState>}
-          
+
           {enquiry && (
             <>
               <View style={styles.top}>
-                <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>{enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}</Chip>
+                <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>
+                  {enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}
+                </Chip>
               </View>
 
               {enquiry.message ? (
@@ -194,28 +270,38 @@ export default function EnquiryDetailScreen() {
 
               <FieldLabel style={{ marginTop: 14 }}>Customer Name</FieldLabel>
               <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
-              
+
               <FieldLabel>Phone Number</FieldLabel>
               <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
-              
+
               <FieldLabel>Email Address</FieldLabel>
               <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
-              
-              <FieldLabel>Address</FieldLabel>
-              <TextInput style={styles.input} value={localAddress} onChangeText={setLocalAddress} placeholder="Address" />
-              
+
+              <FieldLabel>Address (Google Maps Search)</FieldLabel>
+              <AddressAutocomplete
+                value={localAddress}
+                onChangeText={setLocalAddress}
+                placeholder="Search Australian street address..."
+              />
+
               <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
               <TextInput style={styles.input} value={localAdvancePaid} onChangeText={setLocalAdvancePaid} keyboardType="numeric" />
 
               <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
-              <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Scope of work, terms, etc..." value={localNotes} onChangeText={setLocalNotes} />
+              <TextInput
+                style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
+                multiline
+                placeholder="Scope of work, terms, etc..."
+                value={localNotes}
+                onChangeText={setLocalNotes}
+              />
 
               <Button variant="outline" style={{ marginTop: 4, marginBottom: 14 }} onPress={handleUpdateCustomer} disabled={savingCustomer}>
-                {savingCustomer ? "Saving..." : "💾 Save Customer Details"}
+                {savingCustomer ? 'Saving...' : '💾 Save Customer Details'}
               </Button>
 
-              <QuoteComposer 
-                initialItems={initialQuoteItems} 
+              <QuoteComposer
+                initialItems={initialQuoteItems}
                 onSave={handleManualSave}
                 onPreview={handlePreviewQuote}
                 onSend={handleSendQuote}
@@ -225,8 +311,12 @@ export default function EnquiryDetailScreen() {
 
               {enquiry.status === 'new' && (
                 <>
-                  <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>✅ Accept Instantly & Create Job</Button>
-                  <Button variant="outline" onPress={() => reject()} style={{ marginTop: 10 }}>Reject enquiry</Button>
+                  <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>
+                    ✅ Accept Instantly & Create Job
+                  </Button>
+                  <Button variant="outline" onPress={() => reject()} style={{ marginTop: 10 }}>
+                    Reject enquiry
+                  </Button>
                 </>
               )}
 
@@ -239,19 +329,48 @@ export default function EnquiryDetailScreen() {
                 </View>
               )}
 
-              {enquiry.status === 'accepted' && enquiry.jobId && (
-                <Button variant="primary" style={{ backgroundColor: colors.blue, marginTop: 16 }} onPress={() => navigation.getParent()?.navigate('Jobs', { screen: 'JobDetail', params: { id: enquiry.jobId } })}>
-                  🚀 View Linked Job
+              {enquiry.status === 'accepted' && (
+                <Button
+                  variant="primary"
+                  style={{ backgroundColor: colors.blue, marginTop: 16 }}
+                  onPress={() => openLinkedJob(enquiry.jobId)}
+                >
+                  🚀 {enquiry.jobId ? 'View Linked Job' : 'Create / Open Linked Job'}
                 </Button>
               )}
 
               {enquiry.status === 'accepted' && enquiry.invoiceId && (
-                <Button variant="primary" style={{ backgroundColor: colors.green, marginTop: 16 }} onPress={() => navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: enquiry.invoiceId } })}>
+                <Button
+                  variant="primary"
+                  style={{ backgroundColor: colors.green, marginTop: 12 }}
+                  onPress={() =>
+                    navigation.getParent()?.navigate('Invoices', {
+                      screen: 'InvoiceDetail',
+                      params: { id: String(enquiry.invoiceId?._id || enquiry.invoiceId) },
+                      initial: false,
+                    })
+                  }
+                >
                   💰 View Direct Invoice
                 </Button>
               )}
 
-              <Button variant="outline" style={{ borderColor: colors.red, marginTop: 20 }} onPress={() => Alert.alert("Delete", "Delete?", [{ text: "Cancel" }, { text: "Delete", onPress: async () => { await unwrap(apiClient.delete(`/api/enquiries/${params.id}`)); navigation.goBack(); } }])}>
+              <Button
+                variant="outline"
+                style={{ borderColor: colors.red, marginTop: 20 }}
+                onPress={() =>
+                  Alert.alert('Delete', 'Delete?', [
+                    { text: 'Cancel' },
+                    {
+                      text: 'Delete',
+                      onPress: async () => {
+                        await unwrap(apiClient.delete(`/api/enquiries/${params.id}`));
+                        navigation.goBack();
+                      },
+                    },
+                  ])
+                }
+              >
                 <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Quote/Enquiry</Text>
               </Button>
             </>

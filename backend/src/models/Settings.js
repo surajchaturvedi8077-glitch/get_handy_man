@@ -23,9 +23,10 @@ const settingsSchema = new mongoose.Schema(
     notifJobReminders: { type: Boolean, default: true },
     notifUnpaidReminders: { type: Boolean, default: true },
     notifNewEnquiry: { type: Boolean, default: true },
+    briefingEnabled: { type: Boolean, default: true },
+    briefingTime: { type: String, default: '07:30' },
     defaultServiceRadius: { type: String, default: '25 km' },
     workingHours: { type: String, default: 'Mon-Fri, 7:00 AM-5:00 PM' },
-    // NEW: Stores your device's exact notification ID
     expoPushToken: { type: String, default: '' } 
   },
   { timestamps: true }

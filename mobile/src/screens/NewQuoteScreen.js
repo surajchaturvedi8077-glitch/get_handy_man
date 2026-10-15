@@ -10,6 +10,7 @@ import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { apiClient } from '../services/apiClient';
 import { colors } from '../theme/colors';
+import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
 
@@ -168,8 +169,11 @@ export default function NewQuoteScreen() {
           <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} placeholderTextColor={colors.gray} />
           <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
           <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
-          <TextInput style={styles.input} placeholder="Street Address" value={form.address} onChangeText={v => updateForm('address', v)} placeholderTextColor={colors.gray} />
-
+<AddressAutocomplete
+  value={form.address}
+  onChangeText={(v) => updateForm('address', v)}
+  placeholder="Street Address (Search Australian address...)"
+/>
           <FieldLabel style={{ marginTop: 10 }}>Quote Configuration</FieldLabel>
           <View style={styles.row}>
             <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} placeholder="Currency" value={form.currency} onChangeText={v => updateForm('currency', v)} />

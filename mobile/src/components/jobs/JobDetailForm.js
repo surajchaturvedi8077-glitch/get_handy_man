@@ -5,6 +5,7 @@ import FieldLabel from '../ui/FieldLabel';
 import Button from '../ui/Button';
 import MaterialsEditor from './MaterialsEditor';
 import { colors } from '../../theme/colors';
+import AddressAutocomplete from '../ui/AddressAutocomplete';
 
 export default function JobDetailForm({ job, onSave }) {
   const initialServices = (job.services && job.services.length > 0) 
@@ -103,9 +104,9 @@ export default function JobDetailForm({ job, onSave }) {
         <View style={{ flex: 1 }}><FieldLabel>Schedule (Date)</FieldLabel><TouchableOpacity onPress={openPicker} activeOpacity={0.7}><View style={[styles.input, { justifyContent: 'center', height: 42 }]}><Text style={{ color: when ? colors.charcoal : colors.gray, fontSize: 13 }}>{when || "Tap to select date"}</Text></View></TouchableOpacity></View>
         <View style={{ flex: 1 }}><FieldLabel>Exact Time</FieldLabel><TextInput value={exactTime} onChangeText={setExactTime} placeholder="e.g. 10:30 AM" style={styles.input} /></View>
       </View>
-
-      <FieldLabel>Address</FieldLabel>
-      <TextInput value={address} onChangeText={setAddress} style={styles.input} />
+      
+<FieldLabel>Address</FieldLabel>
+<AddressAutocomplete value={address} onChangeText={setAddress} placeholder="Search Australian address..." />
 
       <FieldLabel>Advance / Deposit Paid (A$)</FieldLabel>
       <TextInput value={advancePaid} onChangeText={setAdvancePaid} keyboardType="numeric" style={styles.input} />

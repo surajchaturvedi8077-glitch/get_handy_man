@@ -13,6 +13,7 @@ const Invoice = require('../models/Invoice');
 const Settings = require('../models/Settings');
 const { calcInvoiceTotals, calcCostTotals } = require('../services/gstService');
 const { ok, created } = require('../utils/apiResponse');
+const { nextInvoiceNumber } = require('../services/numberingService');
 
 // Attaches computed .totals and .costTotals to a plain invoice object for API responses.
 async function withTotals(invoiceDoc) {
@@ -48,9 +49,13 @@ const getInvoice = asyncHandler(async (req, res) => {
   ok(res, await withTotals(invoice));
 });
 
-// POST /api/invoices  (manual invoice creation, without a job)
+// POST /api/invoices (manual invoice creation, without a job)
 const createInvoice = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.create(req.body);
+  const payload = { ...req.body };
+  if (!payload.number) {
+    payload.number = await nextInvoiceNumber();
+  }
+  const invoice = await Invoice.create(payload);
   created(res, await withTotals(invoice));
 });
 

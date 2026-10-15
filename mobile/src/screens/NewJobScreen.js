@@ -164,22 +164,24 @@ export default function NewJobScreen() {
             </View>
           </View>
 
-          <View style={styles.fieldRow}>
-            <Text style={styles.icon}>📍</Text>
-            <View style={{ flex: 1, zIndex: 10 }}>
-              <FieldLabel>Street Address</FieldLabel>
-              <TextInput style={styles.input} value={form.address} onChangeText={searchPlaces} placeholder="Search Australian address..." />
-              {suggestions.length > 0 && (
-                <View style={styles.dropdown}>
-                  {suggestions.map((item) => (
-                    <TouchableOpacity key={item.place_id} style={styles.dropdownItem} onPress={() => handleSelectPlace(item.place_id, item.description)}>
-                      <Text style={styles.dropdownText} numberOfLines={2}>{item.description}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-          </View>
+<View style={styles.fieldRow}>
+  <Text style={styles.icon}>📍</Text>
+  <View style={{ flex: 1, zIndex: 50 }}>
+    <FieldLabel>Street Address</FieldLabel>
+    <AddressAutocomplete
+      value={form.address}
+      onChangeText={(text) => updateForm('address', text)}
+      onSelectAddress={(item) => {
+        updateForm('address', item.label);
+        if (item.suburb) updateForm('suburb', item.suburb);
+        if (item.postcode) updateForm('postcode', item.postcode);
+        if (item.lat) updateForm('lat', item.lat);
+        if (item.lng) updateForm('lng', item.lng);
+      }}
+      placeholder="Search Australian address..."
+    />
+  </View>
+</View>
 
           <View style={[styles.detailsCard, { zIndex: -1 }]}>
             <Text style={styles.cardTitle}>ADD JOB DETAILS</Text>
