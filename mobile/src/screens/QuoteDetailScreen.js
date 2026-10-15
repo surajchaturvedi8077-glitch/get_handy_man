@@ -1,0 +1,427 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  Alert,
+  Text,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+} from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import ScreenHeader from '../components/layout/ScreenHeader';
+import QuoteComposer from '../components/enquiries/QuoteComposer';
+import LoadingState from '../components/ui/LoadingState';
+import ErrorState from '../components/ui/ErrorState';
+import Button from '../components/ui/Button';
+import FieldLabel from '../components/ui/FieldLabel';
+import Chip from '../components/ui/Chip';
+import SegmentedControl from '../components/ui/SegmentedControl';
+import AddressAutocomplete from '../components/ui/AddressAutocomplete';
+import useEnquiry from '../hooks/useEnquiry';
+import useSettings from '../hooks/useSettings';
+import useToast from '../hooks/useToast';
+import { apiClient, unwrap } from '../services/apiClient';
+import { convertToInvoice } from '../services/enquiryService';
+import * as jobService from '../services/jobService';
+import { getQuoteStatus, getQuoteNumber } from './QuotesScreen';
+import { colors } from '../theme/colors';
+
+const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
+const CHIP_TONE = { draft: 'orange', sent: 'blue', accepted: 'green', expired: 'red' };
+const STATUS_TO_BACKEND = { draft: 'new', sent: 'quoted', accepted: 'accepted', expired: 'rejected' };
+
+export default function QuoteDetailScreen() {
+  const { params } = useRoute();
+  const navigation = useNavigation();
+  const { showToast } = useToast();
+  const { settings } = useSettings();
+
+  const { enquiry: quote, loading, error, sendQuote, accept, refresh } = useEnquiry(params.id);
+
+  const [localName, setLocalName] = useState('');
+  const [localPhone, setLocalPhone] = useState('');
+  const [localEmail, setLocalEmail] = useState('');
+  const [localAddress, setLocalAddress] = useState('');
+  const [localNotes, setLocalNotes] = useState('');
+  const [localAdvancePaid, setLocalAdvancePaid] = useState('0');
+  const [localQuoteNumber, setLocalQuoteNumber] = useState(params?.quoteNumber || '#GH-931');
+  const [quoteStatus, setQuoteStatus] = useState('draft');
+
+  const [savingCustomer, setSavingCustomer] = useState(false);
+  const [savingQuote, setSavingQuote] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    if (quote) {
+      setLocalName(quote.name || '');
+      setLocalPhone(quote.phone || '');
+      setLocalEmail(quote.email || '');
+      setLocalAddress(quote.address || '');
+      setLocalNotes(quote.notes || '');
+      setLocalAdvancePaid(String(quote.advancePaid || 0));
+      setLocalQuoteNumber(getQuoteNumber(quote, 931));
+      setQuoteStatus(getQuoteStatus(quote));
+    }
+  }, [quote]);
+
+  const generateQuoteHTML = (items) => {
+    const itemsHtml =
+      items
+        .map(
+          (i) =>
+            `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">1</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`
+        )
+        .join('') || '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
+    const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
+    const gstRate = settings?.gstRate || 10;
+    const applyGst = settings?.gstEnabled !== false;
+    const gstAmt = applyGst ? subtotal * (gstRate / 100) : 0;
+    const finalTotal = subtotal + gstAmt;
+    const advanceAmt = parseFloat(localAdvancePaid || 0);
+    const advanceHtml = advanceAmt > 0 ? `<div class="totals-row"><span>Advance/Deposit Paid</span><span>-$${advanceAmt.toFixed(2)}</span></div>` : '';
+    const balanceDue = finalTotal - advanceAmt;
+
+    const bsbStr = settings?.bsb || '';
+    const accountStr = settings?.account || '';
+    const accountNameStr = settings?.accountName || '';
+    const bankNameStr = settings?.bankName || '';
+    const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
+    const paymentDetailsHtml = bankNameStr
+      ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>`
+      : '';
+    const notesHtml = localNotes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${localNotes.replace(/\n/g, '<br/>')}</div>` : '';
+
+    return `
+      <html><head><meta name="viewport" content="width=device-width, initial-scale=1.0" /><style>@page { margin: 0; } body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; } .header { display: flex; justify-content: space-between; align-items: flex-start; } .logo { max-height: 120px; max-width: 250px; object-fit: contain; margin-bottom: 15px; } .biz-details { font-size: 12px; color: #374151; line-height: 1.6; } .biz-name { font-size: 16px; font-weight: 800; color: #111827; margin-bottom: 4px; } .doc-meta { text-align: right; } .doc-type { font-size: 28px; font-weight: 800; color: #6B7280; margin: 0 0 15px 0; letter-spacing: 1px; } .divider { border-top: 2px solid #111827; margin: 25px 0; } .bill-to-section { margin-bottom: 30px; } .bill-to-title { color: #9CA3AF; font-weight: 700; font-size: 11px; margin-bottom: 6px; } .bill-to-details { font-size: 12px; color: #374151; line-height: 1.5; } .items-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; } .items-table th { background-color: #1D4ED8; color: #ffffff; padding: 12px 10px; font-weight: 700; text-align: left; } .items-table td { padding: 12px 10px; border-bottom: 1px solid #E5E7EB; } .text-center { text-align: center; } .text-right { text-align: right; } .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; } .totals { width: 260px; font-size: 11px; color: #374151; } .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; } .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; }</style></head><body><div class="header"><div>${settings?.logoUrl ? `<img src="${settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`}" class="logo" />` : ''}<div class="biz-details"><div class="biz-name">${settings?.businessName || 'Get Handyman'}</div>${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}${settings?.bizCityState ? `<div>${settings.bizCityState}</div>` : ''}${settings?.bizPhone ? `<div>${settings.bizPhone}</div>` : ''}${settings?.website ? `<div>${settings.website}</div>` : ''}</div></div><div class="doc-meta"><h2 class="doc-type">QUOTE ${localQuoteNumber}</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${new Date().toLocaleDateString('en-GB')}</div><div><strong style="color: #9CA3AF;">Terms:</strong> ${settings?.paymentTerms || 'Due on receipt'}</div></div></div></div><div class="divider"></div><div class="bill-to-section"><div class="bill-to-title">QUOTE TO:</div><div class="bill-to-details"><div style="font-weight: 700; font-size: 14px; color: #111827;">${localName || 'Customer Name'}</div>${localPhone ? `<div>${localPhone}</div>` : ''}${localEmail ? `<div>${localEmail}</div>` : ''}${localAddress ? `<div style="margin-top: 4px;">${localAddress}</div>` : ''}</div></div><table class="items-table"><tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>${itemsHtml}</table><div class="totals-container"><div class="totals"><div class="totals-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div><div class="totals-row"><span>${applyGst ? `GST ${gstRate}%` : 'GST'}</span><span>${applyGst ? `$${gstAmt.toFixed(2)}` : '$0.00'}</span></div>${advanceHtml}<div class="balance-due"><span>Total Quote</span><span>$${balanceDue.toFixed(2)}</span></div></div></div>${paymentDetailsHtml}${notesHtml}</body></html>
+    `;
+  };
+
+  const saveToDatabase = async (items, nextStatus = quoteStatus) => {
+    const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
+    const gstAmt = settings?.gstEnabled !== false ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
+    const firstService = items[0]?.name || 'General Handyman Services';
+
+    await unwrap(
+      apiClient.put(`/api/enquiries/${params.id}`, {
+        name: localName,
+        phone: localPhone,
+        email: localEmail,
+        address: localAddress,
+        notes: localNotes,
+        advancePaid: Number(localAdvancePaid) || 0,
+        when: localQuoteNumber,
+        quoteNumber: localQuoteNumber,
+        isQuote: true,
+        quoteStatus: nextStatus,
+        status: STATUS_TO_BACKEND[nextStatus] || 'new',
+        service: firstService,
+        services: items.map((i) => i.name).filter(Boolean),
+        quoteItems: items,
+        price: subtotal + gstAmt,
+      })
+    );
+  };
+
+  const handleStatusChange = async (nextStatus) => {
+    setQuoteStatus(nextStatus);
+    try {
+      await unwrap(
+        apiClient.put(`/api/enquiries/${params.id}`, {
+          quoteStatus: nextStatus,
+          status: STATUS_TO_BACKEND[nextStatus] || 'new',
+          isQuote: true,
+          when: localQuoteNumber,
+        })
+      );
+      showToast(`Quote marked as ${nextStatus.toUpperCase()}`);
+      refresh();
+    } catch (e) {
+      Alert.alert('Error', 'Could not update quote status');
+    }
+  };
+
+  const handleUpdateCustomer = async () => {
+    Keyboard.dismiss();
+    setSavingCustomer(true);
+    try {
+      await unwrap(
+        apiClient.put(`/api/enquiries/${params.id}`, {
+          name: localName,
+          phone: localPhone,
+          email: localEmail,
+          address: localAddress,
+          notes: localNotes,
+          advancePaid: Number(localAdvancePaid) || 0,
+          when: localQuoteNumber,
+          quoteNumber: localQuoteNumber,
+          isQuote: true,
+        })
+      );
+      showToast('✅ Quote details saved!');
+      refresh();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save customer details');
+    } finally {
+      setSavingCustomer(false);
+    }
+  };
+
+  const handleManualSave = async (items) => {
+    Keyboard.dismiss();
+    setSavingQuote(true);
+    try {
+      await saveToDatabase(items, quoteStatus);
+      refresh();
+      showToast('✅ Quote saved!');
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes');
+    } finally {
+      setSavingQuote(false);
+    }
+  };
+
+  const handlePreviewQuote = async (items) => {
+    Keyboard.dismiss();
+    try {
+      await saveToDatabase(items, quoteStatus);
+      navigation.navigate('PdfPreview', {
+        html: generateQuoteHTML(items),
+        title: `Quote_${localQuoteNumber.replace('#', '')}.pdf`,
+      });
+    } catch (e) {
+      Alert.alert('Error', 'Failed to generate preview');
+    }
+  };
+
+  const handleSendQuote = async (items) => {
+    Keyboard.dismiss();
+    setGenerating(true);
+    try {
+      await saveToDatabase(items, 'sent');
+      await sendQuote(items);
+      setQuoteStatus('sent');
+      const { uri } = await Print.printToFileAsync({ html: generateQuoteHTML(items), base64: false });
+      if (await Sharing.isAvailableAsync()) {
+        try {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: `Share Quote ${localQuoteNumber}`,
+            UTI: '.pdf',
+          });
+        } catch (shareErr) {}
+      }
+      showToast('Quote sent!');
+      refresh();
+    } catch (err) {
+      Alert.alert('Error', err?.message || 'Failed to share.');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleConvertToInvoice = async () => {
+    try {
+      const data = await convertToInvoice(params.id);
+      showToast('Converted Directly to Invoice!');
+      navigation.getParent()?.navigate('Invoices', {
+        screen: 'InvoiceDetail',
+        params: { id: String(data.invoice._id) },
+        initial: false,
+      });
+    } catch (e) {
+      Alert.alert('Backend Error', e?.response?.data?.message || 'Could not convert to Invoice');
+    }
+  };
+
+  const handleAccept = async () => {
+    try {
+      const { job } = await accept();
+      setQuoteStatus('accepted');
+      showToast('Quote accepted & Job created!');
+      refresh();
+      navigation.getParent()?.navigate('Jobs', {
+        screen: 'JobDetail',
+        params: { id: String(job._id) },
+        initial: false,
+      });
+    } catch (e) {
+      Alert.alert('Backend Error', e?.response?.data?.message || 'Could not accept quote.');
+    }
+  };
+
+  const openLinkedJob = async (jobIdToOpen) => {
+    const cleanId = String(jobIdToOpen?._id || jobIdToOpen || '');
+    if (!cleanId) return handleAccept();
+    try {
+      await jobService.getJob(cleanId);
+      navigation.getParent()?.navigate('Jobs', {
+        screen: 'JobDetail',
+        params: { id: cleanId },
+        initial: false,
+      });
+    } catch (err) {
+      handleAccept();
+    }
+  };
+
+  const initialQuoteItems = useMemo(() => {
+    if (quote?.quoteItems?.length > 0) return quote.quoteItems;
+    if (quote?.services?.length > 0) return quote.services.map((s) => ({ name: s, amt: '', qty: 1 }));
+    if (quote?.service) return [{ name: quote.service, amt: '', qty: 1 }];
+    return [{ name: 'General Handyman Services', amt: '', qty: 1 }];
+  }, [quote]);
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader
+        title={`QUOTE ${localQuoteNumber}`}
+        subtitle={quote?.name}
+        onBack={() => navigation.navigate('QuotesList')}
+      />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: 150 }]}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={true}
+        >
+          {loading && <LoadingState />}
+          {error && <ErrorState>{error}</ErrorState>}
+
+          {quote && (
+            <>
+              <View style={styles.top}>
+                <Text style={styles.quoteNumHeader}>{localQuoteNumber}</Text>
+                <Chip tone={CHIP_TONE[quoteStatus] || 'orange'}>
+                  {quoteStatus.charAt(0).toUpperCase() + quoteStatus.slice(1)}
+                </Chip>
+              </View>
+
+              <FieldLabel>Quote Status</FieldLabel>
+              <View style={{ marginBottom: 14 }}>
+                <SegmentedControl
+                  options={[
+                    { value: 'draft', label: 'Draft' },
+                    { value: 'sent', label: 'Sent' },
+                    { value: 'accepted', label: 'Accepted' },
+                    { value: 'expired', label: 'Expired' },
+                  ]}
+                  value={quoteStatus}
+                  onChange={handleStatusChange}
+                />
+              </View>
+
+              <FieldLabel>Customer Name</FieldLabel>
+              <TextInput style={styles.input} value={localName} onChangeText={setLocalName} placeholder="Customer Name" />
+
+              <FieldLabel>Phone Number</FieldLabel>
+              <TextInput style={styles.input} value={localPhone} onChangeText={setLocalPhone} placeholder="Phone Number" keyboardType="phone-pad" />
+
+              <FieldLabel>Email Address</FieldLabel>
+              <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
+
+              <FieldLabel>Address</FieldLabel>
+              <AddressAutocomplete
+                value={localAddress}
+                onChangeText={setLocalAddress}
+                placeholder="Search Australian street address..."
+              />
+
+              <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
+              <TextInput style={styles.input} value={localAdvancePaid} onChangeText={setLocalAdvancePaid} keyboardType="numeric" />
+
+              <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
+              <TextInput
+                style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
+                multiline
+                placeholder="Scope of work, terms, etc..."
+                value={localNotes}
+                onChangeText={setLocalNotes}
+              />
+
+              <Button variant="outline" style={{ marginTop: 4, marginBottom: 14 }} onPress={handleUpdateCustomer} disabled={savingCustomer}>
+                {savingCustomer ? 'Saving...' : '💾 Save Customer Details'}
+              </Button>
+
+              <QuoteComposer
+                initialItems={initialQuoteItems}
+                onSave={handleManualSave}
+                onPreview={handlePreviewQuote}
+                onSend={handleSendQuote}
+                savingQuote={savingQuote}
+                generating={generating}
+              />
+
+              {quoteStatus !== 'accepted' && (
+                <View style={{ marginTop: 14, gap: 10 }}>
+                  <Button variant="green" onPress={handleAccept}>
+                    ✅ Mark Accepted & Create Job
+                  </Button>
+                  <Button variant="outline" style={{ borderColor: colors.blue }} onPress={handleConvertToInvoice}>
+                    <Text style={{ color: colors.blue, fontWeight: '700' }}>⚡ Convert Quote Directly to Invoice</Text>
+                  </Button>
+                </View>
+              )}
+
+              {quoteStatus === 'accepted' && (
+                <Button
+                  variant="primary"
+                  style={{ backgroundColor: colors.blue, marginTop: 16 }}
+                  onPress={() => openLinkedJob(quote.jobId)}
+                >
+                  🚀 View Linked Job
+                </Button>
+              )}
+
+              <Button
+                variant="outline"
+                style={{ borderColor: colors.red, marginTop: 20 }}
+                onPress={() =>
+                  Alert.alert('Delete Quote', 'Delete this quote permanently?', [
+                    { text: 'Cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await unwrap(apiClient.delete(`/api/enquiries/${params.id}`));
+                        navigation.navigate('QuotesList');
+                      },
+                    },
+                  ])
+                }
+              >
+                <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Quote</Text>
+              </Button>
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16, paddingBottom: 40 },
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  quoteNumHeader: { fontSize: 16, fontWeight: '800', color: colors.charcoal },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.grayLight,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    backgroundColor: '#fff',
+    marginBottom: 8,
+    color: colors.charcoal,
+  },
+});

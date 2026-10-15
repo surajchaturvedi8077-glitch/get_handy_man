@@ -102,9 +102,9 @@ export default function CustomersScreen({ navigation }) {
              
              {/* QUICK ACTION BUTTONS */}
              <View style={styles.actions}>
-               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Enquiries', { screen: 'NewQuote', params: { customer: c } })} style={styles.actionBtn}>
-                 <Text style={styles.actionBtnText}>📝 Quote</Text>
-               </TouchableOpacity>
+               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Quotes', { screen: 'NewQuote', params: { customer: c } })} style={styles.actionBtn}>
+  <Text style={styles.actionBtnText}>📝 Quote</Text>
+</TouchableOpacity>
                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Home', { screen: 'NewJob', params: { customer: c } })} style={styles.actionBtn}>
                  <Text style={styles.actionBtnText}>🛠️ Job</Text>
                </TouchableOpacity>

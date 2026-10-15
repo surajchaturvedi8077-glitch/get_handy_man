@@ -1,11 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, ScrollView, StyleSheet, Alert, Text, TextInput, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
 import ScreenHeader from '../components/layout/ScreenHeader';
-import QuoteComposer from '../components/enquiries/QuoteComposer';
-import EnquiryActions from '../components/enquiries/EnquiryActions';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import Button from '../components/ui/Button';
@@ -13,34 +9,27 @@ import FieldLabel from '../components/ui/FieldLabel';
 import Chip from '../components/ui/Chip';
 import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import useEnquiry from '../hooks/useEnquiry';
-import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { apiClient, unwrap } from '../services/apiClient';
-import { convertToInvoice } from '../services/enquiryService';
 import * as jobService from '../services/jobService';
 import { colors } from '../theme/colors';
 
-const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
-const CHIP_TONE = { new: 'orange', quoted: 'blue', accepted: 'green', rejected: 'red' };
+const CHIP_TONE = { new: 'orange', accepted: 'green', rejected: 'red' };
 
 export default function EnquiryDetailScreen() {
   const { params } = useRoute();
   const navigation = useNavigation();
   const { showToast } = useToast();
-  const { settings } = useSettings();
 
-  const { enquiry, loading, error, reject, sendQuote, accept, refresh } = useEnquiry(params.id);
+  const { enquiry, loading, error, reject, accept, refresh } = useEnquiry(params.id);
 
   const [localName, setLocalName] = useState('');
   const [localPhone, setLocalPhone] = useState('');
   const [localEmail, setLocalEmail] = useState('');
   const [localAddress, setLocalAddress] = useState('');
+  const [localService, setLocalService] = useState('');
   const [localNotes, setLocalNotes] = useState('');
-  const [localAdvancePaid, setLocalAdvancePaid] = useState('0');
-
   const [savingCustomer, setSavingCustomer] = useState(false);
-  const [savingQuote, setSavingQuote] = useState(false);
-  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (enquiry) {
@@ -48,59 +37,14 @@ export default function EnquiryDetailScreen() {
       setLocalPhone(enquiry.phone || '');
       setLocalEmail(enquiry.email || '');
       setLocalAddress(enquiry.address || '');
+      setLocalService(
+        Array.isArray(enquiry.services) && enquiry.services.length > 0
+          ? enquiry.services.join(', ')
+          : enquiry.service || ''
+      );
       setLocalNotes(enquiry.notes || '');
-      setLocalAdvancePaid(String(enquiry.advancePaid || 0));
     }
   }, [enquiry]);
-
-  const generateQuoteHTML = (items) => {
-    const itemsHtml =
-      items
-        .map(
-          (i) =>
-            `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">1</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`
-        )
-        .join('') || '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
-    const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
-    const gstRate = settings?.gstRate || 10;
-    const applyGst = settings?.gstEnabled !== false;
-    const gstAmt = applyGst ? subtotal * (gstRate / 100) : 0;
-    const finalTotal = subtotal + gstAmt;
-    const advanceAmt = parseFloat(localAdvancePaid || 0);
-    const advanceHtml = advanceAmt > 0 ? `<div class="totals-row"><span>Advance/Deposit Paid</span><span>-$${advanceAmt.toFixed(2)}</span></div>` : '';
-    const balanceDue = finalTotal - advanceAmt;
-
-    const bsbStr = settings?.bsb || '';
-    const accountStr = settings?.account || '';
-    const accountNameStr = settings?.accountName || '';
-    const bankNameStr = settings?.bankName || '';
-    const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
-    const paymentDetailsHtml = bankNameStr
-      ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>`
-      : '';
-    const notesHtml = localNotes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${localNotes.replace(/\n/g, '<br/>')}</div>` : '';
-
-    return `
-      <html><head><meta name="viewport" content="width=device-width, initial-scale=1.0" /><style>@page { margin: 0; } body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; margin: 0; } .header { display: flex; justify-content: space-between; align-items: flex-start; } .logo { max-height: 120px; max-width: 250px; object-fit: contain; margin-bottom: 15px; } .biz-details { font-size: 12px; color: #374151; line-height: 1.6; } .biz-name { font-size: 16px; font-weight: 800; color: #111827; margin-bottom: 4px; } .doc-meta { text-align: right; } .doc-type { font-size: 28px; font-weight: 800; color: #6B7280; margin: 0 0 15px 0; letter-spacing: 1px; } .divider { border-top: 2px solid #111827; margin: 25px 0; } .bill-to-section { margin-bottom: 30px; } .bill-to-title { color: #9CA3AF; font-weight: 700; font-size: 11px; margin-bottom: 6px; } .bill-to-details { font-size: 12px; color: #374151; line-height: 1.5; } .items-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; } .items-table th { background-color: #1D4ED8; color: #ffffff; padding: 12px 10px; font-weight: 700; text-align: left; } .items-table td { padding: 12px 10px; border-bottom: 1px solid #E5E7EB; } .text-center { text-align: center; } .text-right { text-align: right; } .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; } .totals { width: 260px; font-size: 11px; color: #374151; } .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; } .balance-due { background-color: #000000; color: #ffffff; font-size: 15px; font-weight: 700; padding: 12px 10px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; }</style></head><body><div class="header"><div>${settings?.logoUrl ? `<img src="${settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`}" class="logo" />` : ''}<div class="biz-details"><div class="biz-name">${settings?.businessName || 'Get Handyman'}</div>${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}${settings?.bizCityState ? `<div>${settings.bizCityState}</div>` : ''}${settings?.bizPhone ? `<div>${settings.bizPhone}</div>` : ''}${settings?.website ? `<div>${settings.website}</div>` : ''}</div></div><div class="doc-meta"><h2 class="doc-type">QUOTE</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${new Date().toLocaleDateString('en-GB')}</div><div><strong style="color: #9CA3AF;">Terms:</strong> ${settings?.paymentTerms || 'Due on receipt'}</div></div></div></div><div class="divider"></div><div class="bill-to-section"><div class="bill-to-title">QUOTE TO:</div><div class="bill-to-details"><div style="font-weight: 700; font-size: 14px; color: #111827;">${localName || 'Customer Name'}</div>${localPhone ? `<div>${localPhone}</div>` : ''}${localEmail ? `<div>${localEmail}</div>` : ''}${localAddress ? `<div style="margin-top: 4px;">${localAddress}</div>` : ''}</div></div><table class="items-table"><tr><th>Description</th><th class="text-center">Quantity</th><th class="text-right">Rate</th><th class="text-right">Amount</th></tr>${itemsHtml}</table><div class="totals-container"><div class="totals"><div class="totals-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div><div class="totals-row"><span>${applyGst ? `GST ${gstRate}%` : 'GST'}</span><span>${applyGst ? `$${gstAmt.toFixed(2)}` : '$0.00'}</span></div>${advanceHtml}<div class="balance-due"><span>Total Quote</span><span>$${balanceDue.toFixed(2)}</span></div></div></div>${paymentDetailsHtml}${notesHtml}</body></html>
-    `;
-  };
-
-  const saveToDatabase = async (items) => {
-    const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
-    const gstAmt = settings?.gstEnabled !== false ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
-    await unwrap(
-      apiClient.put(`/api/enquiries/${params.id}`, {
-        name: localName,
-        phone: localPhone,
-        email: localEmail,
-        address: localAddress,
-        notes: localNotes,
-        advancePaid: Number(localAdvancePaid) || 0,
-        quoteItems: items,
-        price: subtotal + gstAmt,
-      })
-    );
-  };
 
   const handleUpdateCustomer = async () => {
     Keyboard.dismiss();
@@ -112,111 +56,23 @@ export default function EnquiryDetailScreen() {
           phone: localPhone,
           email: localEmail,
           address: localAddress,
+          service: localService,
+          services: localService ? [localService] : [],
           notes: localNotes,
-          advancePaid: Number(localAdvancePaid) || 0,
         })
       );
-      showToast('✅ Customer details saved!');
+      showToast('✅ Enquiry details saved!');
       refresh();
     } catch (e) {
-      Alert.alert('Error', 'Failed to save customer details');
+      Alert.alert('Error', 'Failed to save enquiry details');
     } finally {
       setSavingCustomer(false);
     }
   };
 
-  const handleManualSave = async (items) => {
-    Keyboard.dismiss();
-    setSavingQuote(true);
-    try {
-      await saveToDatabase(items);
-      refresh();
-      showToast('✅ Quote data saved!');
-    } catch (e) {
-      Alert.alert('Error', e?.response?.data?.message || 'Failed to save changes');
-    } finally {
-      setSavingQuote(false);
-    }
-  };
-
-  const handlePreviewQuote = async (items) => {
-    Keyboard.dismiss();
-    try {
-      await saveToDatabase(items);
-      navigation.navigate('PdfPreview', { html: generateQuoteHTML(items), title: `Quote_${localName || 'Preview'}.pdf` });
-    } catch (e) {
-      Alert.alert('Error', 'Failed to generate preview');
-    }
-  };
-
-  const handleSendQuote = async (items) => {
-    Keyboard.dismiss();
-    setGenerating(true);
-    try {
-      await saveToDatabase(items);
-      await sendQuote(items);
-      const { uri } = await Print.printToFileAsync({ html: generateQuoteHTML(items), base64: false });
-      if (await Sharing.isAvailableAsync()) {
-        try {
-          await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${localName}`, UTI: '.pdf' });
-        } catch (shareErr) {}
-      }
-      showToast('Quote marked as sent!');
-      refresh();
-    } catch (err) {
-      Alert.alert('Error', err?.message || 'Failed to share.');
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const handleConvertToInvoice = async () => {
-    try {
-      const data = await convertToInvoice(params.id);
-      showToast('Converted Directly to Invoice!');
-      navigation.getParent()?.navigate('Invoices', { screen: 'InvoiceDetail', params: { id: String(data.invoice._id) }, initial: false });
-    } catch (e) {
-      Alert.alert('Backend Error', e?.response?.data?.message || 'Could not convert to Invoice');
-    }
-  };
-
-  const openLinkedJob = async (jobIdToOpen) => {
-    const cleanId = String(jobIdToOpen?._id || jobIdToOpen || '');
-    if (!cleanId) {
-      return handleAccept();
-    }
-    try {
-      // Verify the linked job still exists in the database before navigating
-      await jobService.getJob(cleanId);
-      navigation.getParent()?.navigate('Jobs', {
-        screen: 'JobDetail',
-        params: { id: cleanId },
-        initial: false,
-      });
-    } catch (err) {
-      Alert.alert(
-        'Linked Job Missing',
-        'The linked job was deleted or could not be found. Would you like to recreate the job from this enquiry now?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Recreate Job', onPress: handleAccept },
-        ]
-      );
-    }
-  };
-
   const handleAccept = async () => {
     try {
-      await unwrap(
-        apiClient.put(`/api/enquiries/${params.id}`, {
-          name: localName,
-          phone: localPhone,
-          email: localEmail,
-          address: localAddress,
-          notes: localNotes,
-          advancePaid: Number(localAdvancePaid) || 0,
-        })
-      );
+      await handleUpdateCustomer();
       const { job } = await accept();
       showToast('Job created from enquiry');
       refresh();
@@ -230,16 +86,24 @@ export default function EnquiryDetailScreen() {
     }
   };
 
-  const initialQuoteItems = useMemo(() => {
-    if (enquiry?.quoteItems?.length > 0) return enquiry.quoteItems;
-    if (enquiry?.services?.length > 0) return enquiry.services.map((s) => ({ name: s, amt: '', qty: 1 }));
-    if (enquiry?.service) return [{ name: enquiry.service, amt: '', qty: 1 }];
-    return [{ name: 'General Handyman Services', amt: '', qty: 1 }];
-  }, [enquiry]);
+  const openLinkedJob = async (jobIdToOpen) => {
+    const cleanId = String(jobIdToOpen?._id || jobIdToOpen || '');
+    if (!cleanId) return handleAccept();
+    try {
+      await jobService.getJob(cleanId);
+      navigation.getParent()?.navigate('Jobs', {
+        screen: 'JobDetail',
+        params: { id: cleanId },
+        initial: false,
+      });
+    } catch (err) {
+      handleAccept();
+    }
+  };
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="QUOTE / ENQUIRY" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
+      <ScreenHeader title="ENQUIRY DETAILS" subtitle={enquiry?.name} onBack={() => navigation.goBack()} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -259,6 +123,7 @@ export default function EnquiryDetailScreen() {
                 <Chip tone={CHIP_TONE[enquiry.status] || 'orange'}>
                   {enquiry.status[0].toUpperCase() + enquiry.status.slice(1)}
                 </Chip>
+                {enquiry.when ? <Text style={styles.whenText}>Preferred: {enquiry.when}</Text> : null}
               </View>
 
               {enquiry.message ? (
@@ -277,56 +142,53 @@ export default function EnquiryDetailScreen() {
               <FieldLabel>Email Address</FieldLabel>
               <TextInput style={styles.input} value={localEmail} onChangeText={setLocalEmail} placeholder="Email Address" keyboardType="email-address" autoCapitalize="none" />
 
-              <FieldLabel>Address (Google Maps Search)</FieldLabel>
-              <AddressAutocomplete
-                value={localAddress}
-                onChangeText={setLocalAddress}
-                placeholder="Search Australian street address..."
-              />
+              <FieldLabel>Address</FieldLabel>
+              <AddressAutocomplete value={localAddress} onChangeText={setLocalAddress} placeholder="Search Australian address..." />
 
-              <FieldLabel style={{ marginTop: 10 }}>Advance / Deposit Paid (A$)</FieldLabel>
-              <TextInput style={styles.input} value={localAdvancePaid} onChangeText={setLocalAdvancePaid} keyboardType="numeric" />
+              <FieldLabel>Requested Service</FieldLabel>
+              <TextInput style={styles.input} value={localService} onChangeText={setLocalService} placeholder="Service requested" />
 
-              <FieldLabel style={{ marginTop: 10 }}>Notes (Shown on PDF)</FieldLabel>
+              <FieldLabel style={{ marginTop: 10 }}>Notes</FieldLabel>
               <TextInput
                 style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
                 multiline
-                placeholder="Scope of work, terms, etc..."
+                placeholder="Notes..."
                 value={localNotes}
                 onChangeText={setLocalNotes}
               />
 
-              <Button variant="outline" style={{ marginTop: 4, marginBottom: 14 }} onPress={handleUpdateCustomer} disabled={savingCustomer}>
-                {savingCustomer ? 'Saving...' : '💾 Save Customer Details'}
+              <Button variant="primary" style={{ marginTop: 6, marginBottom: 14 }} onPress={handleUpdateCustomer} disabled={savingCustomer}>
+                {savingCustomer ? 'Saving...' : '💾 Save Enquiry Details'}
               </Button>
-
-              <QuoteComposer
-                initialItems={initialQuoteItems}
-                onSave={handleManualSave}
-                onPreview={handlePreviewQuote}
-                onSend={handleSendQuote}
-                savingQuote={savingQuote}
-                generating={generating}
-              />
 
               {enquiry.status === 'new' && (
                 <>
-                  <Button variant="green" style={{ marginTop: 12 }} onPress={handleAccept}>
-                    ✅ Accept Instantly & Create Job
+                  <Button variant="green" style={{ marginTop: 6 }} onPress={handleAccept}>
+                    ✅ Accept Enquiry & Create Job
+                  </Button>
+                  <Button
+                    variant="outline"
+                    style={{ marginTop: 10, borderColor: colors.orange }}
+                    onPress={() =>
+                      navigation.getParent()?.navigate('Quotes', {
+                        screen: 'NewQuote',
+                        params: {
+                          customer: {
+                            name: localName,
+                            phone: localPhone,
+                            email: localEmail,
+                            address: localAddress,
+                          },
+                        },
+                      })
+                    }
+                  >
+                    <Text style={{ color: colors.orangeDeep, fontWeight: '700' }}>📄 Create Quote in Quotes Tab</Text>
                   </Button>
                   <Button variant="outline" onPress={() => reject()} style={{ marginTop: 10 }}>
                     Reject enquiry
                   </Button>
                 </>
-              )}
-
-              {enquiry.status === 'quoted' && (
-                <View style={{ marginTop: 16 }}>
-                  <EnquiryActions onReject={() => reject()} onAccept={handleAccept} acceptLabel="Mark accepted & create job" />
-                  <Button variant="outline" style={{ marginTop: 10, borderColor: colors.blue }} onPress={handleConvertToInvoice}>
-                    <Text style={{ color: colors.blue, fontWeight: '700' }}>⚡ Skip Job & Convert to Invoice</Text>
-                  </Button>
-                </View>
               )}
 
               {enquiry.status === 'accepted' && (
@@ -335,23 +197,7 @@ export default function EnquiryDetailScreen() {
                   style={{ backgroundColor: colors.blue, marginTop: 16 }}
                   onPress={() => openLinkedJob(enquiry.jobId)}
                 >
-                  🚀 {enquiry.jobId ? 'View Linked Job' : 'Create / Open Linked Job'}
-                </Button>
-              )}
-
-              {enquiry.status === 'accepted' && enquiry.invoiceId && (
-                <Button
-                  variant="primary"
-                  style={{ backgroundColor: colors.green, marginTop: 12 }}
-                  onPress={() =>
-                    navigation.getParent()?.navigate('Invoices', {
-                      screen: 'InvoiceDetail',
-                      params: { id: String(enquiry.invoiceId?._id || enquiry.invoiceId) },
-                      initial: false,
-                    })
-                  }
-                >
-                  💰 View Direct Invoice
+                  🚀 View Linked Job
                 </Button>
               )}
 
@@ -359,7 +205,7 @@ export default function EnquiryDetailScreen() {
                 variant="outline"
                 style={{ borderColor: colors.red, marginTop: 20 }}
                 onPress={() =>
-                  Alert.alert('Delete', 'Delete?', [
+                  Alert.alert('Delete', 'Delete this enquiry?', [
                     { text: 'Cancel' },
                     {
                       text: 'Delete',
@@ -371,7 +217,7 @@ export default function EnquiryDetailScreen() {
                   ])
                 }
               >
-                <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Quote/Enquiry</Text>
+                <Text style={{ color: colors.red, fontWeight: '700' }}>🗑️ Delete Enquiry</Text>
               </Button>
             </>
           )}
@@ -385,6 +231,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16, paddingBottom: 40 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  whenText: { fontSize: 12, color: colors.gray },
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 8, color: colors.charcoal },
   messageBox: { padding: 14, backgroundColor: colors.orangeTint, borderRadius: 8, marginBottom: 14, borderWidth: 1, borderColor: colors.orange },
   messageTitle: { fontSize: 11, fontWeight: '800', color: colors.orangeDeep, marginBottom: 4 },

@@ -6,11 +6,11 @@ import * as Sharing from 'expo-sharing';
 import ScreenHeader from '../components/layout/ScreenHeader';
 import Button from '../components/ui/Button';
 import FieldLabel from '../components/ui/FieldLabel';
+import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import useSettings from '../hooks/useSettings';
 import useToast from '../hooks/useToast';
 import { apiClient } from '../services/apiClient';
 import { colors } from '../theme/colors';
-import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 
 const BASE_URL = 'https://gold-worm-334910.hostingersite.com';
 
@@ -21,22 +21,43 @@ export default function NewQuoteScreen() {
   const { settings } = useSettings();
   const [generating, setGenerating] = useState(false);
 
+  const quoteNumber = params?.nextNumber || `#GH-${Math.floor(925 + Math.random() * 70)}`;
+
   const [form, setForm] = useState({
-    name: '', phone: '', email: '', address: '', currency: 'AUD', terms: settings?.paymentTerms || 'Due on receipt', notes: '', advancePaid: '0'
+    name: '',
+    phone: '',
+    email: '',
+    address: '',
+    currency: 'AUD',
+    terms: settings?.paymentTerms || 'Due on receipt',
+    notes: '',
+    advancePaid: '0',
   });
   const [items, setItems] = useState([{ name: 'General Handyman Services', amt: '150.00' }]);
 
   useEffect(() => {
     if (params?.customer) {
-      setForm(prev => ({ ...prev, name: params.customer.name || '', phone: params.customer.phone || '', email: params.customer.email || '', address: params.customer.address || '' }));
+      setForm((prev) => ({
+        ...prev,
+        name: params.customer.name || '',
+        phone: params.customer.phone || '',
+        email: params.customer.email || '',
+        address: params.customer.address || '',
+      }));
     }
   }, [params?.customer]);
 
-  const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+  const updateForm = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
   const generateHTMLString = () => {
-    const itemsHtml = items.map(i => `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">1</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`).join('') || '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
-    
+    const itemsHtml =
+      items
+        .map(
+          (i) =>
+            `<tr><td class="text-left" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">${i.name || ''}</td><td class="text-center" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">1</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td><td class="text-right" style="border-bottom: 1px solid #E5E7EB; padding: 10px;">$${parseFloat(i.amt || 0).toFixed(2)}</td></tr>`
+        )
+        .join('') || '<tr><td colspan="4" class="text-center" style="border-bottom: 1px solid #E5E7EB;">No items</td></tr>';
+
     const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
     const gstRate = settings?.gstRate || 10;
     const applyGst = settings?.gstEnabled !== false;
@@ -52,7 +73,9 @@ export default function NewQuoteScreen() {
     const accountNameStr = settings?.accountName || '';
     const bankNameStr = settings?.bankName || '';
     const payIdHtml = settings?.payId ? `<br/>PayID: ${settings.payId}` : '';
-    const paymentDetailsHtml = bankNameStr ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>` : '';
+    const paymentDetailsHtml = bankNameStr
+      ? `<div style="margin-top: 30px; font-size: 10px; color: #6B7280; line-height: 1.6; page-break-inside: avoid;"><strong>Payment Details</strong><br/>Bank: ${bankNameStr}<br/>BSB: ${bsbStr}<br/>Account: ${accountStr}<br/>Account Name: ${accountNameStr}${payIdHtml}</div>`
+      : '';
 
     const notesHtml = form.notes ? `<div style="margin-top: 20px; font-size: 11px; color: #374151; line-height: 1.5;"><strong>Notes:</strong><br/>${form.notes.replace(/\n/g, '<br/>')}</div>` : '';
     const quoteDate = new Date().toLocaleDateString('en-GB');
@@ -88,7 +111,7 @@ export default function NewQuoteScreen() {
         <body>
           <div class="header">
             <div>${settings?.logoUrl ? `<img src="${settings.logoUrl.startsWith('http') ? settings.logoUrl : `${BASE_URL}${settings.logoUrl}`}" class="logo" />` : ''}<div class="biz-details"><div class="biz-name">${settings?.businessName || 'Get Handyman'}</div>${settings?.abn ? `<div>ABN - ${settings.abn}</div>` : ''}${settings?.bizCityState ? `<div>${settings.bizCityState}</div>` : ''}${settings?.bizPhone ? `<div>${settings.bizPhone}</div>` : ''}${settings?.website ? `<div>${settings.website}</div>` : ''}</div></div>
-            <div class="doc-meta"><h2 class="doc-type">QUOTE</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${quoteDate}</div><div><strong style="color: #9CA3AF;">Currency:</strong> ${form.currency}</div><div><strong style="color: #9CA3AF;">Terms:</strong> ${form.terms}</div></div></div>
+            <div class="doc-meta"><h2 class="doc-type">QUOTE ${quoteNumber}</h2><div style="font-size: 11px; color: #6B7280; line-height: 1.6;"><div><strong style="color: #9CA3AF;">Date:</strong> ${quoteDate}</div><div><strong style="color: #9CA3AF;">Currency:</strong> ${form.currency}</div><div><strong style="color: #9CA3AF;">Terms:</strong> ${form.terms}</div></div></div>
           </div>
           <div class="divider"></div>
           <div class="bill-to-section">
@@ -115,87 +138,132 @@ export default function NewQuoteScreen() {
     navigation.navigate('PdfPreview', { html: generateHTMLString(), title: `Quote_${form.name || 'Preview'}.pdf` });
   };
 
+  const buildPayload = (statusType) => {
+    const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
+    const applyGst = settings?.gstEnabled !== false;
+    const gstAmt = applyGst ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
+    const serviceNames = items.map((i) => i.name).filter(Boolean);
+
+    return {
+      name: form.name,
+      phone: form.phone,
+      email: form.email,
+      address: form.address,
+      notes: form.notes,
+      advancePaid: Number(form.advancePaid) || 0,
+      when: quoteNumber,
+      quoteNumber,
+      isQuote: true,
+      quoteStatus: statusType === 'quoted' ? 'sent' : 'draft',
+      status: statusType,
+      service: serviceNames[0] || 'General Handyman Services',
+      services: serviceNames,
+      quoteItems: items.map((i) => ({ name: i.name, qty: 1, amt: Number(i.amt) || 0 })),
+      price: subtotal + gstAmt,
+    };
+  };
+
   const handleSaveOnly = async () => {
-    if (!form.name || !form.phone || !form.email) return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
+    if (!form.name) return Alert.alert('Required Field', 'Customer Name is mandatory.');
     try {
-      const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
-      const applyGst = settings?.gstEnabled !== false;
-      const gstAmt = applyGst ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
-      await apiClient.post('/api/enquiries', {
-        name: form.name, phone: form.phone, email: form.email, address: form.address,
-        notes: form.notes, advancePaid: Number(form.advancePaid) || 0,
-        status: 'new', quoteItems: items, price: subtotal + gstAmt
-      });
+      await apiClient.post('/api/enquiries', buildPayload('new'));
       showToast('Draft Quote Saved Successfully!');
-      navigation.navigate('Dashboard');
-    } catch (err) { Alert.alert("Error", "Failed to save draft quote."); } 
+      navigation.navigate('QuotesList');
+    } catch (err) {
+      Alert.alert('Error', 'Failed to save draft quote.');
+    }
   };
 
   const handleSaveAndShareQuote = async () => {
-    if (!form.name || !form.phone || !form.email) return Alert.alert("Required Fields", "Name, Phone, and Email are mandatory.");
+    if (!form.name) return Alert.alert('Required Field', 'Customer Name is mandatory.');
     setGenerating(true);
     try {
-      const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amt || 0), 0);
-      const applyGst = settings?.gstEnabled !== false;
-      const gstAmt = applyGst ? subtotal * ((settings?.gstRate || 10) / 100) : 0;
-
-      await apiClient.post('/api/enquiries', {
-        name: form.name, phone: form.phone, email: form.email, address: form.address,
-        notes: form.notes, advancePaid: Number(form.advancePaid) || 0,
-        status: 'quoted', quoteItems: items, price: subtotal + gstAmt
-      });
-      
+      await apiClient.post('/api/enquiries', buildPayload('quoted'));
       const { uri } = await Print.printToFileAsync({ html: generateHTMLString(), base64: false });
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${form.name}`, UTI: '.pdf' });
-      showToast('Quote Shared Successfully!');
-    } catch (err) { Alert.alert("Error", "Failed to generate quote PDF."); } 
-    finally { setGenerating(false); navigation.navigate('Dashboard'); }
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Share Quote for ${form.name}`, UTI: '.pdf' });
+      }
+      showToast('Quote Saved & Shared!');
+      navigation.navigate('QuotesList');
+    } catch (err) {
+      Alert.alert('Error', 'Failed to generate quote PDF.');
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="NEW QUOTE" onBack={() => { navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Dashboard') }} />
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+      <ScreenHeader title={`NEW QUOTE (${quoteNumber})`} onBack={() => navigation.navigate('QuotesList')} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
       >
-        <ScrollView 
-          contentContainerStyle={[styles.content, { paddingBottom: 200 }]} 
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: 200 }]}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets={true}
         >
-          <FieldLabel>Customer Details (Mandatory)</FieldLabel>
-          <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={v => updateForm('name', v)} placeholderTextColor={colors.gray} />
-          <TextInput style={styles.input} placeholder="Phone Number *" value={form.phone} onChangeText={v => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
-          <TextInput style={styles.input} placeholder="Email Address *" value={form.email} onChangeText={v => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
-<AddressAutocomplete
-  value={form.address}
-  onChangeText={(v) => updateForm('address', v)}
-  placeholder="Street Address (Search Australian address...)"
-/>
+          <FieldLabel>Customer Details</FieldLabel>
+          <TextInput style={styles.input} placeholder="Full Name *" value={form.name} onChangeText={(v) => updateForm('name', v)} placeholderTextColor={colors.gray} />
+          <TextInput style={styles.input} placeholder="Phone Number" value={form.phone} onChangeText={(v) => updateForm('phone', v)} keyboardType="phone-pad" placeholderTextColor={colors.gray} />
+          <TextInput style={styles.input} placeholder="Email Address" value={form.email} onChangeText={(v) => updateForm('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.gray} />
+          <AddressAutocomplete
+            value={form.address}
+            onChangeText={(v) => updateForm('address', v)}
+            placeholder="Street Address (Search Australian address...)"
+          />
+
           <FieldLabel style={{ marginTop: 10 }}>Quote Configuration</FieldLabel>
           <View style={styles.row}>
-            <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} placeholder="Currency" value={form.currency} onChangeText={v => updateForm('currency', v)} />
-            <TextInput style={[styles.input, { flex: 2, marginTop: 0 }]} placeholder="Terms" value={form.terms} onChangeText={v => updateForm('terms', v)} />
+            <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} placeholder="Currency" value={form.currency} onChangeText={(v) => updateForm('currency', v)} />
+            <TextInput style={[styles.input, { flex: 2, marginTop: 0 }]} placeholder="Terms" value={form.terms} onChangeText={(v) => updateForm('terms', v)} />
           </View>
 
           <FieldLabel style={{ marginTop: 14 }}>Line Items (Fully Editable)</FieldLabel>
           {items.map((it, idx) => (
             <View key={idx} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-              <TextInput style={[styles.input, { flex: 1, marginTop: 0 }]} value={it.name} onChangeText={v => { const n = [...items]; n[idx].name = v; setItems(n); }} placeholder="Description" />
-              <TextInput style={[styles.input, { width: 90, marginTop: 0 }]} value={it.amt} onChangeText={v => { const n = [...items]; n[idx].amt = v; setItems(n); }} placeholder="Amount" keyboardType="numeric" />
-              <TouchableOpacity onPress={() => setItems(items.filter((_, i) => i !== idx))}><Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text></TouchableOpacity>
+              <TextInput
+                style={[styles.input, { flex: 1, marginTop: 0 }]}
+                value={it.name}
+                onChangeText={(v) => {
+                  const n = [...items];
+                  n[idx].name = v;
+                  setItems(n);
+                }}
+                placeholder="Description"
+              />
+              <TextInput
+                style={[styles.input, { width: 90, marginTop: 0 }]}
+                value={it.amt}
+                onChangeText={(v) => {
+                  const n = [...items];
+                  n[idx].amt = v;
+                  setItems(n);
+                }}
+                placeholder="Amount"
+                keyboardType="numeric"
+              />
+              <TouchableOpacity onPress={() => setItems(items.filter((_, i) => i !== idx))}>
+                <Text style={{ fontSize: 20, color: colors.red, padding: 8 }}>×</Text>
+              </TouchableOpacity>
             </View>
           ))}
-          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>+ Add line item</Button>
+          <Button variant="outline" style={{ paddingVertical: 8, marginBottom: 14 }} onPress={() => setItems([...items, { name: '', amt: '' }])}>
+            + Add line item
+          </Button>
 
-          <Button variant="outline" style={{ marginBottom: 10 }} onPress={handleSaveOnly}>💾 Save Draft Quote</Button>
+          <Button variant="outline" style={{ marginBottom: 10 }} onPress={handleSaveOnly}>
+            💾 Save Draft Quote
+          </Button>
 
           <View style={styles.btnRow}>
-            <Button variant="dark" style={[styles.flex, { marginRight: 8 }]} onPress={handlePreviewPdf}>Preview PDF</Button>
+            <Button variant="dark" style={[styles.flex, { marginRight: 8 }]} onPress={handlePreviewPdf}>
+              Preview PDF
+            </Button>
             <Button variant="primary" style={[styles.flex, { backgroundColor: colors.orange }]} onPress={handleSaveAndShareQuote} disabled={generating}>
-              {generating ? <ActivityIndicator color="#fff" /> : <Text style={{fontWeight: 'bold', color: '#fff'}}>✓ Preview & Share</Text>}
+              {generating ? <ActivityIndicator color="#fff" /> : <Text style={{ fontWeight: 'bold', color: '#fff' }}>✓ Save & Send</Text>}
             </Button>
           </View>
         </ScrollView>
@@ -210,5 +278,5 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: colors.grayLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, backgroundColor: '#fff', marginBottom: 10, color: colors.charcoal },
   row: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   btnRow: { flexDirection: 'row', marginTop: 12 },
-  flex: { flex: 1 }
+  flex: { flex: 1 },
 });
