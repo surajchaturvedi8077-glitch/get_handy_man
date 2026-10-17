@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { apiClient, unwrap } from './apiClient';
+import { apiClient, unwrap, BASE_URL } from './apiClient';
 import * as invoiceService from './invoiceService';
 
 const STORAGE_KEY = 'trady_expenses_v2';
@@ -19,22 +19,48 @@ export function calcGstFromIncl(amountIncl, hasGst = true) {
   return Math.round((num / 11 + Number.EPSILON) * 100) / 100;
 }
 
+export function resolveReceiptUri(uri) {
+  if (!uri) return null;
+  if (uri.startsWith('data:') || uri.startsWith('http') || uri.startsWith('file:')) {
+    return uri;
+  }
+  return `${BASE_URL}${uri.startsWith('/') ? '' : '/'}${uri}`;
+}
+
 export function getExpenseSubtitle(exp) {
   switch (exp.category) {
     case 'Fuel':
-      return exp.serviceStation || exp.vehicle || 'Service station';
+      return [exp.serviceStation, exp.vehicle, exp.litres ? `${exp.litres}L` : ''].filter(Boolean).join(' • ') || 'Service station';
     case 'Materials':
-      return exp.supplier || exp.description || 'Hardware store';
+      return [exp.supplier, exp.description, exp.linkedJobName].filter(Boolean).join(' • ') || 'Hardware store';
     case 'Tools':
-      return exp.toolName || exp.supplier || 'Tool supplier';
+      return [exp.toolName, exp.supplier, exp.warrantyNotes].filter(Boolean).join(' • ') || 'Tool supplier';
     case 'Tolls':
-      return exp.provider || exp.tripReference || 'Toll account';
+      return [exp.provider, exp.vehicle, exp.tripReference].filter(Boolean).join(' • ') || 'Toll account';
     case 'Parking':
-      return exp.location || exp.vehicle || 'Parking';
+      return [exp.location, exp.vehicle, exp.linkedJobName].filter(Boolean).join(' • ') || 'Parking';
     case 'Other':
     default:
-      return exp.expenseName || exp.supplier || exp.notes || 'General expense';
+      return [exp.expenseName, exp.supplier, exp.notes].filter(Boolean).join(' • ') || 'General expense';
   }
+}
+
+export function getExpenseDetailsList(exp) {
+  const details = [];
+  if (exp.serviceStation) details.push({ label: 'Service Station', value: exp.serviceStation });
+  if (exp.supplier) details.push({ label: 'Supplier', value: exp.supplier });
+  if (exp.toolName) details.push({ label: 'Tool / Equipment', value: exp.toolName });
+  if (exp.expenseName) details.push({ label: 'Expense Name', value: exp.expenseName });
+  if (exp.description) details.push({ label: 'Description', value: exp.description });
+  if (exp.provider) details.push({ label: 'Toll Provider', value: exp.provider });
+  if (exp.location) details.push({ label: 'Parking Location', value: exp.location });
+  if (exp.vehicle) details.push({ label: 'Vehicle', value: exp.vehicle });
+  if (exp.litres) details.push({ label: 'Litres', value: `${exp.litres} L` });
+  if (exp.tripReference) details.push({ label: 'Trip / Statement Ref', value: exp.tripReference });
+  if (exp.warrantyNotes) details.push({ label: 'Warranty / Notes', value: exp.warrantyNotes });
+  if (exp.linkedJobName) details.push({ label: 'Linked Job', value: exp.linkedJobName });
+  if (exp.notes) details.push({ label: 'Notes', value: exp.notes });
+  return details;
 }
 
 export async function listAllExpenses() {
@@ -46,7 +72,6 @@ export async function listAllExpenses() {
     localList = [];
   }
 
-  // Also pull any material/other costs attached to invoices so nothing is lost
   let invoiceExpenses = [];
   try {
     const invoices = await invoiceService.listInvoices('all');
@@ -62,12 +87,12 @@ export async function listAllExpenses() {
               amount: amt,
               gstOption: '10%',
               gstAmount: calcGstFromIncl(amt, true),
-              paymentMethod: 'Card',
+              paymentMethod: inv.paymentMode === 'cash' ? 'Cash' : 'Card',
               supplier: m.name || 'Hardware store',
               description: `Invoice #${inv.number} (${inv.customer})`,
               linkedJobId: inv.jobId || null,
               linkedJobName: inv.customer || '',
-              receiptUri: m.photoUrl || null,
+              receiptUri: resolveReceiptUri(m.photoUrl),
               fromInvoice: true,
               invoiceId: inv._id,
             });
@@ -83,10 +108,10 @@ export async function listAllExpenses() {
               amount: amt,
               gstOption: '10%',
               gstAmount: calcGstFromIncl(amt, true),
-              paymentMethod: 'Card',
+              paymentMethod: inv.paymentMode === 'cash' ? 'Cash' : 'Card',
               expenseName: o.name || 'Other expense',
-              supplier: `Invoice #${inv.number}`,
-              receiptUri: o.photoUrl || null,
+              supplier: `Invoice #${inv.number} (${inv.customer})`,
+              receiptUri: resolveReceiptUri(o.photoUrl),
               fromInvoice: true,
               invoiceId: inv._id,
             });
@@ -113,7 +138,6 @@ export async function createExpense(payload) {
   const updated = [newExpense, ...current];
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 
-  // Optional non-blocking sync if backend route exists
   try {
     await unwrap(apiClient.post('/api/expenses', newExpense));
   } catch (e) {}

@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CHANNEL_ID = 'alerts-v2';
 const BRIEFING_KEY = 'gh_briefing_pref';
+const SEEN_ENQUIRIES_KEY = 'gh_seen_enquiry_ids_v1';
 
 try {
   Notifications.setNotificationHandler({
@@ -29,6 +30,7 @@ export async function ensureNotificationSetup() {
       sound: 'default',
       enableVibrate: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: true,
     });
   }
 
@@ -51,6 +53,77 @@ export async function getExpoPushToken() {
     return tokenData.data;
   } catch (error) {
     return null;
+  }
+}
+
+// Forces the notification to appear directly on the lock screen with heads-up banner display
+export async function notifyNewEnquiry(enquiry) {
+  try {
+    if (!enquiry) return;
+    const granted = await ensureNotificationSetup();
+    if (!granted) return;
+
+    if (enquiry._id) {
+      const raw = await AsyncStorage.getItem(SEEN_ENQUIRIES_KEY);
+      const seenIds = raw ? JSON.parse(raw) : [];
+      if (!seenIds.includes(String(enquiry._id))) {
+        seenIds.push(String(enquiry._id));
+        await AsyncStorage.setItem(SEEN_ENQUIRIES_KEY, JSON.stringify(seenIds.slice(-200)));
+      }
+    }
+
+    const serviceName =
+      (Array.isArray(enquiry.services) && enquiry.services[0]) ||
+      enquiry.service ||
+      'Handyman Service';
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '📩 New Enquiry Received!',
+        body: `${enquiry.name || 'New Customer'} requested ${serviceName}${enquiry.address ? ` at ${enquiry.address}` : ''}.`,
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        channelId: CHANNEL_ID,
+        data: { type: 'new_enquiry', enquiryId: String(enquiry._id || '') },
+      },
+      trigger: null, // Triggers immediately on the lock screen
+    });
+  } catch (e) {
+    console.log('Failed to fire lock screen notification:', e);
+  }
+}
+
+export async function checkAndNotifyNewEnquiries(enquiries = []) {
+  try {
+    if (!Array.isArray(enquiries) || enquiries.length === 0) return;
+
+    const pureEnquiries = enquiries.filter(
+      (e) =>
+        !e.isQuote &&
+        !(e.when && String(e.when).startsWith('#GH-')) &&
+        e.status !== 'quoted'
+    );
+
+    const raw = await AsyncStorage.getItem(SEEN_ENQUIRIES_KEY);
+    if (!raw) {
+      const initialIds = pureEnquiries.map((e) => String(e._id));
+      await AsyncStorage.setItem(SEEN_ENQUIRIES_KEY, JSON.stringify(initialIds));
+      return;
+    }
+
+    const seenIds = JSON.parse(raw);
+    const unseen = pureEnquiries.filter((e) => e._id && !seenIds.includes(String(e._id)));
+
+    if (unseen.length > 0) {
+      const updatedIds = [...seenIds, ...unseen.map((e) => String(e._id))].slice(-200);
+      await AsyncStorage.setItem(SEEN_ENQUIRIES_KEY, JSON.stringify(updatedIds));
+
+      for (const item of unseen) {
+        await notifyNewEnquiry(item);
+      }
+    }
+  } catch (e) {
+    console.log('Error checking new enquiries:', e);
   }
 }
 
@@ -102,6 +175,7 @@ export async function syncLocalNotifications(allJobs = []) {
             title: 'Leaving Soon ⏳',
             body: `Job with ${job.name || 'client'} at ${job.address || 'location'} in 1 hour.`,
             sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.MAX,
             channelId: CHANNEL_ID,
           },
           trigger: buildDateTrigger(oneHourBefore),
@@ -150,6 +224,7 @@ export async function fireInstantBriefingNotification(allJobs = [], unpaidInvoic
       title: '☀️ Morning Briefing Summary',
       body: summaryBody,
       sound: 'default',
+      priority: Notifications.AndroidNotificationPriority.MAX,
       channelId: CHANNEL_ID,
       data: { type: 'morning_briefing' },
     },
@@ -193,7 +268,6 @@ export async function scheduleDailyMorningBriefing(
       if (isNaN(minute)) minute = 30;
     }
 
-    // 1. Schedule 7 days of specific date alarms with exact job counts
     for (let i = 0; i < 7; i++) {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() + i);
@@ -209,6 +283,7 @@ export async function scheduleDailyMorningBriefing(
           title: '☀️ Morning Summary',
           body: bodyText,
           sound: 'default',
+          priority: Notifications.AndroidNotificationPriority.MAX,
           channelId: CHANNEL_ID,
           data: { type: 'morning_briefing' },
         },
@@ -216,13 +291,13 @@ export async function scheduleDailyMorningBriefing(
       });
     }
 
-    // 2. Also schedule a repeating daily fallback alarm
     await Notifications.scheduleNotificationAsync({
       identifier: 'morning-briefing',
       content: {
         title: '☀️ Daily Trady Briefing',
         body: buildBriefingSummaryText(allJobs, unpaidInvoices, new Date()),
         sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.MAX,
         channelId: CHANNEL_ID,
         data: { type: 'morning_briefing' },
       },

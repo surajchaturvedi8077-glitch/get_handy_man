@@ -2,7 +2,9 @@ const asyncHandler = require('../middleware/asyncHandler');
 const Enquiry = require('../models/Enquiry');
 const Job = require('../models/Job');
 const Invoice = require('../models/Invoice');
+const Settings = require('../models/Settings');
 const { nextInvoiceNumber } = require('../services/numberingService');
+const { sendPush } = require('../services/cronService');
 const { ok, created } = require('../utils/apiResponse');
 
 const listEnquiries = asyncHandler(async (req, res) => {
@@ -20,6 +22,33 @@ const getEnquiry = asyncHandler(async (req, res) => {
 
 const createEnquiry = asyncHandler(async (req, res) => {
   const enquiry = await Enquiry.create(req.body);
+
+  // Fire push notification when a new enquiry arrives
+  try {
+    const isStandaloneQuote =
+      req.body.isQuote === true ||
+      (req.body.when && String(req.body.when).startsWith('#GH-')) ||
+      req.body.status === 'quoted';
+
+    if (!isStandaloneQuote) {
+      const settings = await Settings.getSingleton();
+      if (settings?.expoPushToken && settings.notifNewEnquiry !== false) {
+        const srv =
+          (Array.isArray(enquiry.services) && enquiry.services[0]) ||
+          enquiry.service ||
+          'Handyman Service';
+        sendPush(
+          settings.expoPushToken,
+          '📩 New Customer Enquiry!',
+          `${enquiry.name || 'New client'} requested ${srv}${enquiry.address ? ` at ${enquiry.address}` : ''}.`,
+          { type: 'new_enquiry', enquiryId: String(enquiry._id) }
+        );
+      }
+    }
+  } catch (pushErr) {
+    console.error('[Enquiry Push Error]', pushErr.message);
+  }
+
   created(res, enquiry);
 });
 

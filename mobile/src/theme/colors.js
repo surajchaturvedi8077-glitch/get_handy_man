@@ -6,21 +6,28 @@
  * color is needed: colors.orange, colors.greenTint, etc.
  * ------------------------------------------------------------------
  */
+/**
+ * colors.js
+ * ------------------------------------------------------------------
+ * Modern Royal Blue & Deep Navy palette across the entire app.
+ * Keeps existing property names intact so every screen works seamlessly.
+ * ------------------------------------------------------------------
+ */
 export const colors = {
-  charcoal: '#1F2937',
-  charcoalDeep: '#111827',
-  charcoal2: '#2B3648',
-  orange: '#F5821F',
-  orangeDeep: '#D9690C',
-  orangeTint: '#FDEEDD',
-  offwhite: '#F7F5F2',
+  charcoal: '#0F172A',
+  charcoalDeep: '#090D16',
+  charcoal2: '#1E293B',
+  orange: '#1565D8',      // Primary Royal Blue accent
+  orangeDeep: '#1E40AF',  // Deep Royal Blue
+  orangeTint: '#EBF3FF',  // Soft Blue tint for cards & badges
+  offwhite: '#F8FAFC',
   white: '#FFFFFF',
-  gray: '#6B7280',
-  grayLight: '#E5E7EB',
+  gray: '#64748B',
+  grayLight: '#E2E8F0',
   green: '#16A34A',
-  greenTint: '#E9F7EF',
-  blue: '#1D4ED8',
-  blueTint: '#EAF3FF',
+  greenTint: '#DCFCE7',
+  blue: '#1565D8',
+  blueTint: '#DBEAFE',
   red: '#DC2626',
-  redTint: '#FDECEC',
+  redTint: '#FEE2E2',
 };
